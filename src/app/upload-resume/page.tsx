@@ -9,13 +9,15 @@ import { useEffect } from 'react';
 export default function UploadResume() {
   const [file, setFile] = useState<File | null>(null);
   const [goals, setGoals] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
   const router = useRouter();
 
   useEffect(() => {
-      if (!checkAuth()) {
-          router.push('/signup');
-      }
+    if (!checkAuth()) {
+      router.push('/signup');
+    }
   }, [router]);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
@@ -28,13 +30,47 @@ export default function UploadResume() {
     maxSize: 5 * 1024 * 1024, // 5MB
     onDrop: (acceptedFiles: File[]) => {
       setFile(acceptedFiles[0]);
+      setError(''); // Clear any previous errors
     },
   });
 
   const handleSubmit = async () => {
-    // TODO: Implement submission logic
-    console.log('File:', file);
-    console.log('Goals:', goals);
+    if (!file) {
+      setError('Please upload a resume file');
+      return;
+    }
+
+    setLoading(true);
+    setError('');
+
+    try {
+      // Create form data
+      const formData = new FormData();
+      formData.append('file', file);
+
+      // Send to resume analysis endpoint
+      const response = await fetch('/api/resume-analysis', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to analyze resume');
+      }
+
+      const data = await response.json();
+
+      // TODO: Store the analyzed data in your database
+      console.log('Resume analysis:', data);
+
+      // Redirect to the next page
+      router.push('/top-roles');
+    } catch (err: any) {
+      setError(err.message || 'Failed to process resume');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -46,6 +82,12 @@ export default function UploadResume() {
         <p className='text-gray-400 text-sm mb-6'>
           Help us get to know you better by sharing your resume
         </p>
+
+        {error && (
+          <div className='mb-4 p-3 bg-red-500/10 border border-red-500 rounded-lg text-red-500 text-sm'>
+            {error}
+          </div>
+        )}
 
         <div
           {...getRootProps()}
@@ -96,16 +138,18 @@ export default function UploadResume() {
 
         <div className='flex justify-between gap-4'>
           <button
-            className='px-4 py-2 bg-[#2a2a2a] text-white rounded-lg hover:bg-[#3a3a3a] transition-colors'
+            className='px-4 py-2 bg-[#2a2a2a] text-white rounded-lg hover:bg-[#3a3a3a] transition-colors disabled:opacity-50 disabled:cursor-not-allowed'
             onClick={() => console.log('Save as draft')}
+            disabled={loading}
           >
             Save as Draft
           </button>
           <button
-            className='px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors'
+            className='px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed'
             onClick={handleSubmit}
+            disabled={loading}
           >
-            Submit
+            {loading ? 'Processing...' : 'Submit'}
           </button>
         </div>
       </div>
