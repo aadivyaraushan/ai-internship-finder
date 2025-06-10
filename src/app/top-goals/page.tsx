@@ -1,6 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { useEffect, useState } from 'react';
+import { checkAuth } from '@/lib/firebase';
 
 interface Goal {
   id: number;
@@ -10,6 +12,14 @@ interface Goal {
 }
 
 export default function TopGoals() {
+  const router = useRouter();
+
+  useEffect(() => {
+      if (!checkAuth()) {
+          router.push('/signup');
+      }
+  }, [router]);
+  
   const [goals, setGoals] = useState<Goal[]>([
     {
       id: 1,

@@ -2,10 +2,21 @@
 
 import { useState } from 'react';
 import { useDropzone } from 'react-dropzone';
+import { useRouter } from 'next/navigation';
+import { checkAuth } from '@/lib/firebase';
+import { useEffect } from 'react';
 
 export default function UploadResume() {
   const [file, setFile] = useState<File | null>(null);
   const [goals, setGoals] = useState('');
+
+  const router = useRouter();
+
+  useEffect(() => {
+      if (!checkAuth()) {
+          router.push('/signup');
+      }
+  }, [router]);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     accept: {

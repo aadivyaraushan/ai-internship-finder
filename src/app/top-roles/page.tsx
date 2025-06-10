@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   DndContext,
   closestCenter,
@@ -18,6 +18,8 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
+import { checkAuth } from '@/lib/firebase';
+import { useRouter } from 'next/navigation';
 
 interface Role {
   id: number;
@@ -34,6 +36,14 @@ function SortableRole({ role }: { role: Role }) {
     transition,
     isDragging,
   } = useSortable({ id: role.id });
+
+  const router = useRouter();
+
+  useEffect(() => {
+      if (!checkAuth()) {
+          router.push('/signup');
+      }
+  }, [router]);
 
   const style = {
     transform: CSS.Transform.toString(transform),

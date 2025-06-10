@@ -2,6 +2,9 @@
 
 import { useState } from 'react';
 import Image from 'next/image';
+import { useRouter } from 'next/navigation';
+import { useEffect } from 'react';
+import { checkAuth } from '@/lib/firebase';
 
 interface Connection {
   id: number;
@@ -13,6 +16,14 @@ interface Connection {
 }
 
 export default function TopConnections() {
+  const router = useRouter();
+
+  useEffect(() => {
+      if (!checkAuth()) {
+          router.push('/signup');
+      }
+  }, [router]);
+
   const [connections] = useState<Connection[]>([
     {
       id: 1,
