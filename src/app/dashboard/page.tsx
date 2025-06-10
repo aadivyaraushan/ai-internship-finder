@@ -152,8 +152,8 @@ export default function Dashboard() {
             {/* Resume Upload */}
             <div
               {...getRootProps()}
-              className={`bg-[#1a1a1a] p-6 rounded-2xl flex flex-col items-center justify-center text-center cursor-pointer ${
-                isDragActive ? 'border-2 border-dashed border-blue-500' : ''
+              className={`bg-[#1a1a1a] p-8 rounded-2xl flex flex-col items-center justify-center text-center cursor-pointer border-2 border-dashed border-gray-600 hover:border-gray-500 ${
+                isDragActive ? 'border-blue-500' : ''
               }`}
             >
               <input {...getInputProps()} />
