@@ -49,3 +49,26 @@
     background-color: #279AF1;
     box-shadow: 0 0 15px #279AF1;
 }
+
+a {
+    color: #279AF1;
+}
+
+a:hover {
+    color: #2ba3ff;
+    text-decoration: none;
+}
+
+button {
+    margin-top: 30px;
+}
+
+button:disabled {
+    opacity: 0.7;
+    cursor: not-allowed;
+}
+
+button:disabled:hover {
+    background-color: #279AF1;
+    box-shadow: none;
+}
