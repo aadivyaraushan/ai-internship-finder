@@ -16,9 +16,6 @@ export const auth = getAuth(app);
 
 export const checkAuth = () => {
     const user = auth.currentUser;
-    if (user) {
-        return true;
-    } else {
-        return false;
-    }
+    console.log('User is', user);
+    return user !== null;
 }

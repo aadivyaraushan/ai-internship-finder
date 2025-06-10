@@ -8,6 +8,7 @@ import { z } from 'zod';
 import { writeFile, unlink } from 'fs/promises';
 import { join } from 'path';
 import { tmpdir } from 'os';
+import { BufferMemory } from 'langchain/memory';
 
 // Define Zod schemas for each section
 const EducationSchema = z.object({
@@ -60,165 +61,116 @@ const ResumeSchema = z.object({
 
 type Resume = z.infer<typeof ResumeSchema>;
 
-// Create a more specific prompt template
+// Create a global memory instance
+const memory = new BufferMemory({
+    memoryKey: "resume_context",
+    returnMessages: true,
+    outputKey: "output",
+    inputKey: "input"
+});
+
+// Create the prompt template
 const promptTemplate = new PromptTemplate({
-  template: `Extract structured information from the following resume text. Be precise and thorough in your analysis.
+    template: `Process and store the following resume data for future analysis:
 
-Resume text: {text}
+Resume Content: {resume_context}
 
-Please provide the following information in a structured format:
+Current Request: {input}
 
-1. Education:
-   - Extract school names, clubs, awards, GPA (if mentioned), and notable coursework
-   - Include only clearly stated information
-
-2. Skills:
-   - List all technical and non-technical skills mentioned
-   - Include skills that can be inferred from projects and work experience
-   - Format as individual skills, not paragraphs
-
-3. Personal Projects:
-   - Extract project names, descriptions, responsibilities
-   - Include any recognition or achievements
-   - List specific skills used in each project
-
-4. Work Experience:
-   - Include company names, roles, and notable projects
-   - Note if reference emails are provided
-   - Determine if they are currently working there (is_alumni)
-
-5. URLs:
-   - Extract LinkedIn profile URL if present
-   - Extract personal website URL if present
-
-Format the output as a valid JSON object with this exact structure (replace values with actual data):
-
-{{
-  "education": [
-    {{
-      "school_name": "University Name",
-      "clubs": ["Club 1", "Club 2"],
-      "awards": ["Award 1", "Award 2"],
-      "gpa": "3.8",
-      "notable_coursework": ["Course 1", "Course 2"]
-    }}
-  ],
-  "skills": ["Skill 1", "Skill 2", "Skill 3"],
-  "personal_projects": [
-    {{
-      "project_name": "Project Name",
-      "description": "Project Description",
-      "responsibilities": ["Responsibility 1", "Responsibility 2"],
-      "recognition": "Any awards or recognition",
-      "skills": ["Skill 1", "Skill 2"]
-    }}
-  ],
-  "workex": [
-    {{
-      "workplace": "Company Name",
-      "notable_projects": ["Project 1", "Project 2"],
-      "role": "Job Title",
-      "reference_email": "reference@email.com",
-      "is_alumni": true
-    }}
-  ],
-  "linkedin": "https://linkedin.com/in/profile",
-  "per_web": "https://personal-website.com"
-}}
-
-If any field is not found in the resume, use null for optional fields or empty arrays [] for array fields. Ensure the output is valid JSON.
-Do NOT wrap the JSON in any markdown formatting or triple backticks. Return ONLY the JSON object.`,
-  inputVariables: ['text'],
+Store this information in a structured format for later use.`,
+    inputVariables: ['resume_context', 'input'],
 });
 
 const model = new ChatOpenAI({
-  temperature: 0,
-  modelName: 'gpt-4.1',
-  openAIApiKey: process.env.OPENAI_API_KEY,
+    temperature: 0,
+    modelName: 'gpt-4',
+    openAIApiKey: process.env.OPENAI_API_KEY,
 });
 
 const outputParser = new StringOutputParser();
 
 export async function POST(req: NextRequest) {
-  try {
-    if (!process.env.OPENAI_API_KEY) {
-      return NextResponse.json(
-        { error: 'OpenAI API key not configured' },
-        { status: 500 }
-      );
-    }
-
-    // Get the file from the request
-    const formData = await req.formData();
-    const file = formData.get('file') as File;
-
-    if (!file) {
-      return NextResponse.json({ error: 'No file provided' }, { status: 400 });
-    }
-
-    // Convert File to Buffer
-    const buffer = Buffer.from(await file.arrayBuffer());
-
-    // Create a temporary file path
-    const tempFilePath = join(tmpdir(), `resume-${Date.now()}.pdf`);
-    await writeFile(tempFilePath, buffer);
-
     try {
-      // Load and parse PDF
-      const loader = new PDFLoader(tempFilePath);
-      const docs = await loader.load();
-      const text = docs
-        .map((doc: { pageContent: string }) => doc.pageContent)
-        .join('\n');
+        if (!process.env.OPENAI_API_KEY) {
+            return NextResponse.json(
+                { error: 'OpenAI API key not configured' },
+                { status: 500 }
+            );
+        }
 
-      // Create the chain
-      const chain = RunnableSequence.from([
-        promptTemplate,
-        model,
-        outputParser,
-      ]);
+        // Get the file from the request
+        const formData = await req.formData();
+        const file = formData.get('file') as File;
 
-      // Run the chain
-      const rawResult = await chain.invoke({
-        text: text,
-      });
+        if (!file) {
+            return NextResponse.json({ error: 'No file provided' }, { status: 400 });
+        }
 
-      console.log('Raw LLM output:', rawResult); // For debugging
+        // Convert File to Buffer
+        const buffer = Buffer.from(await file.arrayBuffer());
 
-      // Clean potential markdown code fences from the LLM output before parsing
-      let cleaned = rawResult.trim();
-      if (cleaned.startsWith('```')) {
-        // Remove leading ```json or ```
-        cleaned = cleaned.replace(/^```(?:json)?\s*/i, '');
-        // Remove trailing ```
-        cleaned = cleaned.replace(/```\s*$/i, '');
-      }
+        // Create a temporary file path
+        const tempFilePath = join(tmpdir(), `resume-${Date.now()}.pdf`);
+        await writeFile(tempFilePath, buffer);
 
-      // Parse and validate the result with Zod
-      try {
-        const parsedJson = JSON.parse(cleaned);
-        const result = ResumeSchema.parse(parsedJson);
-        return NextResponse.json(result);
-      } catch (parseError) {
-        console.error('Schema validation error:', parseError);
-        console.error('Raw LLM output (cleaned):', cleaned);
+        try {
+            // Load and parse PDF
+            const loader = new PDFLoader(tempFilePath);
+            const docs = await loader.load();
+            const text = docs
+                .map((doc: { pageContent: string }) => doc.pageContent)
+                .join('\n');
+
+            // Create the chain
+            const chain = RunnableSequence.from([
+                promptTemplate,
+                model,
+                outputParser,
+            ]);
+
+            // Run the chain
+            const rawResult = await chain.invoke({
+                resume_context: text,
+                input: "Store Resume Data"
+            });
+
+            // Store the raw text in memory for future use
+            await memory.saveContext(
+                { input: "Store Resume Data" },
+                { output: text }
+            );
+
+            // Only for testing purposes, i will only log this and not store in local storage
+            // Parse the raw text into structured data using the ResumeSchema
+            const structuredData = {
+                education: [], // Will be populated from text
+                skills: [], // Will be populated from text
+                personal_projects: [], // Will be populated from text
+                workex: [], // Will be populated from text
+                linkedin: null,
+                per_web: null
+            };
+
+            return NextResponse.json({ 
+                response: {
+                    rawText: text,
+                    structuredData: structuredData,
+                    timestamp: new Date().toISOString(),
+                    status: "success"
+                }
+            });
+        } finally {
+            // Clean up temp file
+            await unlink(tempFilePath);
+        }
+    } catch (error: any) {
+        console.error('Error processing resume:', error);
         return NextResponse.json(
-          { error: 'Failed to parse resume data', details: parseError },
-          { status: 422 }
+            {
+                error: 'Error processing resume',
+                details: error.message || 'Unknown error',
+            },
+            { status: 500 }
         );
-      }
-    } finally {
-      // Clean up temp file
-      await unlink(tempFilePath);
     }
-  } catch (error: any) {
-    console.error('Error processing resume:', error);
-    return NextResponse.json(
-      {
-        error: 'Error processing resume',
-        details: error.message || 'Unknown error',
-      },
-      { status: 500 }
-    );
-  }
 }
