@@ -18,6 +18,9 @@ export default function UploadResume() {
     if (!checkAuth()) {
       router.push('/signup');
     }
+      if (!checkAuth()) {
+          router.push(`/signup`);
+      }
   }, [router]);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
@@ -35,6 +38,10 @@ export default function UploadResume() {
   });
 
   const handleSubmit = async () => {
+    // TODO: Implement submission logic
+    console.log('File:', file);
+    console.log('Goals:', goals);
+    router.push(`/top-goals?goal=${goals}`);
     if (!file) {
       setError('Please upload a resume file');
       return;

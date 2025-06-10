@@ -15,6 +15,7 @@ export default function Signup() {
 
     useEffect(() => {
         if (checkAuth()) {
+            console.log("User is already logged in");
             router.push('/upload-resume');
         }
     }, [router]);
