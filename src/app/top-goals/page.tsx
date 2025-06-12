@@ -156,7 +156,7 @@ export default function TopGoals() {
 
   const handleSubmit = () => {
     const selectedGoals = apiGoals.filter((goal) => goal.selected);
-    console.log('Selected apiGoals:', selectedGoals);
+    console.log('apiGoals:', selectedGoals);
   };
 
   return (
