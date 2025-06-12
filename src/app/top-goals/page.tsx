@@ -3,6 +3,7 @@
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { checkAuth } from '@/lib/firebase';
+import StatusUpdate, { ProcessingStep } from '@/components/StatusUpdate';
 
 interface Goal {
   id: number;
@@ -18,6 +19,21 @@ export default function TopGoals() {
   const goal = searchParams.get('goal');
   const [apiGoals, setApiGoals] = useState<Goal[]>([]);
   const [editingGoal, setEditingGoal] = useState<Goal | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [currentStatus, setCurrentStatus] = useState<string>('');
+  const [error, setError] = useState('');
+  const [steps, setSteps] = useState<ProcessingStep[]>([
+    { id: 'load', label: 'Loading resume data', status: 'pending' },
+    { id: 'analyze', label: 'AI analyzing goals', status: 'pending' },
+    { id: 'generate', label: 'Generating suggestions', status: 'pending' },
+    { id: 'prepare', label: 'Preparing recommendations', status: 'pending' },
+  ]);
+
+  const updateStep = (stepId: string, status: ProcessingStep['status']) => {
+    setSteps(
+      steps.map((step) => (step.id === stepId ? { ...step, status } : step))
+    );
+  };
 
   useEffect(() => {
     if (!checkAuth()) {
@@ -30,29 +46,97 @@ export default function TopGoals() {
   }, [router]);
 
   const fetchGoals = async () => {
-    console.log('Sending to API:', { goal });
+    setLoading(true);
+    setCurrentStatus('Starting goal analysis...');
 
-    const response = await fetch('/api/goal-analysis', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        goal: goal,
-      }),
-    });
-    const data = await response.json();
-    console.log(data);
-    const endGoals = data.response.endGoals;
-    console.log(endGoals);
-    // Convert the response into the expected Goal format
-    const goals = endGoals.map((goal: any, index: number) => ({
-      id: index + 1,
-      title: goal.title,
-      description: goal.description,
-      selected: false,
-    }));
-    setApiGoals(goals);
+    // Reset all steps to pending
+    setSteps(steps.map((step) => ({ ...step, status: 'pending' })));
+
+    try {
+      // Start loading resume data
+      updateStep('load', 'in_progress');
+      setCurrentStatus('Loading your resume data...');
+
+      const response = await fetch('/api/goal-analysis', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          goal: goal,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to analyze goals');
+      }
+
+      // Initial data loaded
+      updateStep('load', 'completed');
+      await new Promise((resolve) => setTimeout(resolve, 800));
+
+      // Start AI analysis
+      updateStep('analyze', 'in_progress');
+      setCurrentStatus('AI analyzing your profile...');
+      const data = await response.json();
+
+      if (data.processingSteps) {
+        const apiSteps = data.processingSteps;
+
+        // Context loaded
+        if (apiSteps.contextLoaded) {
+          await new Promise((resolve) => setTimeout(resolve, 800));
+          updateStep('analyze', 'completed');
+
+          // Start generating suggestions
+          updateStep('generate', 'in_progress');
+          setCurrentStatus('Generating personalized goals...');
+        }
+
+        // AI analysis complete
+        if (apiSteps.aiAnalysis) {
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+          updateStep('generate', 'completed');
+
+          // Start preparing recommendations
+          updateStep('prepare', 'in_progress');
+          setCurrentStatus('Formatting your recommendations...');
+        }
+
+        // Goals generated
+        if (apiSteps.goalsGenerated) {
+          await new Promise((resolve) => setTimeout(resolve, 800));
+        }
+
+        // Recommendations formatted
+        if (apiSteps.recommendationsFormatted) {
+          updateStep('prepare', 'completed');
+          setCurrentStatus('Your personalized goals are ready!');
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+        }
+      }
+
+      const endGoals = data.response.endGoals;
+      const goals = endGoals.map((goal: any, index: number) => ({
+        id: index + 1,
+        title: goal.title,
+        description: goal.description,
+        selected: false,
+      }));
+
+      setApiGoals(goals);
+      setCurrentStatus('');
+    } catch (err: any) {
+      setError(err.message || 'Failed to analyze goals');
+      setCurrentStatus('');
+      // Mark current step as error
+      const currentStep = steps.find((step) => step.status === 'in_progress');
+      if (currentStep) {
+        updateStep(currentStep.id, 'error');
+      }
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -168,6 +252,16 @@ export default function TopGoals() {
         <p className='text-gray-400 text-sm text-center mb-6'>
           Based on our AI analysis of your goals
         </p>
+
+        {error && (
+          <div className='mb-4 p-3 bg-red-500/10 border border-red-500 rounded-lg text-red-500 text-sm'>
+            {error}
+          </div>
+        )}
+
+        {(loading || steps.some((step) => step.status === 'completed')) && (
+          <StatusUpdate steps={steps} currentStatus={currentStatus} />
+        )}
 
         <p className='text-gray-300 text-sm mb-4'>
           Select the 3 most important goals to you.

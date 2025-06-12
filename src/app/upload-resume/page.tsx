@@ -5,12 +5,21 @@ import { useDropzone } from 'react-dropzone';
 import { useRouter } from 'next/navigation';
 import { checkAuth } from '@/lib/firebase';
 import { useEffect } from 'react';
+import StatusUpdate, { ProcessingStep } from '@/components/StatusUpdate';
 
 export default function UploadResume() {
   const [file, setFile] = useState<File | null>(null);
   const [goals, setGoals] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [currentStatus, setCurrentStatus] = useState<string>('');
+  const [steps, setSteps] = useState<ProcessingStep[]>([
+    { id: 'prepare', label: 'Preparing upload', status: 'pending' },
+    { id: 'upload', label: 'Uploading file', status: 'pending' },
+    { id: 'parse', label: 'Parsing resume content', status: 'pending' },
+    { id: 'analyze', label: 'AI analysis', status: 'pending' },
+    { id: 'store', label: 'Processing results', status: 'pending' },
+  ]);
 
   const router = useRouter();
 
@@ -35,25 +44,42 @@ export default function UploadResume() {
     },
   });
 
-  const handleSubmit = async () => {
-    // TODO: Implement submission logic
-    console.log('File:', file);
-    console.log('Goals:', goals);
+  const updateStep = (stepId: string, status: ProcessingStep['status']) => {
+    setSteps(
+      steps.map((step) => (step.id === stepId ? { ...step, status } : step))
+    );
+  };
 
+  const handleSubmit = async () => {
     if (!file) {
       setError('Please upload a resume file');
       return;
     }
 
+    if (!goals.trim()) {
+      setError('Please enter your goals before submitting');
+      return;
+    }
+
     setLoading(true);
     setError('');
+    setCurrentStatus('Starting resume analysis...');
+
+    // Reset all steps to pending
+    setSteps(steps.map((step) => ({ ...step, status: 'pending' })));
 
     try {
-      // Create form data
+      // Prepare upload
+      updateStep('prepare', 'in_progress');
+      setCurrentStatus('Preparing to upload resume...');
       const formData = new FormData();
       formData.append('file', file);
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      updateStep('prepare', 'completed');
 
-      // Send to resume analysis endpoint
+      // Upload file
+      updateStep('upload', 'in_progress');
+      setCurrentStatus('Uploading resume...');
       const response = await fetch('/api/resume-analysis', {
         method: 'POST',
         body: formData,
@@ -63,23 +89,62 @@ export default function UploadResume() {
         const error = await response.json();
         throw new Error(error.error || 'Failed to analyze resume');
       }
+      updateStep('upload', 'completed');
+      await new Promise((resolve) => setTimeout(resolve, 800)); // Small delay between steps
 
+      // Parse and analyze
+      updateStep('parse', 'in_progress');
+      setCurrentStatus('Reading resume content...');
       const data = await response.json();
 
-      // just so i dont waste my creds on openai
-      // const data = JSON.parse(`{"education":[{"school_name":"University of Illinois Urbana-Champaign (UIUC)","clubs":[],"awards":[],"gpa":null,"notable_coursework":["Bachelor of Science in Computer Science"]},{"school_name":"GEMS Modern Academy","clubs":[],"awards":["ICSE Grade 10 World Topper: Computer Science & Chemistry, 2023"],"gpa":null,"notable_coursework":["International Baccalaureate (IB) Diploma Programme","Higher Level Subjects: Physics, Mathematics Analyses and Approaches, Computer Science","Standard Level Subjects: Economics, English Language and Literature, Spanish AB Initio","ICSE Grade 10: Average of 98.4%","Digital SAT Score: 1560 (780 English, 780 Math)"]}],"skills":["JavaScript","Python","HTML","CSS","Solidity","React.js","Tailwind CSS","Git","AWS","Docker","Node.js","Truffle","Google Analytics","Adobe Premiere Pro","Adobe Photoshop","Adobe Illustrator","GIMP","DaVinci Resolve","Artificial Intelligence","Machine Learning","Generative AI","GPT models","Blockchain","Quantum Computation","Data Analysis","Gamification","Lean Startup Methodology","Design Thinking","English (Native)","Hindi (Fluent)","Spanish (Basic)","Product Management","Team Leadership","Public Speaking","Research","Mentoring","Event Organization","Problem Set Design","Statistical Analysis","Wilcoxon rank-sum test"],"personal_projects":[{"project_name":"LessonGPT","description":"AI product to generate lesson plans to simplify teachers’ workload, integrating learning psychology, curriculum requirements, and automated test question creation.","responsibilities":["Founder and Lead Developer","Developed app at UAE’s 1st government-sponsored generative AI hackathon","Wrote 2,000+ lines of code","Presented at GITEX and Hemaya International Center","Managed user adoption and feedback"],"recognition":"Finalist in GEMS Global Innovation Challenge (top 8/300+ projects or top 30/11,000 students); Featured on Gulf News; Presented at GITEX and Dubai Police HQ","skills":["JavaScript","React.js","AI","Learning Psychology","Product Development","Public Speaking"]},{"project_name":"Project Streamline","description":"Advanced biometric system to replace ID cards in schools.","responsibilities":["Co-Founder and CTO","Developed biometric system","Presented at iCAN Global Summit, GITEX Global, and Intersec Conference"],"recognition":"Presented at iCAN Global Summit (UAE representative), GITEX Global, Intersec Conference","skills":["Biometrics","Product Development","Public Speaking","Team Leadership"]},{"project_name":"SupplyBlock","description":"Proof-of-concept global Blockchain-based supply chain management platform.","responsibilities":["Founder and Lead Developer","Mastered blockchain fundamentals via Udemy","Developed and tested application (10,000 lines of code)","Applied Lean startup methodology"],"recognition":"Recognized by Fortune 500 companies for Lean startup methodology","skills":["Solidity","Truffle","React.js","AWS","IPFS","JavaScript","Blockchain","Lean Startup Methodology"]},{"project_name":"Nocrastination","description":"Productivity videogame for teens with ADHD and attentional challenges.","responsibilities":["Founder and CEO","Applied design thinking (Google Sprint method)","Led a team of 5","Pitched to 100+ stakeholders"],"recognition":"Top 15 projects out of 60+ in entrepreneurship and innovation program","skills":["Design Thinking","Team Leadership","Product Development","Pitching"]},{"project_name":"AutoCorrect (AI for Automated Exam Correction)","description":"Novel AI algorithm utilizing OpenAI's GPTs to assess IB responses and reduce grading time.","responsibilities":["Developed AI algorithm","Evaluated 60+ IB questions","Wrote research paper for IB Extended Essay"],"recognition":null,"skills":["AI","OpenAI GPT","Python","Research"]},{"project_name":"Quantum Computation & Information Research","description":"Research into quantum superposition, entanglement, Shor’s algorithm, and quantum noise correction under Cambridge Future Scholar Programme.","responsibilities":["Admitted to Cambridge Future Scholar Programme","Awarded CCIR STEM merit scholarship","Supervised by Dr. Sergii Strelchuk","Conducted quantum computation research"],"recognition":"CCIR Spotlight Scholar; CCIR STEM merit scholarship","skills":["Quantum Computation","Research","Theoretical Physics"]},{"project_name":"Gamification & Adolescent Productivity","description":"Cross-sectional field study on how gamification affects adolescents’ productivity.","responsibilities":["Led field study","Collaborated with Mindspark","Analyzed data with Python and Wilcoxon rank-sum test","Published in International Journal of Novel Research and Development"],"recognition":"Published in top 5% international journal (IJNRD, impact factor 8.76)","skills":["Research","Data Analysis","Python","Statistical Analysis","Gamification"]}],"workex":[{"workplace":"LessonGPT","notable_projects":["LessonGPT"],"role":"Founder & Lead Developer","reference_email":null,"is_alumni":false},{"workplace":"Project Streamline","notable_projects":["Project Streamline"],"role":"Co-Founder & CTO","reference_email":null,"is_alumni":true},{"workplace":"Comprich","notable_projects":[],"role":"Web Developer (Internship)","reference_email":null,"is_alumni":true},{"workplace":"SupplyBlock","notable_projects":["SupplyBlock"],"role":"Founder & Lead Developer","reference_email":null,"is_alumni":true},{"workplace":"Nocrastination","notable_projects":["Nocrastination"],"role":"Founder & CEO","reference_email":null,"is_alumni":true}],"linkedin":"https://www.linkedin.com/in/aadivya-raushan-245264240/","per_web":"https://github.com/aadivyaraushan"}`);
-      console.log('Resume analysis data:', data);
+      // Handle initial processing steps
+      if (data.response.processingSteps) {
+        const apiSteps = data.response.processingSteps;
 
-      // Store resume data in localStorage instead of cookie
-      // const resumeData = JSON.stringify(data);
-      // console.log('Data being stored:', resumeData);
-      // localStorage.setItem('resumeAnalysis', resumeData);
-      // console.log('Data after storing:', localStorage.getItem('resumeAnalysis')); // Verify data was stored
+        // File read step
+        if (apiSteps.fileRead) {
+          updateStep('parse', 'completed');
+          await new Promise((resolve) => setTimeout(resolve, 800));
 
-      // Redirect to the next page with just the goal
+          // Start AI analysis
+          updateStep('analyze', 'in_progress');
+          setCurrentStatus('AI analyzing resume...');
+        }
+
+        // PDF parsed step
+        if (apiSteps.pdfParsed) {
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+        }
+
+        // AI analysis step
+        if (apiSteps.aiAnalysis) {
+          updateStep('analyze', 'completed');
+          await new Promise((resolve) => setTimeout(resolve, 800));
+
+          // Start storing results
+          updateStep('store', 'in_progress');
+          setCurrentStatus('Processing analysis results...');
+        }
+
+        // Data storage step
+        if (apiSteps.dataStored) {
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+          updateStep('store', 'completed');
+          setCurrentStatus('Analysis complete! Redirecting...');
+        }
+      }
+
+      // Final delay before redirect
+      await new Promise((resolve) => setTimeout(resolve, 1500));
       router.push(`/top-goals?goal=${encodeURIComponent(goals)}`);
     } catch (err: any) {
       setError(err.message || 'Failed to process resume');
+      setCurrentStatus('');
+      // Mark current step as error
+      const currentStep = steps.find((step) => step.status === 'in_progress');
+      if (currentStep) {
+        updateStep(currentStep.id, 'error');
+      }
     } finally {
       setLoading(false);
     }
@@ -99,6 +164,10 @@ export default function UploadResume() {
           <div className='mb-4 p-3 bg-red-500/10 border border-red-500 rounded-lg text-red-500 text-sm'>
             {error}
           </div>
+        )}
+
+        {(loading || steps.some((step) => step.status === 'completed')) && (
+          <StatusUpdate steps={steps} currentStatus={currentStatus} />
         )}
 
         <div

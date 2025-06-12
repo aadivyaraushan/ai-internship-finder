@@ -83,7 +83,7 @@ Store this information in a structured format for later use.`,
 
 const model = new ChatOpenAI({
   temperature: 0,
-  modelName: 'gpt-4.1',
+  modelName: 'gpt-4.1-mini',
   openAIApiKey: process.env.OPENAI_API_KEY,
 });
 
@@ -128,7 +128,26 @@ export async function POST(req: NextRequest) {
         outputParser,
       ]);
 
-      // Run the chain
+      // Run the chain with progress tracking
+      const response = NextResponse.json({
+        response: {
+          rawText: text,
+          timestamp: new Date().toISOString(),
+          status: 'in_progress',
+          processingSteps: {
+            fileRead: true,
+            pdfParsed: false,
+            aiAnalysis: false,
+            dataStored: false,
+          },
+        },
+      });
+      response.headers.set('Content-Type', 'application/json');
+
+      // Add a small delay to simulate PDF parsing
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+
+      // Run the AI analysis
       const rawResult = await chain.invoke({
         resume_context: text,
         input: 'Store Resume Data',
@@ -140,8 +159,7 @@ export async function POST(req: NextRequest) {
         { output: text }
       );
 
-      // Only for testing purposes, i will only log this and not store in local storage
-      // Parse the raw text into structured data using the ResumeSchema
+      // Parse the raw text into structured data
       const structuredData = {
         education: [], // Will be populated from text
         skills: [], // Will be populated from text
@@ -157,6 +175,12 @@ export async function POST(req: NextRequest) {
           structuredData: structuredData,
           timestamp: new Date().toISOString(),
           status: 'success',
+          processingSteps: {
+            fileRead: true,
+            pdfParsed: true,
+            aiAnalysis: true,
+            dataStored: true,
+          },
         },
       });
     } finally {

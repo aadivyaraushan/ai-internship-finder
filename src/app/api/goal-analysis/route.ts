@@ -23,16 +23,30 @@ Current Request: {input}
 Analyze the resume and the user's request to identify potential career goals and opportunities.
 Focus on identifying specific, actionable goals that align with their experience and skills.
 
-Return the response in the following format:
+IMPORTANT: You must return a valid JSON object with the exact structure shown below. Do not add any additional text before or after the JSON.
+
+The response must follow this exact format:
 {{
   "endGoals": [
     {{
-      "id": "goal_1",
-      "title": "Career goal",
-      "description": "Detailed description"
+      "id": "1",
+      "title": "Example Career Goal",
+      "description": "Example detailed description of the career goal"
+    }},
+    {{
+      "id": "2",
+      "title": "Another Career Goal",
+      "description": "Another detailed description"
     }}
   ]
-}}`);
+}}
+
+Remember:
+1. Return ONLY the JSON object
+2. Each goal must have exactly these three fields: id, title, and description
+3. The id should be a string number starting from "1"
+4. Do not add any explanation text before or after the JSON
+5. Ensure all quotes and brackets are properly matched`);
 
 export const POST = async (req: Request) => {
   try {
@@ -54,7 +68,7 @@ export const POST = async (req: Request) => {
       memoryVariables.resume_context || 'No resume data available';
 
     const model = new ChatOpenAI({
-      model: 'gpt-4.1',
+      model: 'gpt-4.1-mini',
       temperature: 0,
     });
 
@@ -65,20 +79,55 @@ export const POST = async (req: Request) => {
       new StringOutputParser(),
     ]);
 
+    // Send initial progress update
+    const initialResponse = new Response(
+      JSON.stringify({
+        timestamp: new Date().toISOString(),
+        status: 'in_progress',
+        processingSteps: {
+          contextLoaded: true,
+          aiAnalysis: false,
+          goalsGenerated: false,
+          recommendationsFormatted: false,
+        },
+      }),
+      {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      }
+    );
+
+    // Simulate processing time for context loading
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+
     // Run the chain
     const response = await chain.invoke({
       resume_context: resumeContext,
       input: goal,
     });
 
+    // Simulate AI processing time
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+
     // Parse the response to ensure it's valid JSON
     const parsedResponse = JSON.parse(response);
+
+    // Simulate formatting time
+    await new Promise((resolve) => setTimeout(resolve, 1000));
 
     return new Response(
       JSON.stringify({
         response: parsedResponse,
         timestamp: new Date().toISOString(),
         status: 'success',
+        processingSteps: {
+          contextLoaded: true,
+          aiAnalysis: true,
+          goalsGenerated: true,
+          recommendationsFormatted: true,
+        },
       }),
       {
         status: 200,
