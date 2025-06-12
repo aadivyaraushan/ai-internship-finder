@@ -63,114 +63,114 @@ type Resume = z.infer<typeof ResumeSchema>;
 
 // Create a global memory instance
 const memory = new BufferMemory({
-    memoryKey: "resume_context",
-    returnMessages: true,
-    outputKey: "output",
-    inputKey: "input"
+  memoryKey: 'resume_context',
+  returnMessages: true,
+  outputKey: 'output',
+  inputKey: 'input',
 });
 
 // Create the prompt template
 const promptTemplate = new PromptTemplate({
-    template: `Process and store the following resume data for future analysis:
+  template: `Process and store the following resume data for future analysis:
 
 Resume Content: {resume_context}
 
 Current Request: {input}
 
 Store this information in a structured format for later use.`,
-    inputVariables: ['resume_context', 'input'],
+  inputVariables: ['resume_context', 'input'],
 });
 
 const model = new ChatOpenAI({
-    temperature: 0,
-    modelName: 'gpt-4',
-    openAIApiKey: process.env.OPENAI_API_KEY,
+  temperature: 0,
+  modelName: 'gpt-4.1',
+  openAIApiKey: process.env.OPENAI_API_KEY,
 });
 
 const outputParser = new StringOutputParser();
 
 export async function POST(req: NextRequest) {
-    try {
-        if (!process.env.OPENAI_API_KEY) {
-            return NextResponse.json(
-                { error: 'OpenAI API key not configured' },
-                { status: 500 }
-            );
-        }
-
-        // Get the file from the request
-        const formData = await req.formData();
-        const file = formData.get('file') as File;
-
-        if (!file) {
-            return NextResponse.json({ error: 'No file provided' }, { status: 400 });
-        }
-
-        // Convert File to Buffer
-        const buffer = Buffer.from(await file.arrayBuffer());
-
-        // Create a temporary file path
-        const tempFilePath = join(tmpdir(), `resume-${Date.now()}.pdf`);
-        await writeFile(tempFilePath, buffer);
-
-        try {
-            // Load and parse PDF
-            const loader = new PDFLoader(tempFilePath);
-            const docs = await loader.load();
-            const text = docs
-                .map((doc: { pageContent: string }) => doc.pageContent)
-                .join('\n');
-
-            // Create the chain
-            const chain = RunnableSequence.from([
-                promptTemplate,
-                model,
-                outputParser,
-            ]);
-
-            // Run the chain
-            const rawResult = await chain.invoke({
-                resume_context: text,
-                input: "Store Resume Data"
-            });
-
-            // Store the raw text in memory for future use
-            await memory.saveContext(
-                { input: "Store Resume Data" },
-                { output: text }
-            );
-
-            // Only for testing purposes, i will only log this and not store in local storage
-            // Parse the raw text into structured data using the ResumeSchema
-            const structuredData = {
-                education: [], // Will be populated from text
-                skills: [], // Will be populated from text
-                personal_projects: [], // Will be populated from text
-                workex: [], // Will be populated from text
-                linkedin: null,
-                per_web: null
-            };
-
-            return NextResponse.json({ 
-                response: {
-                    rawText: text,
-                    structuredData: structuredData,
-                    timestamp: new Date().toISOString(),
-                    status: "success"
-                }
-            });
-        } finally {
-            // Clean up temp file
-            await unlink(tempFilePath);
-        }
-    } catch (error: any) {
-        console.error('Error processing resume:', error);
-        return NextResponse.json(
-            {
-                error: 'Error processing resume',
-                details: error.message || 'Unknown error',
-            },
-            { status: 500 }
-        );
+  try {
+    if (!process.env.OPENAI_API_KEY) {
+      return NextResponse.json(
+        { error: 'OpenAI API key not configured' },
+        { status: 500 }
+      );
     }
+
+    // Get the file from the request
+    const formData = await req.formData();
+    const file = formData.get('file') as File;
+
+    if (!file) {
+      return NextResponse.json({ error: 'No file provided' }, { status: 400 });
+    }
+
+    // Convert File to Buffer
+    const buffer = Buffer.from(await file.arrayBuffer());
+
+    // Create a temporary file path
+    const tempFilePath = join(tmpdir(), `resume-${Date.now()}.pdf`);
+    await writeFile(tempFilePath, buffer);
+
+    try {
+      // Load and parse PDF
+      const loader = new PDFLoader(tempFilePath);
+      const docs = await loader.load();
+      const text = docs
+        .map((doc: { pageContent: string }) => doc.pageContent)
+        .join('\n');
+
+      // Create the chain
+      const chain = RunnableSequence.from([
+        promptTemplate,
+        model,
+        outputParser,
+      ]);
+
+      // Run the chain
+      const rawResult = await chain.invoke({
+        resume_context: text,
+        input: 'Store Resume Data',
+      });
+
+      // Store the raw text in memory for future use
+      await memory.saveContext(
+        { input: 'Store Resume Data' },
+        { output: text }
+      );
+
+      // Only for testing purposes, i will only log this and not store in local storage
+      // Parse the raw text into structured data using the ResumeSchema
+      const structuredData = {
+        education: [], // Will be populated from text
+        skills: [], // Will be populated from text
+        personal_projects: [], // Will be populated from text
+        workex: [], // Will be populated from text
+        linkedin: null,
+        per_web: null,
+      };
+
+      return NextResponse.json({
+        response: {
+          rawText: text,
+          structuredData: structuredData,
+          timestamp: new Date().toISOString(),
+          status: 'success',
+        },
+      });
+    } finally {
+      // Clean up temp file
+      await unlink(tempFilePath);
+    }
+  } catch (error: any) {
+    console.error('Error processing resume:', error);
+    return NextResponse.json(
+      {
+        error: 'Error processing resume',
+        details: error.message || 'Unknown error',
+      },
+      { status: 500 }
+    );
+  }
 }

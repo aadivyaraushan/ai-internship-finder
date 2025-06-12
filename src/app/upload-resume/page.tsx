@@ -5,7 +5,6 @@ import { useDropzone } from 'react-dropzone';
 import { useRouter } from 'next/navigation';
 import { checkAuth } from '@/lib/firebase';
 import { useEffect } from 'react';
-import Cookies from 'js-cookie';
 
 export default function UploadResume() {
   const [file, setFile] = useState<File | null>(null);
@@ -40,7 +39,7 @@ export default function UploadResume() {
     // TODO: Implement submission logic
     console.log('File:', file);
     console.log('Goals:', goals);
-    
+
     if (!file) {
       setError('Please upload a resume file');
       return;
