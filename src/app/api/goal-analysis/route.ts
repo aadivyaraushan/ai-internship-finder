@@ -20,7 +20,8 @@ Resume Context: {resume_context}
 
 Current Request: {input}
 
-Analyze the resume and the user's request to identify potential career goals and opportunities.
+Read between the lines and analyze 5 actual potential career goals and opportunities that the person wants out of this
+
 Focus on identifying specific, actionable goals that align with their experience and skills.
 
 IMPORTANT: You must return a valid JSON object with the exact structure shown below. Do not add any additional text before or after the JSON.
