@@ -18,11 +18,15 @@ export default function StatusUpdate({
   const [completedSteps, setCompletedSteps] = useState<Set<string>>(new Set());
 
   useEffect(() => {
-    steps.forEach((step) => {
-      if (step.status === 'completed') {
-        setCompletedSteps((prev) => new Set([...prev, step.id]));
-      }
-    });
+    // Find the highest index where status is completed
+    const lastCompletedIdx = steps.reduce((acc, step, idx) => {
+      return step.status === 'completed' ? idx : acc;
+    }, -1);
+    // Mark all steps up to and including lastCompletedIdx as completed
+    if (lastCompletedIdx >= 0) {
+      const completedIds = new Set(steps.slice(0, lastCompletedIdx + 1).map((step) => step.id));
+      setCompletedSteps(completedIds);
+    }
   }, [steps]);
 
   return (
@@ -31,7 +35,7 @@ export default function StatusUpdate({
       <div className='space-y-2'>
         {steps.map((step) => (
           <div key={step.id} className='flex items-center gap-2'>
-            {completedSteps.has(step.id) || step.status === 'completed' ? (
+            {completedSteps.has(step.id) ? (
               <svg
                 className='w-4 h-4 text-green-500 flex-shrink-0'
                 fill='none'
@@ -87,7 +91,7 @@ export default function StatusUpdate({
             )}
             <span
               className={`${
-                completedSteps.has(step.id) || step.status === 'completed'
+                completedSteps.has(step.id)
                   ? 'text-green-400'
                   : step.status === 'in_progress'
                   ? 'text-blue-400'
