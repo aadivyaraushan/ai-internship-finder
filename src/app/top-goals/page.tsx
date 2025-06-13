@@ -240,7 +240,13 @@ export default function TopGoals() {
 
   const handleSubmit = () => {
     const selectedGoals = apiGoals.filter((goal) => goal.selected);
-    console.log('apiGoals:', selectedGoals);
+    if (selectedGoals.length === 0) {
+      setError('Please select at least one goal');
+      return;
+    }
+    router.push(
+      `/top-roles?goals=${encodeURIComponent(JSON.stringify(selectedGoals))}`
+    );
   };
 
   return (
