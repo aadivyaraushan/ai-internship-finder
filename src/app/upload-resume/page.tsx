@@ -3,7 +3,11 @@
 import { useState } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { useRouter } from 'next/navigation';
-import { checkAuth } from '@/lib/firebase';
+import { checkAuth, auth } from '@/lib/firebase';
+import {
+  createOrUpdateResume,
+  createOrUpdateUser,
+} from '@/lib/firestoreHelpers';
 import { useEffect } from 'react';
 import StatusUpdate, { ProcessingStep } from '@/components/StatusUpdate';
 
@@ -61,6 +65,12 @@ export default function UploadResume() {
       return;
     }
 
+    if (!auth.currentUser) {
+      setError('Please sign in to continue');
+      router.push('/signup');
+      return;
+    }
+
     setLoading(true);
     setError('');
     setCurrentStatus('Starting resume analysis...');
@@ -90,7 +100,7 @@ export default function UploadResume() {
         throw new Error(error.error || 'Failed to analyze resume');
       }
       updateStep('upload', 'completed');
-      await new Promise((resolve) => setTimeout(resolve, 800)); // Small delay between steps
+      await new Promise((resolve) => setTimeout(resolve, 800));
 
       // Parse and analyze
       updateStep('parse', 'in_progress');
@@ -124,6 +134,20 @@ export default function UploadResume() {
           // Start storing results
           updateStep('store', 'in_progress');
           setCurrentStatus('Processing analysis results...');
+
+          // Store resume data in Firestore
+          const resumeId = `${auth.currentUser.uid}_${Date.now()}`;
+          await createOrUpdateResume(resumeId, {
+            ...data.response.resumeData,
+            userId: auth.currentUser.uid,
+            uploadedAt: new Date().toISOString(),
+          });
+
+          // Update user with resume reference
+          await createOrUpdateUser(auth.currentUser.uid, {
+            resume_id: resumeId,
+            goals: goals.trim(),
+          });
         }
 
         // Data storage step

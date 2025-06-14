@@ -2,7 +2,8 @@
 
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useState, useRef } from 'react';
-import { checkAuth } from '@/lib/firebase';
+import { checkAuth, auth } from '@/lib/firebase';
+import { updateUserRoles } from '@/lib/firestoreHelpers';
 import StatusUpdate, { ProcessingStep } from '@/components/StatusUpdate';
 
 interface Role {
@@ -266,7 +267,20 @@ export default function TopRoles() {
           </button>
           <button
             className='px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors'
-            onClick={() => console.log('Submit', roles)}
+            onClick={async () => {
+              if (!auth.currentUser) {
+                setError('Please sign in to continue');
+                router.push('/signup');
+                return;
+              }
+
+              try {
+                await updateUserRoles(auth.currentUser.uid, roles);
+                router.push('/top-connections');
+              } catch (err: any) {
+                setError(err.message || 'Failed to save roles');
+              }
+            }}
           >
             Submit
           </button>

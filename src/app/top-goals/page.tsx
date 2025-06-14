@@ -2,7 +2,8 @@
 
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { checkAuth } from '@/lib/firebase';
+import { checkAuth, auth } from '@/lib/firebase';
+import { updateUserGoals } from '@/lib/firestoreHelpers';
 import StatusUpdate, { ProcessingStep } from '@/components/StatusUpdate';
 
 interface Goal {
@@ -238,15 +239,30 @@ export default function TopGoals() {
     );
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     const selectedGoals = apiGoals.filter((goal) => goal.selected);
     if (selectedGoals.length === 0) {
       setError('Please select at least one goal');
       return;
     }
-    router.push(
-      `/top-roles?goals=${encodeURIComponent(JSON.stringify(selectedGoals))}`
-    );
+
+    if (!auth.currentUser) {
+      setError('Please sign in to continue');
+      router.push('/signup');
+      return;
+    }
+
+    try {
+      // Store selected goals in Firestore
+      await updateUserGoals(auth.currentUser.uid, selectedGoals);
+
+      // Navigate to next page
+      router.push(
+        `/top-roles?goals=${encodeURIComponent(JSON.stringify(selectedGoals))}`
+      );
+    } catch (err: any) {
+      setError(err.message || 'Failed to save goals');
+    }
   };
 
   return (
