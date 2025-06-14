@@ -38,8 +38,70 @@ export default function Dashboard() {
   const [userData, setUserData] = useState<any>(null);
   const [expandedRoles, setExpandedRoles] = useState<boolean[]>([]);
   const [error, setError] = useState('');
-  const [reachedOutConnections, setReachedOutConnections] = useState<Connection[]>([]);
-  const [suggestedConnections, setSuggestedConnections] = useState<Connection[]>([]);
+  const [reachedOutConnections, setReachedOutConnections] = useState<Connection[]>([
+    {
+      id: 1,
+      name: 'Udit Pai',
+      imageUrl: '/placeholder-profile.jpg',
+      matchPercentage: 90,
+      matchReason:
+        "We think this person is a great match because they're from UIUC and are members of the IEEE-Eta Kappa Nu (IEEE-HKN) honor society",
+      status: 'Awaiting response',
+    },
+    {
+      id: 2,
+      name: 'Udit Pai',
+      imageUrl: '/placeholder-profile.jpg',
+      matchPercentage: 90,
+      matchReason:
+        "We think this person is a great match because they're from UIUC and are members of the IEEE-Eta Kappa Nu (IEEE-HKN) honor society",
+      status: 'Responded',
+    },
+    {
+      id: 3,
+      name: 'Udit Pai',
+      imageUrl: '/placeholder-profile.jpg',
+      matchPercentage: 90,
+      matchReason:
+        "We think this person is a great match because they're from UIUC and are members of the IEEE-Eta Kappa Nu (IEEE-HKN) honor society",
+      status: 'Awaiting response',
+    },
+  ]);
+
+  const [suggestedConnections, setSuggestedConnections] = useState<Connection[]>([
+    {
+      id: 4,
+      name: 'Udit Pai',
+      imageUrl: '/placeholder-profile.jpg',
+      matchPercentage: 90,
+      matchReason:
+        "We think this person is a great match because they're from UIUC and are members of the IEEE-Eta Kappa Nu (IEEE-HKN) honor society",
+    },
+    {
+      id: 5,
+      name: 'Udit Pai',
+      imageUrl: '/placeholder-profile.jpg',
+      matchPercentage: 90,
+      matchReason:
+        "We think this person is a great match because they're from UIUC and are members of the IEEE-Eta Kappa Nu (IEEE-HKN) honor society",
+    },
+    {
+      id: 6,
+      name: 'Udit Pai',
+      imageUrl: '/placeholder-profile.jpg',
+      matchPercentage: 90,
+      matchReason:
+        "We think this person is a great match because they're from UIUC and are members of the IEEE-Eta Kappa Nu (IEEE-HKN) honor society",
+    },
+    {
+      id: 7,
+      name: 'Udit Pai',
+      imageUrl: '/placeholder-profile.jpg',
+      matchPercentage: 90,
+      matchReason:
+        "We think this person is a great match because they're from UIUC and are members of the IEEE-Eta Kappa Nu (IEEE-HKN) honor society",
+    },
+  ]);
   const router = useRouter();
 
   // Listen for Firebase Auth state changes
