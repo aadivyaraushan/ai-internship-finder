@@ -22,35 +22,6 @@ interface Role {
   bulletPoints: string[];
 }
 
-interface Goal {
-  title: string;
-  description?: string;
-}
-
-function getRandomColor(name: string): string {
-  const colors = [
-    'bg-blue-500',
-    'bg-green-500',
-    'bg-yellow-500',
-    'bg-purple-500',
-    'bg-pink-500',
-    'bg-indigo-500',
-  ];
-  const index = name
-    .split('')
-    .reduce((acc, char) => acc + char.charCodeAt(0), 0);
-  return colors[index % colors.length];
-}
-
-function getInitials(name: string): string {
-  return name
-    .split(' ')
-    .map((part) => part[0])
-    .join('')
-    .toUpperCase()
-    .slice(0, 2);
-}
-
 export default function Dashboard() {
   const [file, setFile] = useState<File | null>(null);
   const [goals, setGoals] = useState<string | Goal[]>('');
