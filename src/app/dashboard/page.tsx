@@ -5,6 +5,7 @@ import Image from 'next/image';
 import { useDropzone } from 'react-dropzone';
 import { auth, db, getCurrentUser } from '@/lib/firebase';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { onAuthStateChanged, User } from 'firebase/auth';
 
 interface Connection {
   id: number;
@@ -20,26 +21,42 @@ interface Role {
   bulletPoints: string[];
 }
 
+interface Goal {
+  title: string;
+  description?: string;
+}
+
 export default function Dashboard() {
   const [file, setFile] = useState<File | null>(null);
-  const [goals, setGoals] = useState('');
+  const [goals, setGoals] = useState<string | Goal[]>('');
   const [selectedView, setSelectedView] = useState<'roles' | 'goals' | 'people'>('roles');
   const [roles, setRoles] = useState<Role[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [userData, setUserData] = useState<any>(null);
+  const [expandedRoles, setExpandedRoles] = useState<boolean[]>([]);
 
+  // Listen for Firebase Auth state changes
   useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      setCurrentUser(user);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Fetch user data when currentUser is available
+  useEffect(() => {
+    if (!currentUser) return;
     const fetchUserData = async () => {
       console.log('fetchUserData called');
-      const user = getCurrentUser();
-      console.log('Current user:', user);
-      if (!user) return;
-
+      console.log('Current user:', currentUser);
       setLoading(true);
       try {
-        const userDoc = await getDoc(doc(db, 'users', user.uid));
+        const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
         if (userDoc.exists()) {
           const userData = userDoc.data();
+          setUserData(userData);
           console.log('Fetched userData from Firestore:', userData);
           // Handle goals: can be a string or array of objects
           if (userData.goals) {
@@ -47,8 +64,7 @@ export default function Dashboard() {
               setGoals(userData.goals);
               console.log('Set goals (string):', userData.goals);
             } else if (Array.isArray(userData.goals)) {
-              // If goals is an array, join titles for textarea
-              setGoals(userData.goals.map((g: any) => g.title || '').join('\n'));
+              setGoals(userData.goals);
               console.log('Set goals (array):', userData.goals);
             } else {
               setGoals('');
@@ -68,7 +84,7 @@ export default function Dashboard() {
             console.log('Set roles: []');
           }
         } else {
-          console.log('No userDoc found for user:', user.uid);
+          console.log('No userDoc found for user:', currentUser.uid);
         }
       } catch (error) {
         console.error('Error fetching user data:', error);
@@ -76,9 +92,13 @@ export default function Dashboard() {
         setLoading(false);
       }
     };
-
     fetchUserData();
-  }, []);
+  }, [currentUser]);
+
+  // When roles are loaded, initialize expandedRoles state
+  useEffect(() => {
+    setExpandedRoles(Array(roles.length).fill(false));
+  }, [roles.length]);
 
   const saveGoals = async () => {
     const user = getCurrentUser();
@@ -158,23 +178,61 @@ export default function Dashboard() {
 
             {/* Content Sections */}
             {selectedView === 'roles' && (
-              <div className='space-y-4'>
+              <div>
                 {loading ? (
                   <div className='text-gray-400 text-center'>Loading roles...</div>
                 ) : (
-                  roles.map((role, index) => (
-                    <div key={index} className='bg-[#2a2a2a] p-4 rounded-lg'>
-                      <h3 className='text-white font-medium mb-2'>{role.title}</h3>
-                      <ul className='space-y-1'>
-                        {role.bulletPoints.map((point, i) => (
-                          <li key={i} className='text-gray-400 text-sm flex items-start'>
-                            <span className='mr-2'>•</span>
-                            <span>{point}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  ))
+                  <div className='grid grid-cols-1 md:grid-cols-2 gap-4'>
+                    {roles.map((role, index) => {
+                      const expanded = expandedRoles[index];
+                      const handleToggle = () => {
+                        setExpandedRoles((prev) => {
+                          const newExpanded = [...prev];
+                          newExpanded[index] = !expanded;
+                          return newExpanded;
+                        });
+                      };
+                      // If expanded, span both columns
+                      const colSpanClass = expanded ? 'md:col-span-2' : '';
+                      return (
+                        <div
+                          key={index}
+                          className={`bg-[#2a2a2a] rounded-lg overflow-hidden ${colSpanClass} transition-all duration-300 ${expanded ? 'shadow-lg bg-blue-500/30 border border-blue-500' : ''}`}
+                          style={{
+                            transition: 'box-shadow 0.3s, background 0.3s',
+                          }}
+                        >
+                          <button
+                            className='w-full text-left px-4 py-3 focus:outline-none flex items-center justify-between'
+                            onClick={handleToggle}
+                          >
+                            <span className='text-white font-medium'>{role.title}</span>
+                            <svg
+                              className={`w-5 h-5 ml-2 transition-transform ${expanded ? 'rotate-180' : ''}`}
+                              fill='none'
+                              stroke='currentColor'
+                              viewBox='0 0 24 24'
+                            >
+                              <path strokeLinecap='round' strokeLinejoin='round' strokeWidth={2} d='M19 9l-7 7-7-7' />
+                            </svg>
+                          </button>
+                          <div
+                            className={`transition-all duration-300 ease-in-out ${expanded ? 'max-h-96 opacity-100 py-4 px-4' : 'max-h-0 opacity-0 py-0 px-4'}`}
+                            style={{ overflow: 'hidden' }}
+                          >
+                            <ul className='space-y-1'>
+                              {role.bulletPoints.map((point, i) => (
+                                <li key={i} className='text-gray-400 text-sm flex items-start'>
+                                  <span className='mr-2'>•</span>
+                                  <span>{point}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
                 )}
               </div>
             )}
@@ -183,19 +241,22 @@ export default function Dashboard() {
               <div className='space-y-4'>
                 <div className='bg-[#2a2a2a] p-4 rounded-lg'>
                   <h3 className='text-white font-medium mb-2'>Your Goals</h3>
-                  <textarea
-                    value={goals}
-                    onChange={(e) => setGoals(e.target.value)}
-                    placeholder='For example: if you wish to pivot into tech, or if you want to find an internship. Any information helps.'
-                    className='w-full h-24 px-3 py-2 text-gray-300 bg-[#1a1a1a] rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none'
-                  />
-                  <button
-                    onClick={saveGoals}
-                    disabled={saving}
-                    className='mt-4 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed'
-                  >
-                    {saving ? 'Saving...' : 'Save Goals'}
-                  </button>
+                  {Array.isArray(goals) ? (
+                    <div className='space-y-3'>
+                      {goals.map((goal, i) => (
+                        <div key={i} className='bg-[#1a1a1a] p-3 rounded-lg'>
+                          <h4 className='text-white font-semibold'>{goal.title}</h4>
+                          {goal.description && (
+                            <p className='text-gray-400 text-sm'>{goal.description}</p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className='bg-[#1a1a1a] p-3 rounded-lg text-gray-300'>
+                      {goals || 'No goals set yet.'}
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -253,16 +314,48 @@ export default function Dashboard() {
             <div className='space-y-4'>
               <div className='bg-[#2a2a2a] p-4 rounded-lg'>
                 <h3 className='text-white text-sm font-medium mb-2'>Current Status</h3>
-                <p className='text-gray-400 text-sm'>
-                  {file ? 'Resume uploaded' : 'No resume uploaded'}
-                </p>
+                <ul className='text-gray-400 text-sm space-y-2'>
+                  <li className='flex items-center'>
+                    {userData && userData.resume_id ? (
+                      <span className='text-green-400 mr-2'>✔</span>
+                    ) : (
+                      <span className='text-gray-500 mr-2'>○</span>
+                    )}
+                    Resume uploaded
+                  </li>
+                  <li className='flex items-center'>
+                    {userData && ((Array.isArray(userData.goals) && userData.goals.length > 0) || (typeof userData.goals === 'string' && userData.goals.trim() !== '')) ? (
+                      <span className='text-green-400 mr-2'>✔</span>
+                    ) : (
+                      <span className='text-gray-500 mr-2'>○</span>
+                    )}
+                    Goals set
+                  </li>
+                  <li className='flex items-center'>
+                    {userData && Array.isArray(userData.roles) && userData.roles.length > 0 ? (
+                      <span className='text-green-400 mr-2'>✔</span>
+                    ) : (
+                      <span className='text-gray-500 mr-2'>○</span>
+                    )}
+                    Roles explored
+                  </li>
+                </ul>
               </div>
               <div className='bg-[#2a2a2a] p-4 rounded-lg'>
                 <h3 className='text-white text-sm font-medium mb-2'>Next Steps</h3>
                 <ul className='text-gray-400 text-sm space-y-2'>
-                  <li>• Upload your resume</li>
-                  <li>• Set your career goals</li>
-                  <li>• Explore suggested roles</li>
+                  {userData && !userData.resume_id && (
+                    <li>• Upload your resume</li>
+                  )}
+                  {userData && !((Array.isArray(userData.goals) && userData.goals.length > 0) || (typeof userData.goals === 'string' && userData.goals.trim() !== '')) && (
+                    <li>• Set your career goals</li>
+                  )}
+                  {userData && !(Array.isArray(userData.roles) && userData.roles.length > 0) && (
+                    <li>• Explore suggested roles</li>
+                  )}
+                  {userData && userData.resume_id && ((Array.isArray(userData.goals) && userData.goals.length > 0) || (typeof userData.goals === 'string' && userData.goals.trim() !== '')) && (Array.isArray(userData.roles) && userData.roles.length > 0) && (
+                    <li className='text-green-400'>All steps complete! 🎉</li>
+                  )}
                 </ul>
               </div>
             </div>
