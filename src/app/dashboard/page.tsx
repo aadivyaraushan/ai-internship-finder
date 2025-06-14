@@ -3,13 +3,8 @@
 import { useState, useEffect } from 'react';
 import Image from 'next/image';
 import { useDropzone } from 'react-dropzone';
-import { useRouter } from 'next/navigation';
-import { checkAuth, auth } from '@/lib/firebase';
-import {
-  getUser,
-  createOrUpdateUser,
-  createOrUpdateResume,
-} from '@/lib/firestoreHelpers';
+import { auth, db, getCurrentUser } from '@/lib/firebase';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
 
 interface Connection {
   id: number;
@@ -26,105 +21,80 @@ interface Role {
 }
 
 export default function Dashboard() {
-  const router = useRouter();
   const [file, setFile] = useState<File | null>(null);
   const [goals, setGoals] = useState('');
-  const [userData, setUserData] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [reachedOutConnections, setReachedOutConnections] = useState<
-    Connection[]
-  >([]);
-  const [suggestedConnections, setSuggestedConnections] = useState<
-    Connection[]
-  >([]);
+  const [selectedView, setSelectedView] = useState<'roles' | 'goals' | 'people'>('roles');
+  const [roles, setRoles] = useState<Role[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    if (!checkAuth()) {
-      router.push('/signup');
-      return;
-    }
-
     const fetchUserData = async () => {
+      console.log('fetchUserData called');
+      const user = getCurrentUser();
+      console.log('Current user:', user);
+      if (!user) return;
+
+      setLoading(true);
       try {
-        const data = await getUser(auth.currentUser!.uid);
-        if (data) {
-          setUserData(data);
-          setGoals(data.goals || '');
-          // In production, these would be fetched from an API
-          setReachedOutConnections([
-            {
-              id: 1,
-              name: 'Udit Pai',
-              imageUrl: '/placeholder-profile.jpg',
-              matchPercentage: 90,
-              matchReason:
-                "We think this person is a great match because they're from UIUC and are members of the IEEE-Eta Kappa Nu (IEEE-HKN) honor society",
-              status: 'Awaiting response',
-            },
-            {
-              id: 2,
-              name: 'Udit Pai',
-              imageUrl: '/placeholder-profile.jpg',
-              matchPercentage: 90,
-              matchReason:
-                "We think this person is a great match because they're from UIUC and are members of the IEEE-Eta Kappa Nu (IEEE-HKN) honor society",
-              status: 'Responded',
-            },
-            {
-              id: 3,
-              name: 'Udit Pai',
-              imageUrl: '/placeholder-profile.jpg',
-              matchPercentage: 90,
-              matchReason:
-                "We think this person is a great match because they're from UIUC and are members of the IEEE-Eta Kappa Nu (IEEE-HKN) honor society",
-              status: 'Awaiting response',
-            },
-          ]);
-          setSuggestedConnections([
-            {
-              id: 4,
-              name: 'Udit Pai',
-              imageUrl: '/placeholder-profile.jpg',
-              matchPercentage: 90,
-              matchReason:
-                "We think this person is a great match because they're from UIUC and are members of the IEEE-Eta Kappa Nu (IEEE-HKN) honor society",
-            },
-            {
-              id: 5,
-              name: 'Udit Pai',
-              imageUrl: '/placeholder-profile.jpg',
-              matchPercentage: 90,
-              matchReason:
-                "We think this person is a great match because they're from UIUC and are members of the IEEE-Eta Kappa Nu (IEEE-HKN) honor society",
-            },
-            {
-              id: 6,
-              name: 'Udit Pai',
-              imageUrl: '/placeholder-profile.jpg',
-              matchPercentage: 90,
-              matchReason:
-                "We think this person is a great match because they're from UIUC and are members of the IEEE-Eta Kappa Nu (IEEE-HKN) honor society",
-            },
-            {
-              id: 7,
-              name: 'Udit Pai',
-              imageUrl: '/placeholder-profile.jpg',
-              matchPercentage: 90,
-              matchReason:
-                "We think this person is a great match because they're from UIUC and are members of the IEEE-Eta Kappa Nu (IEEE-HKN) honor society",
-            },
-          ]);
+        const userDoc = await getDoc(doc(db, 'users', user.uid));
+        if (userDoc.exists()) {
+          const userData = userDoc.data();
+          console.log('Fetched userData from Firestore:', userData);
+          // Handle goals: can be a string or array of objects
+          if (userData.goals) {
+            if (typeof userData.goals === 'string') {
+              setGoals(userData.goals);
+              console.log('Set goals (string):', userData.goals);
+            } else if (Array.isArray(userData.goals)) {
+              // If goals is an array, join titles for textarea
+              setGoals(userData.goals.map((g: any) => g.title || '').join('\n'));
+              console.log('Set goals (array):', userData.goals);
+            } else {
+              setGoals('');
+              console.log('Set goals (unknown type):', userData.goals);
+            }
+          }
+          // Handle roles: should be an array of Role objects
+          if (userData.roles && Array.isArray(userData.roles)) {
+            const parsedRoles = userData.roles.map((role: any) => ({
+              title: role.title || '',
+              bulletPoints: Array.isArray(role.bulletPoints) ? role.bulletPoints : [],
+            }));
+            setRoles(parsedRoles);
+            console.log('Set roles:', parsedRoles);
+          } else {
+            setRoles([]);
+            console.log('Set roles: []');
+          }
+        } else {
+          console.log('No userDoc found for user:', user.uid);
         }
-      } catch (err: any) {
-        setError(err.message || 'Failed to load user data');
+      } catch (error) {
+        console.error('Error fetching user data:', error);
       } finally {
         setLoading(false);
       }
     };
 
     fetchUserData();
-  }, [router]);
+  }, []);
+
+  const saveGoals = async () => {
+    const user = getCurrentUser();
+    if (!user) return;
+
+    setSaving(true);
+    try {
+      await setDoc(doc(db, 'users', user.uid), {
+        goals: goals
+      }, { merge: true });
+    } catch (error) {
+      console.error('Error saving goals:', error);
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     accept: {
@@ -134,174 +104,112 @@ export default function Dashboard() {
         ['.docx'],
     },
     maxSize: 5 * 1024 * 1024, // 5MB
-    onDrop: async (acceptedFiles) => {
-      if (!auth.currentUser) {
-        setError('Please sign in to continue');
-        router.push('/signup');
-        return;
-      }
-
-      try {
-        setFile(acceptedFiles[0]);
-        const formData = new FormData();
-        formData.append('file', acceptedFiles[0]);
-
-        const response = await fetch('/api/resume-analysis', {
-          method: 'POST',
-          body: formData,
-        });
-
-        if (!response.ok) {
-          throw new Error('Failed to analyze resume');
-        }
-
-        const data = await response.json();
-        const resumeId = `${auth.currentUser.uid}_${Date.now()}`;
-
-        await createOrUpdateResume(resumeId, {
-          ...data.response.resumeData,
-          userId: auth.currentUser.uid,
-          uploadedAt: new Date().toISOString(),
-        });
-
-        await createOrUpdateUser(auth.currentUser.uid, {
-          resume_id: resumeId,
-        });
-
-        setError('');
-      } catch (err: any) {
-        setError(err.message || 'Failed to process resume');
-      }
+    onDrop: (acceptedFiles) => {
+      setFile(acceptedFiles[0]);
     },
   });
 
-  const handleGoalsUpdate = async () => {
-    if (!auth.currentUser) {
-      setError('Please sign in to continue');
-      router.push('/signup');
-      return;
-    }
-
-    try {
-      await createOrUpdateUser(auth.currentUser.uid, {
-        goals: goals.trim(),
-      });
-      setError('');
-    } catch (err: any) {
-      setError(err.message || 'Failed to update goals');
-    }
-  };
-
-  if (loading) {
-    return (
-      <div className='min-h-screen flex items-center justify-center bg-[#0a0a0a]'>
-        <div className='text-white'>Loading dashboard...</div>
-      </div>
-    );
-  }
-
   return (
-    <div className='min-h-screen flex items-center justify-center bg-[#0a0a0a] p-4'>
-      <div className='bg-[#1a1a1a] p-8 rounded-2xl w-full max-w-4xl'>
-        <h1 className='text-2xl font-semibold text-white mb-6'>Dashboard</h1>
+    <div className='min-h-screen bg-[#0a0a0a] p-4'>
+      {/* Logo */}
+      <div className='mb-8'>
+        <div className='bg-[#2a2a2a] inline-block p-4 rounded-xl'>
+          <h1 className='text-white text-2xl font-mono'>Refr ☕️</h1>
+        </div>
+      </div>
 
-        {error && (
-          <div className='mb-4 p-3 bg-red-500/10 border border-red-500 rounded-lg text-red-500 text-sm'>
-            {error}
-          </div>
-        )}
-
-        <div className='space-y-6'>
-          {/* Connections Section */}
-          <div>
-            <h2 className='text-xl font-medium text-white mb-4'>
-              Your Connections
-            </h2>
-            <div className='space-y-4'>
-              {/* Reached Out Section */}
-              <div>
-                <h3 className='text-white font-medium mb-2'>Reached Out</h3>
-                <div className='grid grid-cols-1 md:grid-cols-2 gap-3'>
-                  {reachedOutConnections.map((connection) => (
-                    <div
-                      key={connection.id}
-                      className='bg-[#2a2a2a] p-4 rounded-lg flex items-start gap-4'
-                    >
-                      <div className='relative'>
-                        <div className='w-12 h-12 rounded-full overflow-hidden bg-gray-700'>
-                          <Image
-                            src={connection.imageUrl}
-                            alt={connection.name}
-                            width={48}
-                            height={48}
-                            className='object-cover'
-                          />
-                        </div>
-                      </div>
-                      <div className='flex-1'>
-                        <div className='flex items-center justify-between mb-1'>
-                          <h4 className='text-white font-medium'>
-                            {connection.name}
-                          </h4>
-                          <span
-                            className={`text-sm ${
-                              connection.status === 'Responded'
-                                ? 'text-green-500'
-                                : 'text-yellow-500'
-                            }`}
-                          >
-                            {connection.status}
-                          </span>
-                        </div>
-                        <p className='text-gray-400 text-sm'>
-                          {connection.matchReason}
-                        </p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Suggested Connections */}
-              <div>
-                <h3 className='text-white font-medium mb-2'>
-                  Suggested Connections
-                </h3>
-                <div className='grid grid-cols-1 md:grid-cols-2 gap-3'>
-                  {suggestedConnections.map((connection) => (
-                    <div
-                      key={connection.id}
-                      className='bg-[#2a2a2a] p-4 rounded-lg flex items-start gap-4'
-                    >
-                      <div className='relative'>
-                        <div className='w-12 h-12 rounded-full overflow-hidden bg-gray-700'>
-                          <Image
-                            src={connection.imageUrl}
-                            alt={connection.name}
-                            width={48}
-                            height={48}
-                            className='object-cover'
-                          />
-                        </div>
-                      </div>
-                      <div className='flex-1'>
-                        <div className='flex items-center justify-between mb-1'>
-                          <h4 className='text-white font-medium'>
-                            {connection.name}
-                          </h4>
-                          <span className='text-blue-500'>
-                            {connection.matchPercentage}% Match
-                          </span>
-                        </div>
-                        <p className='text-gray-400 text-sm'>
-                          {connection.matchReason}
-                        </p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
+      <div className='flex gap-6'>
+        {/* Main Content */}
+        <div className='flex-1'>
+          <div className='bg-[#1a1a1a] p-6 rounded-2xl mb-6'>
+            {/* View Selector */}
+            <div className='flex gap-4 mb-6'>
+              <button
+                onClick={() => setSelectedView('roles')}
+                className={`px-4 py-2 rounded-lg transition-colors ${
+                  selectedView === 'roles'
+                    ? 'bg-blue-500 text-white'
+                    : 'bg-[#2a2a2a] text-gray-300 hover:bg-[#3a3a3a]'
+                }`}
+              >
+                Roles
+              </button>
+              <button
+                onClick={() => setSelectedView('goals')}
+                className={`px-4 py-2 rounded-lg transition-colors ${
+                  selectedView === 'goals'
+                    ? 'bg-blue-500 text-white'
+                    : 'bg-[#2a2a2a] text-gray-300 hover:bg-[#3a3a3a]'
+                }`}
+              >
+                Goals
+              </button>
+              <button
+                onClick={() => setSelectedView('people')}
+                className={`px-4 py-2 rounded-lg transition-colors ${
+                  selectedView === 'people'
+                    ? 'bg-blue-500 text-white'
+                    : 'bg-[#2a2a2a] text-gray-300 hover:bg-[#3a3a3a]'
+                }`}
+              >
+                People
+              </button>
             </div>
+
+            {/* Content Sections */}
+            {selectedView === 'roles' && (
+              <div className='space-y-4'>
+                {loading ? (
+                  <div className='text-gray-400 text-center'>Loading roles...</div>
+                ) : (
+                  roles.map((role, index) => (
+                    <div key={index} className='bg-[#2a2a2a] p-4 rounded-lg'>
+                      <h3 className='text-white font-medium mb-2'>{role.title}</h3>
+                      <ul className='space-y-1'>
+                        {role.bulletPoints.map((point, i) => (
+                          <li key={i} className='text-gray-400 text-sm flex items-start'>
+                            <span className='mr-2'>•</span>
+                            <span>{point}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
+
+            {selectedView === 'goals' && (
+              <div className='space-y-4'>
+                <div className='bg-[#2a2a2a] p-4 rounded-lg'>
+                  <h3 className='text-white font-medium mb-2'>Your Goals</h3>
+                  <textarea
+                    value={goals}
+                    onChange={(e) => setGoals(e.target.value)}
+                    placeholder='For example: if you wish to pivot into tech, or if you want to find an internship. Any information helps.'
+                    className='w-full h-24 px-3 py-2 text-gray-300 bg-[#1a1a1a] rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none'
+                  />
+                  <button
+                    onClick={saveGoals}
+                    disabled={saving}
+                    className='mt-4 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed'
+                  >
+                    {saving ? 'Saving...' : 'Save Goals'}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {selectedView === 'people' && (
+              <div className='space-y-4'>
+                <div className='bg-[#2a2a2a] p-4 rounded-lg'>
+                  <h3 className='text-white font-medium mb-2'>Suggested Connections</h3>
+                  <p className='text-gray-400 text-sm'>
+                    Coming soon: AI-powered connection suggestions based on your profile and goals.
+                  </p>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Resume Upload Section */}
@@ -327,23 +235,36 @@ export default function Dashboard() {
                 />
               </svg>
               <p className='text-gray-300 mb-1'>
-                {file ? file.name : 'Drag your resume here or click to upload'}
+                Drag your resume here or click to upload
               </p>
               <p className='text-gray-500 text-sm'>
                 Acceptable file types: PDF, DOCX (5MB max)
               </p>
             </div>
+          </div>
+        </div>
 
-            {/* Update Goals */}
-            <div className='bg-[#1a1a1a] p-6 rounded-2xl'>
-              <h3 className='text-white font-medium mb-2'>Update your goal</h3>
-              <textarea
-                value={goals}
-                onChange={(e) => setGoals(e.target.value)}
-                onBlur={handleGoalsUpdate}
-                placeholder='For example: if you wish to pivot into tech, or if you want to find an internship. Any information helps.'
-                className='w-full h-24 px-3 py-2 text-gray-300 bg-[#2a2a2a] rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none'
-              />
+        {/* Right Sidebar */}
+        <div className='w-80'>
+          <div className='bg-[#1a1a1a] p-6 rounded-2xl'>
+            <h2 className='text-white text-sm font-medium text-center mb-4'>
+              Your Profile
+            </h2>
+            <div className='space-y-4'>
+              <div className='bg-[#2a2a2a] p-4 rounded-lg'>
+                <h3 className='text-white text-sm font-medium mb-2'>Current Status</h3>
+                <p className='text-gray-400 text-sm'>
+                  {file ? 'Resume uploaded' : 'No resume uploaded'}
+                </p>
+              </div>
+              <div className='bg-[#2a2a2a] p-4 rounded-lg'>
+                <h3 className='text-white text-sm font-medium mb-2'>Next Steps</h3>
+                <ul className='text-gray-400 text-sm space-y-2'>
+                  <li>• Upload your resume</li>
+                  <li>• Set your career goals</li>
+                  <li>• Explore suggested roles</li>
+                </ul>
+              </div>
             </div>
           </div>
         </div>

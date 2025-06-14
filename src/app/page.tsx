@@ -7,11 +7,16 @@ export default function Home() {
   const router = useRouter();
 
   useEffect(() => {
-    if (checkAuth()) {
-      router.push('/upload-resume');
-    } else {
-      router.push('/signup');
-    }
+    const checkAuthentication = async () => {
+      const isAuthenticated = await checkAuth();
+      if (isAuthenticated) {
+        router.push('/upload-resume');
+      } else {
+        router.push('/signup');
+      }
+    };
+
+    checkAuthentication();
   }, [router]);
 
   return null; // This page will redirect immediately
