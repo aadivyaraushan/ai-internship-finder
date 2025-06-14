@@ -20,6 +20,11 @@ interface Connection {
   status?: 'Awaiting response' | 'Responded' | null;
 }
 
+interface Role {
+  title: string;
+  bulletPoints: string[];
+}
+
 export default function Dashboard() {
   const router = useRouter();
   const [file, setFile] = useState<File | null>(null);
@@ -299,12 +304,11 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* Bottom Sections */}
-          <div className='grid grid-cols-2 gap-4'>
-            {/* Resume Upload */}
+          {/* Resume Upload Section */}
+          <div className='bg-[#1a1a1a] p-6 rounded-2xl'>
             <div
               {...getRootProps()}
-              className={`bg-[#1a1a1a] p-8 rounded-2xl flex flex-col items-center justify-center text-center cursor-pointer border-2 border-dashed border-gray-600 hover:border-gray-500 ${
+              className={`flex flex-col items-center justify-center text-center cursor-pointer border-2 border-dashed border-gray-600 hover:border-gray-500 rounded-lg p-8 ${
                 isDragActive ? 'border-blue-500' : ''
               }`}
             >
