@@ -1,5 +1,6 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
+import { getFirestore } from 'firebase/firestore';
 
 const firebaseConfig = {
   // Replace these with your Firebase config values
@@ -12,10 +13,15 @@ const firebaseConfig = {
 };
 
 const app = initializeApp(firebaseConfig);
-export const auth = getAuth(app); 
+export const auth = getAuth(app);
+export const db = getFirestore(app);
 
 export const checkAuth = () => {
     const user = auth.currentUser;
     console.log('User is', user);
     return user !== null;
+}
+
+export const getCurrentUser = () => {
+    return auth.currentUser;
 }

@@ -1,8 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Image from 'next/image';
 import { useDropzone } from 'react-dropzone';
+import { auth, db, getCurrentUser } from '@/lib/firebase';
+import { doc, getDoc, setDoc, collection, getDocs } from 'firebase/firestore';
 
 interface Connection {
   id: number;
@@ -13,9 +15,18 @@ interface Connection {
   status?: 'Awaiting response' | 'Responded' | null;
 }
 
+interface Role {
+  title: string;
+  bulletPoints: string[];
+}
+
 export default function Dashboard() {
   const [file, setFile] = useState<File | null>(null);
   const [goals, setGoals] = useState('');
+  const [selectedView, setSelectedView] = useState<'roles' | 'goals' | 'people'>('roles');
+  const [roles, setRoles] = useState<Role[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   const [reachedOutConnections] = useState<Connection[]>([
     {
@@ -82,6 +93,89 @@ export default function Dashboard() {
     },
   ]);
 
+  useEffect(() => {
+    const fetchUserData = async () => {
+      const user = getCurrentUser();
+      if (!user) return;
+
+      setLoading(true);
+      try {
+        // Fetch user's goals
+        const userDoc = await getDoc(doc(db, 'users', user.uid));
+        if (userDoc.exists()) {
+          const userData = userDoc.data();
+          if (userData.goals) {
+            setGoals(userData.goals);
+          }
+        }
+
+        // Fetch roles
+        const rolesCollection = collection(db, 'roles');
+        const rolesSnapshot = await getDocs(rolesCollection);
+        const rolesData = rolesSnapshot.docs.map(doc => ({
+          title: doc.data().title,
+          bulletPoints: doc.data().bulletPoints
+        }));
+        setRoles(rolesData);
+      } catch (error) {
+        console.error('Error fetching data:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchUserData();
+  }, []);
+
+  const saveGoals = async () => {
+    const user = getCurrentUser();
+    if (!user) return;
+
+    setSaving(true);
+    try {
+      // Save goals to user document
+      await setDoc(doc(db, 'users', user.uid), {
+        goals: goals,
+        updatedAt: new Date().toISOString()
+      }, { merge: true });
+
+      // If roles don't exist, create some default roles
+      const rolesCollection = collection(db, 'roles');
+      const rolesSnapshot = await getDocs(rolesCollection);
+      
+      if (rolesSnapshot.empty) {
+        const defaultRoles = [
+          {
+            title: 'Software Engineer',
+            bulletPoints: [
+              'Develop and maintain web applications',
+              'Collaborate with cross-functional teams'
+            ]
+          },
+          {
+            title: 'Data Scientist',
+            bulletPoints: [
+              'Analyze large datasets',
+              'Build machine learning models'
+            ]
+          }
+        ];
+
+        // Add default roles to Firestore
+        for (const role of defaultRoles) {
+          await setDoc(doc(rolesCollection), role);
+        }
+        
+        // Update local state with default roles
+        setRoles(defaultRoles);
+      }
+    } catch (error) {
+      console.error('Error saving data:', error);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     accept: {
       'application/pdf': ['.pdf'],
@@ -108,51 +202,103 @@ export default function Dashboard() {
         {/* Main Content */}
         <div className='flex-1'>
           <div className='bg-[#1a1a1a] p-6 rounded-2xl mb-6'>
-            <p className='text-gray-400 text-sm mb-6 text-center'>
-              These are connections we found that match your profile
-            </p>
-
-            <div className='grid grid-cols-2 gap-4'>
-              {suggestedConnections.map((connection) => (
-                <div
-                  key={connection.id}
-                  className='bg-[#2a2a2a] p-4 rounded-lg flex items-start gap-4'
-                >
-                  <div className='relative'>
-                    <div className='w-12 h-12 rounded-full overflow-hidden bg-gray-700'>
-                      <Image
-                        src={connection.imageUrl}
-                        alt={connection.name}
-                        width={48}
-                        height={48}
-                        className='object-cover'
-                      />
-                    </div>
-                  </div>
-                  <div className='flex-1'>
-                    <div className='flex items-center justify-between mb-2'>
-                      <h3 className='text-white font-medium'>
-                        {connection.name}
-                      </h3>
-                      <span className='text-blue-400 font-medium'>
-                        {connection.matchPercentage}%
-                      </span>
-                    </div>
-                    <p className='text-gray-400 text-sm leading-snug'>
-                      {connection.matchReason}
-                    </p>
-                  </div>
-                </div>
-              ))}
+            {/* View Selector */}
+            <div className='flex gap-4 mb-6'>
+              <button
+                onClick={() => setSelectedView('roles')}
+                className={`px-4 py-2 rounded-lg transition-colors ${
+                  selectedView === 'roles'
+                    ? 'bg-blue-500 text-white'
+                    : 'bg-[#2a2a2a] text-gray-300 hover:bg-[#3a3a3a]'
+                }`}
+              >
+                Roles
+              </button>
+              <button
+                onClick={() => setSelectedView('goals')}
+                className={`px-4 py-2 rounded-lg transition-colors ${
+                  selectedView === 'goals'
+                    ? 'bg-blue-500 text-white'
+                    : 'bg-[#2a2a2a] text-gray-300 hover:bg-[#3a3a3a]'
+                }`}
+              >
+                Goals
+              </button>
+              <button
+                onClick={() => setSelectedView('people')}
+                className={`px-4 py-2 rounded-lg transition-colors ${
+                  selectedView === 'people'
+                    ? 'bg-blue-500 text-white'
+                    : 'bg-[#2a2a2a] text-gray-300 hover:bg-[#3a3a3a]'
+                }`}
+              >
+                People
+              </button>
             </div>
+
+            {/* Content Sections */}
+            {selectedView === 'roles' && (
+              <div className='space-y-4'>
+                {loading ? (
+                  <div className='text-gray-400 text-center'>Loading roles...</div>
+                ) : roles.length === 0 ? (
+                  <div className='text-gray-400 text-center'>No roles found. Save your goals to generate roles.</div>
+                ) : (
+                  roles.map((role, index) => (
+                    <div key={index} className='bg-[#2a2a2a] p-4 rounded-lg'>
+                      <h3 className='text-white font-medium mb-2'>{role.title}</h3>
+                      <ul className='space-y-1'>
+                        {role.bulletPoints.map((point, i) => (
+                          <li key={i} className='text-gray-400 text-sm flex items-start'>
+                            <span className='mr-2'>•</span>
+                            <span>{point}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
+
+            {selectedView === 'goals' && (
+              <div className='space-y-4'>
+                <div className='bg-[#2a2a2a] p-4 rounded-lg'>
+                  <h3 className='text-white font-medium mb-2'>Your Goals</h3>
+                  <textarea
+                    value={goals}
+                    onChange={(e) => setGoals(e.target.value)}
+                    placeholder='For example: if you wish to pivot into tech, or if you want to find an internship. Any information helps.'
+                    className='w-full h-24 px-3 py-2 text-gray-300 bg-[#1a1a1a] rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none'
+                  />
+                  <button
+                    onClick={saveGoals}
+                    disabled={saving}
+                    className='mt-4 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed'
+                  >
+                    {saving ? 'Saving...' : 'Save Goals'}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {selectedView === 'people' && (
+              <div className='space-y-4'>
+                <div className='bg-[#2a2a2a] p-4 rounded-lg'>
+                  <h3 className='text-white font-medium mb-2'>Suggested Connections</h3>
+                  <p className='text-gray-400 text-sm'>
+                    Coming soon: AI-powered connection suggestions based on your profile and goals.
+                  </p>
+                </div>
+              </div>
+            )}
           </div>
 
-          {/* Bottom Sections */}
-          <div className='grid grid-cols-2 gap-4'>
-            {/* Resume Upload */}
+          {/* Resume Upload Section */}
+          <div className='bg-[#1a1a1a] p-6 rounded-2xl'>
             <div
               {...getRootProps()}
-              className={`bg-[#1a1a1a] p-8 rounded-2xl flex flex-col items-center justify-center text-center cursor-pointer border-2 border-dashed border-gray-600 hover:border-gray-500 ${
+              className={`flex flex-col items-center justify-center text-center cursor-pointer border-2 border-dashed border-gray-600 hover:border-gray-500 rounded-lg p-8 ${
                 isDragActive ? 'border-blue-500' : ''
               }`}
             >
@@ -177,17 +323,6 @@ export default function Dashboard() {
                 Acceptable file types: PDF, DOCX (5MB max)
               </p>
             </div>
-
-            {/* Update Goals */}
-            <div className='bg-[#1a1a1a] p-6 rounded-2xl'>
-              <h3 className='text-white font-medium mb-2'>Update your goal</h3>
-              <textarea
-                value={goals}
-                onChange={(e) => setGoals(e.target.value)}
-                placeholder='For example: if you wish to pivot into tech, or if you want to find an internship. Any information helps.'
-                className='w-full h-24 px-3 py-2 text-gray-300 bg-[#2a2a2a] rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none'
-              />
-            </div>
           </div>
         </div>
 
@@ -195,37 +330,23 @@ export default function Dashboard() {
         <div className='w-80'>
           <div className='bg-[#1a1a1a] p-6 rounded-2xl'>
             <h2 className='text-white text-sm font-medium text-center mb-4'>
-              Connections you have already reached out to
+              Your Profile
             </h2>
             <div className='space-y-4'>
-              {reachedOutConnections.map((connection) => (
-                <div
-                  key={connection.id}
-                  className='flex items-center gap-3 bg-[#2a2a2a] p-2 rounded-lg'
-                >
-                  <Image
-                    src={connection.imageUrl}
-                    alt={connection.name}
-                    width={32}
-                    height={32}
-                    className='rounded-full'
-                  />
-                  <div className='flex-1 min-w-0'>
-                    <h3 className='text-white text-sm font-medium truncate'>
-                      {connection.name}
-                    </h3>
-                    <p
-                      className={`text-xs ${
-                        connection.status === 'Responded'
-                          ? 'text-green-500'
-                          : 'text-red-400'
-                      }`}
-                    >
-                      {connection.status}
-                    </p>
-                  </div>
-                </div>
-              ))}
+              <div className='bg-[#2a2a2a] p-4 rounded-lg'>
+                <h3 className='text-white text-sm font-medium mb-2'>Current Status</h3>
+                <p className='text-gray-400 text-sm'>
+                  {file ? 'Resume uploaded' : 'No resume uploaded'}
+                </p>
+              </div>
+              <div className='bg-[#2a2a2a] p-4 rounded-lg'>
+                <h3 className='text-white text-sm font-medium mb-2'>Next Steps</h3>
+                <ul className='text-gray-400 text-sm space-y-2'>
+                  <li>• Upload your resume</li>
+                  <li>• Set your career goals</li>
+                  <li>• Explore suggested roles</li>
+                </ul>
+              </div>
             </div>
           </div>
         </div>
