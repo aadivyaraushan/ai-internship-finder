@@ -14,10 +14,15 @@ export default function Signup() {
     const router = useRouter();
 
     useEffect(() => {
-        if (checkAuth()) {
-            console.log("User is already logged in");
-            router.push('/upload-resume');
-        }
+        const checkAuthentication = async () => {
+            const isAuthenticated = await checkAuth();
+            if (isAuthenticated) {
+                console.log("User is already logged in");
+                router.push('/upload-resume');
+            }
+        };
+
+        checkAuthentication();
     }, [router]);
 
     const getErrorMessage = (errorCode: string) => {
