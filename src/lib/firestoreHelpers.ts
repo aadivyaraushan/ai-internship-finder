@@ -1,6 +1,32 @@
 import { doc, setDoc, updateDoc, getDoc, arrayUnion } from 'firebase/firestore';
 import { db } from './firebase';
 
+export interface Connection {
+  id: string;
+  name: string;
+  current_role: string;
+  company: string;
+  matchPercentage: number;
+  matchReason: string;
+  sharedBackground: string[];
+  careerHighlights: string[];
+  linkedInUrl?: string;
+  status:
+    | 'not_contacted'
+    | 'email_sent'
+    | 'response_received'
+    | 'meeting_scheduled'
+    | 'rejected'
+    | 'ghosted';
+  lastUpdated: string;
+  notes?: string;
+  emailHistory?: {
+    date: string;
+    type: 'sent' | 'received';
+    content: string;
+  }[];
+}
+
 // USERS
 export async function createOrUpdateUser(userId: string, data: any) {
   const userRef = doc(db, 'users', userId);
@@ -24,9 +50,115 @@ export async function updateUserNiche(userId: string, niche: any) {
 
 export async function updateUserConnections(
   userId: string,
-  connections: any[]
+  connections: Connection[]
 ) {
   const userRef = doc(db, 'users', userId);
+  await updateDoc(userRef, { connections });
+}
+
+export async function addUserConnection(
+  userId: string,
+  connection: Connection
+) {
+  const userRef = doc(db, 'users', userId);
+  const userData = await getDoc(userRef);
+
+  if (!userData.exists()) {
+    await setDoc(userRef, { connections: [connection] });
+    return;
+  }
+
+  const existingConnections = userData.data().connections || [];
+  const existingIndex = existingConnections.findIndex(
+    (c: Connection) => c.id === connection.id
+  );
+
+  if (existingIndex !== -1) {
+    // Update existing connection
+    existingConnections[existingIndex] = {
+      ...existingConnections[existingIndex],
+      ...connection,
+      lastUpdated: new Date().toISOString(),
+    };
+  } else {
+    // Add new connection
+    existingConnections.push({
+      ...connection,
+      status: 'not_contacted',
+      lastUpdated: new Date().toISOString(),
+    });
+  }
+
+  await updateDoc(userRef, { connections: existingConnections });
+}
+
+export async function updateConnectionStatus(
+  userId: string,
+  connectionId: string,
+  status: Connection['status'],
+  notes?: string
+) {
+  const userRef = doc(db, 'users', userId);
+  const userData = await getDoc(userRef);
+
+  if (!userData.exists()) {
+    throw new Error('User not found');
+  }
+
+  const connections = userData.data().connections || [];
+  const connectionIndex = connections.findIndex(
+    (c: Connection) => c.id === connectionId
+  );
+
+  if (connectionIndex === -1) {
+    throw new Error('Connection not found');
+  }
+
+  connections[connectionIndex] = {
+    ...connections[connectionIndex],
+    status,
+    lastUpdated: new Date().toISOString(),
+    ...(notes && { notes }),
+  };
+
+  await updateDoc(userRef, { connections });
+}
+
+export async function addEmailToConnection(
+  userId: string,
+  connectionId: string,
+  type: 'sent' | 'received',
+  content: string
+) {
+  const userRef = doc(db, 'users', userId);
+  const userData = await getDoc(userRef);
+
+  if (!userData.exists()) {
+    throw new Error('User not found');
+  }
+
+  const connections = userData.data().connections || [];
+  const connectionIndex = connections.findIndex(
+    (c: Connection) => c.id === connectionId
+  );
+
+  if (connectionIndex === -1) {
+    throw new Error('Connection not found');
+  }
+
+  const emailHistory = connections[connectionIndex].emailHistory || [];
+  emailHistory.push({
+    date: new Date().toISOString(),
+    type,
+    content,
+  });
+
+  connections[connectionIndex] = {
+    ...connections[connectionIndex],
+    emailHistory,
+    lastUpdated: new Date().toISOString(),
+  };
+
   await updateDoc(userRef, { connections });
 }
 

@@ -1,72 +1,69 @@
 import { ChatOpenAI } from '@langchain/openai';
-import { BufferMemory } from 'langchain/memory';
-import { PromptTemplate } from '@langchain/core/prompts';
+import { OpenAIEmbeddings } from '@langchain/openai';
+import { WebBrowser } from 'langchain/tools/webbrowser';
 import { RunnableSequence } from '@langchain/core/runnables';
 import { StringOutputParser } from '@langchain/core/output_parsers';
-import { getUser } from '@/lib/firestoreHelpers';
-import { auth } from '@/lib/firebase';
+import { PromptTemplate } from '@langchain/core/prompts';
+import { Connection } from '@/lib/firestoreHelpers';
 
-// Use the same memory instance as other routes
-const memory = new BufferMemory({
-  memoryKey: 'resume_context',
-  returnMessages: true,
-  outputKey: 'output',
-  inputKey: 'input',
-});
+interface Goal {
+  title: string;
+  description?: string;
+}
 
-// Create the prompt template for finding similar career trajectories
-const promptTemplate =
-  PromptTemplate.fromTemplate(`You are an AI career advisor tasked with finding people who have similar career trajectories to the user.
+// Create the prompt template for analyzing LinkedIn profiles
+const profileAnalysisTemplate = PromptTemplate.fromTemplate(`
+You are an AI career advisor tasked with analyzing LinkedIn profiles to find potential connections for the user.
+Based on the profile content provided, determine how well this person matches with the user's background and goals.
 
-User's Resume Context: {resume_context}
-User's Selected Roles: {roles}
+User's Background:
+{resume_context}
 
-Based on the user's background and their selected roles, find people who:
-1. Started from a similar educational or professional background
-2. Have successfully transitioned into roles similar to what the user is targeting
-3. Share key skills or experiences with the user
+User's Target Role:
+{role}
 
-IMPORTANT: You must return a valid JSON object with the exact structure shown below. Do not add any additional text before or after the JSON.
+LinkedIn Profile Content:
+{profile_content}
 
-The response must follow this exact format:
-{{
-  "connections": [
-    {{
-      "id": "unique_id_1",
-      "name": "Full Name",
-      "current_role": "Current Job Title",
-      "company": "Current Company",
-      "matchPercentage": 95,
-      "matchReason": "Detailed explanation of why this person is a good match",
-      "sharedBackground": [
-        "Key similarity point 1",
-        "Key similarity point 2"
-      ],
-      "careerHighlights": [
-        "Notable achievement or transition 1",
-        "Notable achievement or transition 2"
-      ]
-    }}
+Analyze this profile and return a JSON object with the following structure:
+{
+  "name": "Full Name",
+  "current_role": "Current Job Title",
+  "company": "Current Company",
+  "matchPercentage": 95,
+  "matchReason": "Detailed explanation of why this person is a good match",
+  "sharedBackground": [
+    "Key similarity point 1",
+    "Key similarity point 2"
   ],
-  "processingSteps": {{
-    "resumeAnalyzed": true,
-    "rolesEvaluated": true,
-    "connectionsFound": true,
-    "matchesRanked": true
-  }}
-}}
+  "careerHighlights": [
+    "Notable achievement or transition 1",
+    "Notable achievement or transition 2"
+  ]
+}
 
-Remember:
-1. Return ONLY the JSON object
-2. Each connection must have all the specified fields
-3. matchPercentage should be between 0 and 100
-4. Focus on real, actionable career trajectory matches
-5. Prioritize quality of matches over quantity`);
+Focus on:
+1. Similar educational or professional background (e.g. same degree, same industry, same location, same university, same company, etc.)
+2. Successful landing roles similar to user's target
+3. Shared experiences (e.g. clubs, events, projects, etc.). Ideally, these experiences are not common and are niche.
+
+Return ONLY the JSON object with no additional text.
+`);
 
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { roles } = body;
+    const {
+      roles,
+      resumeContext,
+      goals,
+      userId,
+    }: {
+      roles: any[];
+      resumeContext?: string;
+      goals?: Goal[];
+      userId: string;
+    } = body;
 
     if (!roles || !Array.isArray(roles) || roles.length === 0) {
       return new Response(
@@ -80,16 +77,9 @@ export async function POST(req: Request) {
       );
     }
 
-    // Get the user's resume context from memory
-    const memoryVariables = await memory.loadMemoryVariables({});
-    const resumeContext =
-      memoryVariables.resume_context || 'No resume data available';
-
-    // Get additional user data from Firebase
-    const userData = await getUser(auth.currentUser!.uid);
-    if (!userData) {
-      return new Response(JSON.stringify({ error: 'User data not found' }), {
-        status: 404,
+    if (!userId) {
+      return new Response(JSON.stringify({ error: 'User ID is required' }), {
+        status: 400,
         headers: {
           'Content-Type': 'application/json',
         },
@@ -101,45 +91,111 @@ export async function POST(req: Request) {
       temperature: 0,
     });
 
-    // Create the chain
-    const chain = RunnableSequence.from([
-      promptTemplate,
-      model,
-      new StringOutputParser(),
-    ]);
+    const embeddings = new OpenAIEmbeddings();
+    const browser = new WebBrowser({ model, embeddings });
 
-    // Send initial progress update
-    const initialResponse = new Response(
-      JSON.stringify({
-        timestamp: new Date().toISOString(),
-        status: 'in_progress',
-        processingSteps: {
-          resumeAnalyzed: false,
-          rolesEvaluated: false,
-          connectionsFound: false,
-          matchesRanked: false,
-        },
-      }),
-      {
-        status: 200,
-        headers: {
-          'Content-Type': 'application/json',
-        },
+    // Track processed URLs to avoid duplicates
+    const processedUrls = new Set<string>();
+    const connections = [];
+
+    for (const role of roles) {
+      // Construct search query based on role, background, and goals
+      const contextKeywords = resumeContext
+        ? resumeContext.split(' ').slice(0, 5).join(' ')
+        : '';
+      const goalKeywords =
+        goals && goals.length > 0
+          ? goals
+              .slice(0, 2)
+              .map((g) => g.title)
+              .join(' ')
+          : '';
+      const searchQuery =
+        `site:linkedin.com/in/ ${role.title} ${contextKeywords} ${goalKeywords}`.trim();
+
+      try {
+        // Search for profiles
+        const searchResult = await browser.invoke(`"${searchQuery}",""`);
+
+        // Extract profile URLs from search results
+        const profileUrls =
+          searchResult.match(/https:\/\/[www.]*linkedin.com\/in\/[^\s"')]+/g) ||
+          [];
+
+        // Analyze each profile (limit to top 3)
+        for (const url of profileUrls.slice(0, 3)) {
+          // Skip if we've already processed this URL
+          if (processedUrls.has(url)) {
+            continue;
+          }
+          processedUrls.add(url);
+
+          try {
+            // Visit profile and extract content
+            const profileContent = await browser.invoke(`"${url}",""`);
+
+            // Analyze profile
+            const analysisChain = RunnableSequence.from([
+              profileAnalysisTemplate,
+              model,
+              new StringOutputParser(),
+            ]);
+
+            const analysis = await analysisChain.invoke({
+              resume_context: resumeContext || '',
+              role: role.title,
+              profile_content: profileContent,
+            });
+
+            try {
+              const profileData = JSON.parse(analysis);
+              connections.push({
+                ...profileData,
+                linkedInUrl: url,
+              });
+            } catch (parseError) {
+              console.error('Failed to parse profile analysis:', parseError);
+              continue;
+            }
+          } catch (profileError) {
+            console.error('Error analyzing profile:', profileError);
+            continue;
+          }
+        }
+      } catch (searchError) {
+        console.error('Error searching for profiles:', searchError);
+        continue;
       }
+    }
+
+    // Sort connections by match percentage
+    connections.sort((a, b) => b.matchPercentage - a.matchPercentage);
+
+    // Add indices as IDs and initial status
+    const connectionsWithIds: Connection[] = connections.map(
+      (connection, index) => ({
+        ...connection,
+        id: index.toString(),
+        status: 'not_contacted',
+        lastUpdated: new Date().toISOString(),
+      })
     );
 
-    // Run the chain
-    const response = await chain.invoke({
-      resume_context: resumeContext,
-      roles: roles.map((r: any) => r.title).join(', '),
-    });
-
-    // Parse the response to ensure it's valid JSON
-    const parsedResponse = JSON.parse(response);
+    // Store connections in Firebase
+    const { updateUserConnections } = await import('@/lib/firestoreHelpers');
+    await updateUserConnections(userId, connectionsWithIds);
 
     return new Response(
       JSON.stringify({
-        response: parsedResponse,
+        response: {
+          connections: connectionsWithIds,
+          processingSteps: {
+            resumeAnalyzed: true,
+            rolesEvaluated: true,
+            connectionsFound: connections.length > 0,
+            matchesRanked: true,
+          },
+        },
         timestamp: new Date().toISOString(),
         status: 'success',
       }),

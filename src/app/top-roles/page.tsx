@@ -3,7 +3,12 @@
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useState, useRef } from 'react';
 import { checkAuth, auth } from '@/lib/firebase';
-import { updateUserRoles } from '@/lib/firestoreHelpers';
+import {
+  updateUserRoles,
+  getUser,
+  getResume,
+  updateUserConnections,
+} from '@/lib/firestoreHelpers';
 import StatusUpdate, { ProcessingStep } from '@/components/StatusUpdate';
 
 interface Role {
@@ -69,6 +74,7 @@ export default function TopRoles() {
   const searchParams = useSearchParams();
   const [roles, setRoles] = useState<Role[]>([]);
   const [loading, setLoading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [currentStatus, setCurrentStatus] = useState<string>('');
   const [error, setError] = useState('');
   const [steps, setSteps] = useState<ProcessingStep[]>([
@@ -262,11 +268,12 @@ export default function TopRoles() {
           <button
             className='px-4 py-2 bg-[#2a2a2a] text-white rounded-lg hover:bg-[#3a3a3a] transition-colors'
             onClick={() => router.push('/top-goals')}
+            disabled={submitting}
           >
             Back
           </button>
           <button
-            className='px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors'
+            className='px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2'
             onClick={async () => {
               if (!auth.currentUser) {
                 setError('Please sign in to continue');
@@ -274,15 +281,139 @@ export default function TopRoles() {
                 return;
               }
 
+              setSubmitting(true);
+              setError('');
+
               try {
+                // Save roles to Firestore
                 await updateUserRoles(auth.currentUser.uid, roles);
+
+                // Initialize connections array
+                let allConnections = [];
+
+                // Try to get existing connections from localStorage
+                const existingConnections =
+                  localStorage.getItem('topConnections');
+                if (existingConnections) {
+                  try {
+                    allConnections = JSON.parse(existingConnections);
+                  } catch (e) {
+                    // If parsing fails, clear the invalid data
+                    localStorage.removeItem('topConnections');
+                  }
+                }
+
+                // Create a Set to track unique connection IDs
+                const processedConnectionIds = new Set(
+                  allConnections.map((c: any) => c.id)
+                );
+
+                // Fetch new connections only for roles that don't have connections yet
+                for (const role of roles) {
+                  // Get user data including resume context
+                  const userData = await getUser(auth.currentUser!.uid);
+                  if (!userData?.resume_id) {
+                    throw new Error('No resume found');
+                  }
+
+                  // Get resume data
+                  const resumeData = await getResume(userData.resume_id);
+                  if (!resumeData) {
+                    throw new Error('Resume data not found');
+                  }
+
+                  const response = await fetch('/api/connections', {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                      roles: [role],
+                      resumeContext: resumeData.content,
+                    }),
+                  });
+
+                  if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(
+                      errorData.error ||
+                        `Failed to fetch connections for ${role.title}`
+                    );
+                  }
+
+                  const data = await response.json();
+
+                  // Filter out any duplicate connections and add new ones
+                  const newConnections = data.response.connections.filter(
+                    (connection: any) =>
+                      !processedConnectionIds.has(connection.id)
+                  );
+
+                  // Add new connection IDs to the Set
+                  newConnections.forEach((connection: any) => {
+                    processedConnectionIds.add(connection.id);
+                  });
+
+                  // Add new connections to the array
+                  allConnections = [...allConnections, ...newConnections];
+                }
+
+                // Sort all connections by relevance score
+                allConnections.sort(
+                  (a: any, b: any) => b.matchPercentage - a.matchPercentage
+                );
+
+                // Store updated connections in localStorage
+                localStorage.setItem(
+                  'topConnections',
+                  JSON.stringify(allConnections)
+                );
+
+                // Store in Firebase as well
+                await updateUserConnections(
+                  auth.currentUser.uid,
+                  allConnections
+                );
+
+                // Redirect to top-connections page
                 router.push('/top-connections');
               } catch (err: any) {
-                setError(err.message || 'Failed to save roles');
+                setError(
+                  err.message || 'Failed to save roles or fetch connections'
+                );
+              } finally {
+                setSubmitting(false);
               }
             }}
+            disabled={submitting || roles.length === 0}
           >
-            Submit
+            {submitting ? (
+              <>
+                <svg
+                  className='animate-spin h-5 w-5'
+                  xmlns='http://www.w3.org/2000/svg'
+                  fill='none'
+                  viewBox='0 0 24 24'
+                >
+                  <circle
+                    className='opacity-25'
+                    cx='12'
+                    cy='12'
+                    r='10'
+                    stroke='currentColor'
+                    strokeWidth='4'
+                  ></circle>
+                  <path
+                    className='opacity-75'
+                    fill='currentColor'
+                    d='M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z'
+                  ></path>
+                </svg>
+                Processing...
+              </>
+            ) : (
+              'Find Connections'
+            )}
           </button>
         </div>
       </div>
