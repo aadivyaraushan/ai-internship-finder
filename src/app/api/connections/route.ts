@@ -1,54 +1,136 @@
-import { ChatOpenAI } from '@langchain/openai';
-import { OpenAIEmbeddings } from '@langchain/openai';
-import { WebBrowser } from 'langchain/tools/webbrowser';
-import { RunnableSequence } from '@langchain/core/runnables';
-import { StringOutputParser } from '@langchain/core/output_parsers';
-import { PromptTemplate } from '@langchain/core/prompts';
-import { Connection } from '@/lib/firestoreHelpers';
+import { callClaude } from '../../../lib/anthropicClient';
 
 interface Goal {
   title: string;
   description?: string;
 }
 
-// Create the prompt template for analyzing LinkedIn profiles
-const profileAnalysisTemplate = PromptTemplate.fromTemplate(`
-You are an AI career advisor tasked with analyzing LinkedIn profiles to find potential connections for the user.
-Based on the profile content provided, determine how well this person matches with the user's background and goals.
+// Helper tool definition for Claude web search
+const CLAUDE_WEB_SEARCH_TOOL = [
+  {
+    type: 'web_search_20250305',
+    name: 'web_search',
+    max_uses: 5,
+  },
+];
 
-User's Background:
-{resume_context}
+// Builds the prompt Claude will receive for each role
+function buildPrompt({
+  roleTitle,
+  resumeContext,
+  goalTitles,
+}: {
+  roleTitle: string;
+  resumeContext?: string;
+  goalTitles?: string[];
+}) {
+  return `
+You are an AI career advisor tasked with identifying people who can directly refer or hire the user for internship roles, specifically focusing on those with nearly identical backgrounds.
 
-User's Target Role:
-{role}
+User Resume Context (for reference):
+${resumeContext || 'N/A'}
 
-LinkedIn Profile Content:
-{profile_content}
+User Career Goals:
+${goalTitles?.join('\n- ') || 'N/A'}
 
-Analyze this profile and return a JSON object with the following structure:
+Target Role:
+${roleTitle}
+
+SEARCH STRATEGY:
+1. First, extract key identifiers from the user's background:
+   - Universities/schools attended
+   - Specific clubs, competitions, or activities (especially niche ones)
+   - Previous workplaces and timeframes
+   - Notable awards or certifications
+
+2. Use the \`web_search\` tool to find people by searching for combinations of:
+   - The exact schools/universities + the target role title
+   - Specific niche clubs/competitions + the target role title
+   - Previous workplaces + target role title
+   
+3. For each potential match, verify they have:
+   - Current hiring power (e.g., hiring manager, team lead, senior+ role with referral influence)
+   - At least 2-3 exact matches with user's background (same school AND same club/competition)
+   - Made a similar career transition
+
+4. Calculate match percentage based on:
+   - Hiring Power (30%):
+     * Direct hiring manager = 30%
+     * Team lead = 25%
+     * Senior with referral power = 20%
+   - Background Matches (50%):
+     * Same university = 15%
+     * Same degree = 5%
+     * Each shared niche activity = 10%
+     * Each shared workplace = 10%
+     * Same graduation timeframe (±2 years) = 10%
+   - Career Path Relevance (20%):
+     * Similar starting point = 10%
+     * Made the exact transition user wants = 10%
+
+Output a JSON object in this exact format:
+
 {
-  "name": "Full Name",
-  "current_role": "Current Job Title",
-  "company": "Current Company",
-  "matchPercentage": 95,
-  "matchReason": "Detailed explanation of why this person is a good match",
-  "sharedBackground": [
-    "Key similarity point 1",
-    "Key similarity point 2"
-  ],
-  "careerHighlights": [
-    "Notable achievement or transition 1",
-    "Notable achievement or transition 2"
+  "connections": [
+    {
+      "name": "Full Name",
+      "current_role": "Current Job Title",
+      "hiring_power": {
+        "role_type": "hiring_manager|team_lead|senior_with_referral",
+        "can_hire_interns": true,
+        "department": "Relevant department name"
+      },
+      "company": "Current Company",
+      "exact_matches": {
+        "education": {
+          "university": "Exact university name",
+          "graduation_year": "YYYY",
+          "degree": "Exact degree name"
+        },
+        "shared_activities": [
+          {
+            "name": "Exact club/competition/activity name",
+            "year": "YYYY",
+            "type": "club|competition|workplace|certification"
+          }
+        ]
+      },
+      "career_path": {
+        "starting_point": "Their background when they were at user's stage",
+        "key_transition": "How they moved into current field",
+        "time_in_industry": "X years"
+      },
+      "outreach_strategy": {
+        "shared_background_points": [
+          "Specific shared experience 1",
+          "Specific shared experience 2"
+        ],
+        "unique_connection_angle": "What makes this connection particularly strong",
+        "suggested_approach": "Specific mention of shared experiences"
+      },
+      "contact_info": {
+        "public_profile": "URL to their public profile",
+        "work_email": "Work email if public, otherwise null",
+        "contact_source": "Where this information was found"
+      },
+      "match_details": {
+        "total_percentage": 85,
+        "hiring_power_score": 25,
+        "background_match_score": 40,
+        "career_path_score": 20,
+        "scoring_explanation": "Brief explanation of how scores were calculated"
+      }
+    }
   ]
 }
 
-Focus on:
-1. Similar educational or professional background (e.g. same degree, same industry, same location, same university, same company, etc.)
-2. Successful landing roles similar to user's target
-3. Shared experiences (e.g. clubs, events, projects, etc.). Ideally, these experiences are not common and are niche.
-
-Return ONLY the JSON object with no additional text.
-`);
+IMPORTANT:
+- Only include people with VERIFIED hiring/referral power
+- Prioritize EXACT matches in background over approximate matches
+- Focus on UNCOMMON shared experiences that will make outreach memorable
+- Calculate match percentages precisely according to the scoring system
+- Return ONLY the JSON object with NO additional commentary`;
+}
 
 export async function POST(req: Request) {
   try {
@@ -57,142 +139,82 @@ export async function POST(req: Request) {
       roles,
       resumeContext,
       goals,
-      userId,
-    }: {
-      roles: any[];
-      resumeContext?: string;
-      goals?: Goal[];
-      userId: string;
-    } = body;
+    }: { roles: any[]; resumeContext?: string; goals?: Goal[] } = body;
 
     if (!roles || !Array.isArray(roles) || roles.length === 0) {
       return new Response(
         JSON.stringify({ error: 'Selected roles are required' }),
         {
           status: 400,
-          headers: {
-            'Content-Type': 'application/json',
-          },
+          headers: { 'Content-Type': 'application/json' },
         }
       );
     }
 
-    if (!userId) {
-      return new Response(JSON.stringify({ error: 'User ID is required' }), {
-        status: 400,
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      });
-    }
-
-    const model = new ChatOpenAI({
-      model: 'gpt-4.1-mini',
-      temperature: 0,
-    });
-
-    const embeddings = new OpenAIEmbeddings();
-    const browser = new WebBrowser({ model, embeddings });
-
-    // Track processed URLs to avoid duplicates
-    const processedUrls = new Set<string>();
-    const connections = [];
+    const connections: any[] = [];
 
     for (const role of roles) {
-      // Construct search query based on role, background, and goals
-      const contextKeywords = resumeContext
-        ? resumeContext.split(' ').slice(0, 5).join(' ')
-        : '';
-      const goalKeywords =
-        goals && goals.length > 0
-          ? goals
-              .slice(0, 2)
-              .map((g) => g.title)
-              .join(' ')
-          : '';
-      const searchQuery =
-        `site:linkedin.com/in/ ${role.title} ${contextKeywords} ${goalKeywords}`.trim();
+      const prompt = buildPrompt({
+        roleTitle: role.title,
+        resumeContext,
+        goalTitles: goals?.map((g) => g.title) || [],
+      });
 
       try {
-        // Search for profiles
-        const searchResult = await browser.invoke(`"${searchQuery}",""`);
+        const raw = await callClaude(prompt, {
+          tools: CLAUDE_WEB_SEARCH_TOOL,
+          maxTokens: 1200,
+        });
 
-        // Extract profile URLs from search results
-        const profileUrls =
-          searchResult.match(/https:\/\/[www.]*linkedin.com\/in\/[^\s"')]+/g) ||
-          [];
-
-        // Analyze each profile (limit to top 3)
-        for (const url of profileUrls.slice(0, 3)) {
-          // Skip if we've already processed this URL
-          if (processedUrls.has(url)) {
-            continue;
-          }
-          processedUrls.add(url);
-
-          try {
-            // Visit profile and extract content
-            const profileContent = await browser.invoke(`"${url}",""`);
-
-            // Analyze profile
-            const analysisChain = RunnableSequence.from([
-              profileAnalysisTemplate,
-              model,
-              new StringOutputParser(),
-            ]);
-
-            const analysis = await analysisChain.invoke({
-              resume_context: resumeContext || '',
-              role: role.title,
-              profile_content: profileContent,
-            });
-
-            try {
-              const profileData = JSON.parse(analysis);
-              connections.push({
-                ...profileData,
-                linkedInUrl: url,
-              });
-            } catch (parseError) {
-              console.error('Failed to parse profile analysis:', parseError);
-              continue;
-            }
-          } catch (profileError) {
-            console.error('Error analyzing profile:', profileError);
-            continue;
-          }
+        // Look for a JSON object in the response
+        const jsonTextMatch = raw.match(/\{[\s\S]*\}/);
+        if (!jsonTextMatch) {
+          throw new Error('Claude response did not contain JSON');
         }
-      } catch (searchError) {
-        console.error('Error searching for profiles:', searchError);
+
+        const parsed = JSON.parse(jsonTextMatch[0]);
+
+        if (parsed && Array.isArray(parsed.connections)) {
+          connections.push(...parsed.connections);
+        } else {
+          console.warn(
+            'Unexpected JSON structure from Claude. Skipping role:',
+            role.title,
+            '\nReceived:',
+            raw
+          );
+        }
+      } catch (err) {
+        console.error('Error while processing role', role.title, err);
         continue;
       }
     }
 
-    // Sort connections by match percentage
-    connections.sort((a, b) => b.matchPercentage - a.matchPercentage);
+    // Deduplicate connections by name and company
+    const unique = new Map<string, any>();
+    for (const conn of connections) {
+      const key = `${conn.name}-${conn.company}`;
+      if (!unique.has(key)) {
+        unique.set(key, conn);
+      }
+    }
 
-    // Add indices as IDs and initial status
-    const connectionsWithIds: Connection[] = connections.map(
-      (connection, index) => ({
-        ...connection,
-        id: index.toString(),
-        status: 'not_contacted',
-        lastUpdated: new Date().toISOString(),
-      })
-    );
-
-    // Store connections in Firebase
-    const { updateUserConnections } = await import('@/lib/firestoreHelpers');
-    await updateUserConnections(userId, connectionsWithIds);
+    // Sort by match percentage
+    const sorted = Array.from(unique.values()).sort((a, b) => {
+      return (
+        (b.match_details?.total_percentage || 0) -
+        (a.match_details?.total_percentage || 0)
+      );
+    });
 
     return new Response(
       JSON.stringify({
         response: {
-          connections: connectionsWithIds,
+          connections: sorted,
           processingSteps: {
             resumeAnalyzed: true,
             rolesEvaluated: true,
-            connectionsFound: connections.length > 0,
+            connectionsFound: sorted.length > 0,
             matchesRanked: true,
           },
         },
@@ -201,18 +223,14 @@ export async function POST(req: Request) {
       }),
       {
         status: 200,
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
       }
     );
   } catch (error) {
-    console.error('Error processing request:', error);
+    console.error('Fatal error in connection search:', error);
     return new Response(JSON.stringify({ error: 'Internal server error' }), {
       status: 500,
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: { 'Content-Type': 'application/json' },
     });
   }
 }

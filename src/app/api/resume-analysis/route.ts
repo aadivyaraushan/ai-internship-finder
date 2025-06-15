@@ -1,14 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { PDFLoader } from '@langchain/community/document_loaders/fs/pdf';
-import { ChatOpenAI } from '@langchain/openai';
-import { PromptTemplate } from '@langchain/core/prompts';
-import { RunnableSequence } from '@langchain/core/runnables';
-import { StringOutputParser } from '@langchain/core/output_parsers';
+import pdfParse from 'pdf-parse/lib/pdf-parse.js';
+import { setResumeContext } from '../../../lib/memory';
 import { z } from 'zod';
 import { writeFile, unlink } from 'fs/promises';
 import { join } from 'path';
 import { tmpdir } from 'os';
-import { BufferMemory } from 'langchain/memory';
 
 // Define Zod schemas for each section
 const EducationSchema = z.object({
@@ -61,42 +57,9 @@ const ResumeSchema = z.object({
 
 type Resume = z.infer<typeof ResumeSchema>;
 
-// Create a global memory instance
-const memory = new BufferMemory({
-  memoryKey: 'resume_context',
-  returnMessages: true,
-  outputKey: 'output',
-  inputKey: 'input',
-});
-
-// Create the prompt template
-const promptTemplate = new PromptTemplate({
-  template: `Process and store the following resume data for future analysis:
-
-Resume Content: {resume_context}
-
-Current Request: {input}
-
-Store this information in a structured format for later use.`,
-  inputVariables: ['resume_context', 'input'],
-});
-
-const model = new ChatOpenAI({
-  temperature: 0,
-  modelName: 'gpt-4.1-mini',
-  openAIApiKey: process.env.OPENAI_API_KEY,
-});
-
-const outputParser = new StringOutputParser();
-
 export async function POST(req: NextRequest) {
   try {
-    if (!process.env.OPENAI_API_KEY) {
-      return NextResponse.json(
-        { error: 'OpenAI API key not configured' },
-        { status: 500 }
-      );
-    }
+    // No external API key required for parsing resume PDF
 
     // Get the file from the request
     const formData = await req.formData();
@@ -115,49 +78,11 @@ export async function POST(req: NextRequest) {
 
     try {
       // Load and parse PDF
-      const loader = new PDFLoader(tempFilePath);
-      const docs = await loader.load();
-      const text = docs
-        .map((doc: { pageContent: string }) => doc.pageContent)
-        .join('\n');
-
-      // Create the chain
-      const chain = RunnableSequence.from([
-        promptTemplate,
-        model,
-        outputParser,
-      ]);
-
-      // Run the chain with progress tracking
-      const response = NextResponse.json({
-        response: {
-          rawText: text,
-          timestamp: new Date().toISOString(),
-          status: 'in_progress',
-          processingSteps: {
-            fileRead: true,
-            pdfParsed: false,
-            aiAnalysis: false,
-            dataStored: false,
-          },
-        },
-      });
-      response.headers.set('Content-Type', 'application/json');
-
-      // Add a small delay to simulate PDF parsing
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-
-      // Run the AI analysis
-      const rawResult = await chain.invoke({
-        resume_context: text,
-        input: 'Store Resume Data',
-      });
+      const pdfData = await pdfParse(buffer);
+      const text = pdfData.text;
 
       // Store the raw text in memory for future use
-      await memory.saveContext(
-        { input: 'Store Resume Data' },
-        { output: text }
-      );
+      setResumeContext(text);
 
       // Parse the raw text into structured data
       const structuredData = {
@@ -178,7 +103,7 @@ export async function POST(req: NextRequest) {
           processingSteps: {
             fileRead: true,
             pdfParsed: true,
-            aiAnalysis: true,
+            aiAnalysis: false,
             dataStored: true,
           },
         },

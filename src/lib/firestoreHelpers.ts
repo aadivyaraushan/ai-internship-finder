@@ -6,11 +6,45 @@ export interface Connection {
   name: string;
   current_role: string;
   company: string;
-  matchPercentage: number;
-  matchReason: string;
-  sharedBackground: string[];
-  careerHighlights: string[];
-  linkedInUrl?: string;
+  hiring_power: {
+    role_type: 'hiring_manager' | 'team_lead' | 'senior_with_referral';
+    can_hire_interns: boolean;
+    department: string;
+  };
+  exact_matches: {
+    education: {
+      university: string;
+      graduation_year: string;
+      degree: string;
+    };
+    shared_activities: Array<{
+      name: string;
+      year: string;
+      type: 'club' | 'competition' | 'workplace' | 'certification';
+    }>;
+  };
+  career_path: {
+    starting_point: string;
+    key_transition: string;
+    time_in_industry: string;
+  };
+  outreach_strategy: {
+    shared_background_points: string[];
+    unique_connection_angle: string;
+    suggested_approach: string;
+  };
+  contact_info: {
+    public_profile: string;
+    work_email: string | null;
+    contact_source: string;
+  };
+  match_details: {
+    total_percentage: number;
+    hiring_power_score: number;
+    background_match_score: number;
+    career_path_score: number;
+    scoring_explanation: string;
+  };
   status:
     | 'not_contacted'
     | 'email_sent'
@@ -20,11 +54,6 @@ export interface Connection {
     | 'ghosted';
   lastUpdated: string;
   notes?: string;
-  emailHistory?: {
-    date: string;
-    type: 'sent' | 'received';
-    content: string;
-  }[];
 }
 
 // USERS

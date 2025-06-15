@@ -30,7 +30,8 @@
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-dropzone": "^14.3.8",
-    "zod": "^3.25.57"
+    "zod": "^3.25.57",
+    "@anthropic-ai/sdk": "^0.54.0"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",

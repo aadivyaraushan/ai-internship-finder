@@ -310,18 +310,26 @@ export default function TopRoles() {
 
                 // Fetch new connections only for roles that don't have connections yet
                 for (const role of roles) {
+                  console.log(`\n🎯 Processing role: ${role.title}`);
+
                   // Get user data including resume context
+                  console.log('🔍 Fetching user data...');
                   const userData = await getUser(auth.currentUser!.uid);
                   if (!userData?.resume_id) {
+                    console.log('❌ No resume found');
                     throw new Error('No resume found');
                   }
 
                   // Get resume data
+                  console.log('📄 Fetching resume data...');
                   const resumeData = await getResume(userData.resume_id);
                   if (!resumeData) {
+                    console.log('❌ Resume data not found');
                     throw new Error('Resume data not found');
                   }
+                  console.log('✅ Resume data fetched');
 
+                  console.log('🌐 Fetching connections from API...');
                   const response = await fetch('/api/connections', {
                     method: 'POST',
                     headers: {
@@ -330,52 +338,81 @@ export default function TopRoles() {
                     body: JSON.stringify({
                       roles: [role],
                       resumeContext: resumeData.content,
+                      goals: userData.goals,
                     }),
                   });
 
                   if (!response.ok) {
                     const errorData = await response.json();
+                    console.error('❌ API request failed:', errorData);
                     throw new Error(
                       errorData.error ||
                         `Failed to fetch connections for ${role.title}`
                     );
                   }
 
+                  console.log('✅ API request successful');
                   const data = await response.json();
+                  console.log(
+                    `📊 Received ${data.response.connections.length} connections for role`
+                  );
 
-                  // Filter out any duplicate connections and add new ones
-                  const newConnections = data.response.connections.filter(
-                    (connection: any) =>
-                      !processedConnectionIds.has(connection.id)
+                  // Process new connections and add required fields
+                  console.log('🔄 Processing connections...');
+                  const newConnections = data.response.connections
+                    .filter(
+                      (connection: any) =>
+                        !processedConnectionIds.has(connection.id)
+                    )
+                    .map((connection: any, index: number) => ({
+                      ...connection,
+                      id: `${role.title}_${index}`,
+                      status: 'not_contacted',
+                      lastUpdated: new Date().toISOString(),
+                    }));
+                  console.log(
+                    `✅ Processed ${newConnections.length} new connections`
                   );
 
                   // Add new connection IDs to the Set
+                  console.log('🔄 Updating processed IDs set...');
                   newConnections.forEach((connection: any) => {
                     processedConnectionIds.add(connection.id);
                   });
 
                   // Add new connections to the array
                   allConnections = [...allConnections, ...newConnections];
+                  console.log(
+                    `📊 Total connections so far: ${allConnections.length}`
+                  );
                 }
 
                 // Sort all connections by relevance score
+                console.log(
+                  '🔄 Sorting all connections by match percentage...'
+                );
                 allConnections.sort(
                   (a: any, b: any) => b.matchPercentage - a.matchPercentage
                 );
 
                 // Store updated connections in localStorage
+                console.log('💾 Storing all connections in localStorage...');
                 localStorage.setItem(
                   'topConnections',
                   JSON.stringify(allConnections)
                 );
+                console.log('✅ Connections cached');
 
                 // Store in Firebase as well
+                console.log('💾 Storing connections in Firebase...');
                 await updateUserConnections(
                   auth.currentUser.uid,
                   allConnections
                 );
+                console.log('✅ Connections stored in Firebase');
 
                 // Redirect to top-connections page
+                console.log('✅ Process completed, redirecting...');
                 router.push('/top-connections');
               } catch (err: any) {
                 setError(
