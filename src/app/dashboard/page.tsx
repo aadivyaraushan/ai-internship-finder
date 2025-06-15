@@ -1,14 +1,11 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useState, useEffect } from 'react';
 import Image from 'next/image';
 import { useDropzone } from 'react-dropzone';
 import { auth, db, getCurrentUser } from '@/lib/firebase';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { onAuthStateChanged, User } from 'firebase/auth';
-import { auth, db, getCurrentUser } from '@/lib/firebase';
-import { doc, getDoc, setDoc, collection, getDocs } from 'firebase/firestore';
 
 interface Connection {
   id: number;
@@ -17,11 +14,6 @@ interface Connection {
   matchPercentage: number;
   matchReason: string;
   status?: 'Awaiting response' | 'Responded' | null;
-}
-
-interface Role {
-  title: string;
-  bulletPoints: string[];
 }
 
 interface Goal {
@@ -36,7 +28,7 @@ interface Role {
 
 export default function Dashboard() {
   const [file, setFile] = useState<File | null>(null);
-  const [goals, setGoals] = useState<string | Goal[]>('');
+  const [goals, setGoals] = useState<Goal[]>([]);
   const [selectedView, setSelectedView] = useState<'roles' | 'goals' | 'people'>('roles');
   const [roles, setRoles] = useState<Role[]>([]);
   const [loading, setLoading] = useState(false);
