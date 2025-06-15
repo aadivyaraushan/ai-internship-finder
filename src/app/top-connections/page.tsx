@@ -3,7 +3,45 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { checkAuth, auth } from '@/lib/firebase';
-import { Connection } from '@/lib/firestoreHelpers';
+
+interface Connection {
+  id: string;
+  name: string;
+  imageUrl: string;
+  matchPercentage: number;
+  matchReason: string;
+  status?:
+    | 'not_contacted'
+    | 'email_sent'
+    | 'response_received'
+    | 'meeting_scheduled'
+    | 'rejected'
+    | 'ghosted';
+  current_role?: string;
+  company?: string;
+  hiring_power?: {
+    role_type: string;
+    can_hire_interns: boolean;
+    department: string;
+  };
+  exact_matches?: {
+    education: {
+      university: string;
+      graduation_year: string;
+      degree: string;
+    };
+    shared_activities: Array<{
+      name: string;
+      year: string;
+      type: string;
+    }>;
+  };
+  outreach_strategy?: {
+    shared_background_points: string[];
+    unique_connection_angle: string;
+    suggested_approach: string;
+  };
+}
 
 function getInitials(name: string): string {
   return name
@@ -30,23 +68,7 @@ function getRandomColor(name: string): string {
 }
 
 function generateMatchExplanation(connection: Connection): string {
-  // Get the most unique/interesting shared activity
-  const mostUniqueActivity = connection.exact_matches.shared_activities.find(
-    (activity) => activity.type === 'club' || activity.type === 'competition'
-  );
-
-  // Get the hiring power context
-  const hiringContext =
-    connection.hiring_power.role_type === 'hiring_manager'
-      ? 'hiring manager'
-      : connection.hiring_power.role_type === 'team_lead'
-      ? 'team lead'
-      : 'senior member';
-
-  // Build the explanation focusing on the strongest connection points
-  const sharedBackground = connection.outreach_strategy.unique_connection_angle;
-
-  return sharedBackground;
+  return connection.matchReason || 'Strong background match';
 }
 
 export default function TopConnections() {
@@ -67,9 +89,11 @@ export default function TopConnections() {
         const stored = localStorage.getItem('topConnections');
         if (stored) {
           const parsedConnections = JSON.parse(stored);
+          console.log('Loaded connections from storage:', parsedConnections);
           setConnections(parsedConnections);
         }
       } catch (err: any) {
+        console.error('Error loading connections:', err);
         setError(err.message || 'Failed to load connections');
       } finally {
         setLoading(false);
@@ -126,33 +150,45 @@ export default function TopConnections() {
         )}
 
         <div className='grid grid-cols-1 md:grid-cols-2 gap-4'>
-          {connections.map((connection) => (
-            <div
-              key={connection.id}
-              className='bg-[#2a2a2a] p-4 rounded-lg flex items-start gap-4'
-            >
-              <div className='relative'>
-                <div
-                  className={`w-12 h-12 rounded-full flex items-center justify-center text-white font-medium ${getRandomColor(
-                    connection.name
-                  )}`}
-                >
-                  {getInitials(connection.name)}
-                </div>
-              </div>
-              <div className='flex-1'>
-                <div className='flex items-center justify-between mb-2'>
-                  <h3 className='text-white font-medium'>{connection.name}</h3>
-                  <div className='text-blue-500 font-medium'>
-                    {connection.match_details.total_percentage}%
+          {connections.map((connection, index) => {
+            console.log('Rendering connection:', connection);
+            return (
+              <div
+                key={index}
+                className='bg-[#2a2a2a] p-4 rounded-lg flex items-start gap-4'
+              >
+                <div className='relative'>
+                  <div
+                    className={`w-12 h-12 rounded-full flex items-center justify-center text-white font-medium ${getRandomColor(
+                      connection.name
+                    )}`}
+                  >
+                    {getInitials(connection.name)}
                   </div>
                 </div>
-                <p className='text-gray-400 text-sm'>
-                  {generateMatchExplanation(connection)}
-                </p>
+                <div className='flex-1'>
+                  <div className='flex items-center justify-between mb-2'>
+                    <div>
+                      <h3 className='text-white font-medium'>
+                        {connection.name}
+                      </h3>
+                      {connection.current_role && (
+                        <p className='text-gray-400 text-sm'>
+                          {connection.current_role} at {connection.company}
+                        </p>
+                      )}
+                    </div>
+                    <div className='text-blue-500 font-medium'>
+                      {connection.matchPercentage}%
+                    </div>
+                  </div>
+                  <p className='text-gray-400 text-sm'>
+                    {generateMatchExplanation(connection)}
+                  </p>
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     </div>

@@ -5,6 +5,37 @@ interface Goal {
   description?: string;
 }
 
+// Add interface at the top of the file after imports
+interface ConnectionResponse {
+  name: string;
+  current_role: string;
+  company: string;
+  hiring_power: {
+    role_type: string;
+    can_hire_interns: boolean;
+    department: string;
+  };
+  exact_matches: {
+    education: {
+      university: string;
+      graduation_year: string;
+      degree: string;
+    };
+    shared_activities: Array<{
+      name: string;
+      year: string;
+      type: string;
+    }>;
+  };
+  match_details: {
+    total_percentage: number;
+    hiring_power_score: number;
+    background_match_score: number;
+    career_path_score: number;
+    scoring_explanation: string;
+  };
+}
+
 // Helper tool definition for Claude web search
 const CLAUDE_WEB_SEARCH_TOOL = [
   {
@@ -24,112 +55,48 @@ function buildPrompt({
   resumeContext?: string;
   goalTitles?: string[];
 }) {
-  return `
-You are an AI career advisor tasked with identifying people who can directly refer or hire the user for internship roles, specifically focusing on those with nearly identical backgrounds.
+  return `<system>JSON-only output required. No other text allowed.</system>
 
-User Resume Context (for reference):
-${resumeContext || 'N/A'}
+<input>
+  <resume>${resumeContext || 'N/A'}</resume>
+  <goals>${goalTitles?.join(', ') || 'N/A'}</goals>
+  <role>${roleTitle}</role>
+</input>
 
-User Career Goals:
-${goalTitles?.join('\n- ') || 'N/A'}
+<rules>
+- Search for people with hiring power and matching backgrounds
+- Score: hiring(30%): manager=30|lead=25|senior=20
+- Score: background(50%): uni=15|degree=5|activity=10|work=10|grad=10
+- Score: career(20%): start=10|transition=10
+</rules>
 
-Target Role:
-${roleTitle}
+<format>Empty response: {"connections":[]}
+Full response: {"connections":[{
+  "name": "Jane Doe",
+  "current_role": "Tech Lead",
+  "company": "Example Corp",
+  "hiring_power": {"role_type": "team_lead", "can_hire_interns": true, "department": "Engineering"},
+  "exact_matches": {
+    "education": {"university": "MIT", "graduation_year": "2018", "degree": "CS"},
+    "shared_activities": [{"name": "Hackathon", "year": "2017", "type": "competition"}]
+  },
+  "career_path": {"starting_point": "Intern", "key_transition": "To leadership", "time_in_industry": "5y"},
+  "outreach_strategy": {
+    "shared_background_points": ["Same hackathon"],
+    "unique_connection_angle": "Similar path",
+    "suggested_approach": "Mention hackathon"
+  },
+  "contact_info": {"public_profile": "linkedin/jane", "work_email": null, "contact_source": "LinkedIn"},
+  "match_details": {
+    "total_percentage": 80,
+    "hiring_power_score": 25,
+    "background_match_score": 35,
+    "career_path_score": 20,
+    "scoring_explanation": "Strong match"
+  }
+}]}</format>
 
-SEARCH STRATEGY:
-1. First, extract key identifiers from the user's background:
-   - Universities/schools attended
-   - Specific clubs, competitions, or activities (especially niche ones)
-   - Previous workplaces and timeframes
-   - Notable awards or certifications
-
-2. Use the \`web_search\` tool to find people by searching for combinations of:
-   - The exact schools/universities + the target role title
-   - Specific niche clubs/competitions + the target role title
-   - Previous workplaces + target role title
-   
-3. For each potential match, verify they have:
-   - Current hiring power (e.g., hiring manager, team lead, senior+ role with referral influence)
-   - At least 2-3 exact matches with user's background (same school AND same club/competition)
-   - Made a similar career transition
-
-4. Calculate match percentage based on:
-   - Hiring Power (30%):
-     * Direct hiring manager = 30%
-     * Team lead = 25%
-     * Senior with referral power = 20%
-   - Background Matches (50%):
-     * Same university = 15%
-     * Same degree = 5%
-     * Each shared niche activity = 10%
-     * Each shared workplace = 10%
-     * Same graduation timeframe (±2 years) = 10%
-   - Career Path Relevance (20%):
-     * Similar starting point = 10%
-     * Made the exact transition user wants = 10%
-
-Output a JSON object in this exact format:
-
-{
-  "connections": [
-    {
-      "name": "Full Name",
-      "current_role": "Current Job Title",
-      "hiring_power": {
-        "role_type": "hiring_manager|team_lead|senior_with_referral",
-        "can_hire_interns": true,
-        "department": "Relevant department name"
-      },
-      "company": "Current Company",
-      "exact_matches": {
-        "education": {
-          "university": "Exact university name",
-          "graduation_year": "YYYY",
-          "degree": "Exact degree name"
-        },
-        "shared_activities": [
-          {
-            "name": "Exact club/competition/activity name",
-            "year": "YYYY",
-            "type": "club|competition|workplace|certification"
-          }
-        ]
-      },
-      "career_path": {
-        "starting_point": "Their background when they were at user's stage",
-        "key_transition": "How they moved into current field",
-        "time_in_industry": "X years"
-      },
-      "outreach_strategy": {
-        "shared_background_points": [
-          "Specific shared experience 1",
-          "Specific shared experience 2"
-        ],
-        "unique_connection_angle": "What makes this connection particularly strong",
-        "suggested_approach": "Specific mention of shared experiences"
-      },
-      "contact_info": {
-        "public_profile": "URL to their public profile",
-        "work_email": "Work email if public, otherwise null",
-        "contact_source": "Where this information was found"
-      },
-      "match_details": {
-        "total_percentage": 85,
-        "hiring_power_score": 25,
-        "background_match_score": 40,
-        "career_path_score": 20,
-        "scoring_explanation": "Brief explanation of how scores were calculated"
-      }
-    }
-  ]
-}
-
-IMPORTANT:
-- Only include people with VERIFIED hiring/referral power
-- Prioritize EXACT matches in background over approximate matches
-- Focus on UNCOMMON shared experiences that will make outreach memorable
-- Calculate match percentages precisely according to the scoring system
-- Return ONLY the JSON object with NO additional commentary`;
+<critical>Output must be valid JSON only. No other text allowed.</critical>`;
 }
 
 export async function POST(req: Request) {
@@ -166,23 +133,108 @@ export async function POST(req: Request) {
           maxTokens: 1200,
         });
 
-        // Look for a JSON object in the response
-        const jsonTextMatch = raw.match(/\{[\s\S]*\}/);
-        if (!jsonTextMatch) {
-          throw new Error('Claude response did not contain JSON');
-        }
+        // Clean the response to ensure we only have JSON
+        let cleanedResponse = raw
+          .trim()
+          // Remove markdown code blocks
+          .replace(/^```json\s*|\s*```$/g, '')
+          // Remove any non-JSON text before or after
+          .replace(/^[^{]*/, '')
+          .replace(/[^}]*$/, '')
+          // Fix common JSON formatting issues
+          .replace(/,(\s*[}\]])/g, '$1') // Remove trailing commas
+          .replace(/([^,{[:])\s*}/g, '$1}') // Fix missing commas
+          .replace(/\n/g, ' ') // Remove newlines
+          .trim();
 
-        const parsed = JSON.parse(jsonTextMatch[0]);
+        try {
+          // First attempt: direct parse
+          const parsed = JSON.parse(cleanedResponse);
+          if (parsed && Array.isArray(parsed.connections)) {
+            // Validate each connection object
+            const validConnections = parsed.connections.filter(
+              (conn: unknown) => {
+                return (
+                  conn &&
+                  typeof conn === 'object' &&
+                  typeof (conn as ConnectionResponse).name === 'string' &&
+                  typeof (conn as ConnectionResponse).current_role ===
+                    'string' &&
+                  typeof (conn as ConnectionResponse).company === 'string' &&
+                  (conn as ConnectionResponse).hiring_power &&
+                  typeof (conn as ConnectionResponse).hiring_power ===
+                    'object' &&
+                  typeof (conn as ConnectionResponse).hiring_power.role_type ===
+                    'string' &&
+                  typeof (conn as ConnectionResponse).hiring_power
+                    .can_hire_interns === 'boolean' &&
+                  (conn as ConnectionResponse).exact_matches &&
+                  typeof (conn as ConnectionResponse).exact_matches ===
+                    'object' &&
+                  (conn as ConnectionResponse).match_details &&
+                  typeof (conn as ConnectionResponse).match_details ===
+                    'object' &&
+                  typeof (conn as ConnectionResponse).match_details
+                    .total_percentage === 'number'
+                );
+              }
+            );
+            connections.push(...(validConnections as ConnectionResponse[]));
+          } else {
+            console.warn(
+              'Invalid JSON structure from Claude. Skipping role:',
+              role.title,
+              '\nReceived:',
+              cleanedResponse
+            );
+          }
+        } catch (parseError) {
+          console.error('First parse attempt failed:', parseError);
 
-        if (parsed && Array.isArray(parsed.connections)) {
-          connections.push(...parsed.connections);
-        } else {
-          console.warn(
-            'Unexpected JSON structure from Claude. Skipping role:',
-            role.title,
-            '\nReceived:',
-            raw
-          );
+          // Second attempt: try to find and extract a valid JSON object
+          const jsonMatch = cleanedResponse.match(/\{[\s\S]*\}/);
+          if (jsonMatch) {
+            try {
+              const extracted = JSON.parse(jsonMatch[0]);
+              if (extracted && Array.isArray(extracted.connections)) {
+                const validConnections = extracted.connections.filter(
+                  (conn: unknown) => {
+                    return (
+                      conn &&
+                      typeof conn === 'object' &&
+                      typeof (conn as ConnectionResponse).name === 'string' &&
+                      typeof (conn as ConnectionResponse).current_role ===
+                        'string' &&
+                      typeof (conn as ConnectionResponse).company ===
+                        'string' &&
+                      (conn as ConnectionResponse).hiring_power &&
+                      typeof (conn as ConnectionResponse).hiring_power ===
+                        'object' &&
+                      typeof (conn as ConnectionResponse).hiring_power
+                        .role_type === 'string' &&
+                      typeof (conn as ConnectionResponse).hiring_power
+                        .can_hire_interns === 'boolean' &&
+                      (conn as ConnectionResponse).exact_matches &&
+                      typeof (conn as ConnectionResponse).exact_matches ===
+                        'object' &&
+                      (conn as ConnectionResponse).match_details &&
+                      typeof (conn as ConnectionResponse).match_details ===
+                        'object' &&
+                      typeof (conn as ConnectionResponse).match_details
+                        .total_percentage === 'number'
+                    );
+                  }
+                );
+                connections.push(...(validConnections as ConnectionResponse[]));
+              }
+            } catch (extractError) {
+              console.error('Failed to parse extracted JSON:', extractError);
+              console.error('Problematic JSON:', jsonMatch[0]);
+            }
+          } else {
+            console.error('No valid JSON found in response');
+            console.error('Raw response:', raw);
+          }
         }
       } catch (err) {
         console.error('Error while processing role', role.title, err);
@@ -207,10 +259,29 @@ export async function POST(req: Request) {
       );
     });
 
+    // Transform connections to match frontend interface
+    const transformedConnections = sorted.map((conn) => ({
+      id:
+        conn.id ||
+        `${conn.name}-${conn.company}`.replace(/\s+/g, '-').toLowerCase(),
+      name: conn.name,
+      imageUrl: '', // We don't have images yet
+      matchPercentage: conn.match_details.total_percentage,
+      matchReason: conn.outreach_strategy.unique_connection_angle,
+      status: 'not_contacted',
+      // Keep the original data for reference
+      ...conn,
+    }));
+
+    console.log('API Response Structure:', {
+      sample_connection: transformedConnections[0] || 'No connections found',
+      total_connections: transformedConnections.length,
+    });
+
     return new Response(
       JSON.stringify({
         response: {
-          connections: sorted,
+          connections: transformedConnections,
           processingSteps: {
             resumeAnalyzed: true,
             rolesEvaluated: true,

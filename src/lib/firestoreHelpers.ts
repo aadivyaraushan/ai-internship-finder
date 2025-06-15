@@ -1,5 +1,6 @@
+import { onAuthStateChanged } from 'firebase/auth';
 import { doc, setDoc, updateDoc, getDoc, arrayUnion } from 'firebase/firestore';
-import { db } from './firebase';
+import { db, auth } from './firebase';
 
 export interface Connection {
   id: string;
@@ -209,3 +210,12 @@ export async function getResume(resumeId: string) {
   const snap = await getDoc(resumeRef);
   return snap.exists() ? snap.data() : null;
 }
+
+export const getCurrentUser = () => {
+  return new Promise<boolean>((resolve) => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      unsubscribe();
+      resolve(user !== null);
+    });
+  });
+};
