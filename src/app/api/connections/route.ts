@@ -145,6 +145,14 @@ export async function POST(req: Request) {
           .replace(/,(\s*[}\]])/g, '$1') // Remove trailing commas
           .replace(/([^,{[:])\s*}/g, '$1}') // Fix missing commas
           .replace(/\n/g, ' ') // Remove newlines
+          .replace(/\s+/g, ' ') // Normalize whitespace
+          .replace(/,\s*,/g, ',') // Fix double commas
+          .replace(/}\s*{/g, '},{') // Fix object concatenation
+          .replace(/]\s*\[/g, '],[') // Fix array concatenation
+          .replace(/"\s*"/g, '","') // Fix string concatenation
+          .replace(/:\s*:/g, ':') // Fix double colons
+          .replace(/([{,])\s*}/g, '$1}') // Fix empty objects
+          .replace(/\[\s*]/g, '[]') // Fix empty arrays
           .trim();
 
         try {
@@ -154,29 +162,37 @@ export async function POST(req: Request) {
             // Validate each connection object
             const validConnections = parsed.connections.filter(
               (conn: unknown) => {
-                return (
-                  conn &&
-                  typeof conn === 'object' &&
-                  typeof (conn as ConnectionResponse).name === 'string' &&
-                  typeof (conn as ConnectionResponse).current_role ===
-                    'string' &&
-                  typeof (conn as ConnectionResponse).company === 'string' &&
-                  (conn as ConnectionResponse).hiring_power &&
-                  typeof (conn as ConnectionResponse).hiring_power ===
-                    'object' &&
-                  typeof (conn as ConnectionResponse).hiring_power.role_type ===
-                    'string' &&
-                  typeof (conn as ConnectionResponse).hiring_power
-                    .can_hire_interns === 'boolean' &&
-                  (conn as ConnectionResponse).exact_matches &&
-                  typeof (conn as ConnectionResponse).exact_matches ===
-                    'object' &&
-                  (conn as ConnectionResponse).match_details &&
-                  typeof (conn as ConnectionResponse).match_details ===
-                    'object' &&
-                  typeof (conn as ConnectionResponse).match_details
-                    .total_percentage === 'number'
-                );
+                try {
+                  return (
+                    conn &&
+                    typeof conn === 'object' &&
+                    typeof (conn as ConnectionResponse).name === 'string' &&
+                    typeof (conn as ConnectionResponse).current_role ===
+                      'string' &&
+                    typeof (conn as ConnectionResponse).company === 'string' &&
+                    (conn as ConnectionResponse).hiring_power &&
+                    typeof (conn as ConnectionResponse).hiring_power ===
+                      'object' &&
+                    typeof (conn as ConnectionResponse).hiring_power
+                      .role_type === 'string' &&
+                    typeof (conn as ConnectionResponse).hiring_power
+                      .can_hire_interns === 'boolean' &&
+                    (conn as ConnectionResponse).exact_matches &&
+                    typeof (conn as ConnectionResponse).exact_matches ===
+                      'object' &&
+                    (conn as ConnectionResponse).match_details &&
+                    typeof (conn as ConnectionResponse).match_details ===
+                      'object' &&
+                    typeof (conn as ConnectionResponse).match_details
+                      .total_percentage === 'number'
+                  );
+                } catch (validationError) {
+                  console.error(
+                    'Connection validation error:',
+                    validationError
+                  );
+                  return false;
+                }
               }
             );
             connections.push(...(validConnections as ConnectionResponse[]));
@@ -190,39 +206,63 @@ export async function POST(req: Request) {
           }
         } catch (parseError) {
           console.error('First parse attempt failed:', parseError);
+          console.error('Problematic JSON:', cleanedResponse);
 
           // Second attempt: try to find and extract a valid JSON object
           const jsonMatch = cleanedResponse.match(/\{[\s\S]*\}/);
           if (jsonMatch) {
             try {
-              const extracted = JSON.parse(jsonMatch[0]);
+              // Additional cleaning for the extracted JSON
+              let extractedJson = jsonMatch[0]
+                .replace(/,(\s*[}\]])/g, '$1')
+                .replace(/([^,{[:])\s*}/g, '$1}')
+                .replace(/\n/g, ' ')
+                .replace(/\s+/g, ' ')
+                .replace(/,\s*,/g, ',')
+                .replace(/}\s*{/g, '},{')
+                .replace(/]\s*\[/g, '],[')
+                .replace(/"\s*"/g, '","')
+                .replace(/:\s*:/g, ':')
+                .replace(/([{,])\s*}/g, '$1}')
+                .replace(/\[\s*]/g, '[]')
+                .trim();
+
+              const extracted = JSON.parse(extractedJson);
               if (extracted && Array.isArray(extracted.connections)) {
                 const validConnections = extracted.connections.filter(
                   (conn: unknown) => {
-                    return (
-                      conn &&
-                      typeof conn === 'object' &&
-                      typeof (conn as ConnectionResponse).name === 'string' &&
-                      typeof (conn as ConnectionResponse).current_role ===
-                        'string' &&
-                      typeof (conn as ConnectionResponse).company ===
-                        'string' &&
-                      (conn as ConnectionResponse).hiring_power &&
-                      typeof (conn as ConnectionResponse).hiring_power ===
-                        'object' &&
-                      typeof (conn as ConnectionResponse).hiring_power
-                        .role_type === 'string' &&
-                      typeof (conn as ConnectionResponse).hiring_power
-                        .can_hire_interns === 'boolean' &&
-                      (conn as ConnectionResponse).exact_matches &&
-                      typeof (conn as ConnectionResponse).exact_matches ===
-                        'object' &&
-                      (conn as ConnectionResponse).match_details &&
-                      typeof (conn as ConnectionResponse).match_details ===
-                        'object' &&
-                      typeof (conn as ConnectionResponse).match_details
-                        .total_percentage === 'number'
-                    );
+                    try {
+                      return (
+                        conn &&
+                        typeof conn === 'object' &&
+                        typeof (conn as ConnectionResponse).name === 'string' &&
+                        typeof (conn as ConnectionResponse).current_role ===
+                          'string' &&
+                        typeof (conn as ConnectionResponse).company ===
+                          'string' &&
+                        (conn as ConnectionResponse).hiring_power &&
+                        typeof (conn as ConnectionResponse).hiring_power ===
+                          'object' &&
+                        typeof (conn as ConnectionResponse).hiring_power
+                          .role_type === 'string' &&
+                        typeof (conn as ConnectionResponse).hiring_power
+                          .can_hire_interns === 'boolean' &&
+                        (conn as ConnectionResponse).exact_matches &&
+                        typeof (conn as ConnectionResponse).exact_matches ===
+                          'object' &&
+                        (conn as ConnectionResponse).match_details &&
+                        typeof (conn as ConnectionResponse).match_details ===
+                          'object' &&
+                        typeof (conn as ConnectionResponse).match_details
+                          .total_percentage === 'number'
+                      );
+                    } catch (validationError) {
+                      console.error(
+                        'Connection validation error:',
+                        validationError
+                      );
+                      return false;
+                    }
                   }
                 );
                 connections.push(...(validConnections as ConnectionResponse[]));
