@@ -1,4 +1,5 @@
-import { callClaude } from '../../../lib/anthropicClient';
+import { getResumeContext } from '../../../lib/memory';
+import { chatModel, connectionAnalysisParser, connectionAnalysisPrompt } from '../../../lib/langchainClient';
 
 interface Goal {
   title: string;
@@ -94,18 +95,14 @@ Program:{"type":"program","name":"","organization":"","program_type":"","program
 If none:{"connections":[]} `;
 }
 
-export async function POST(req: Request) {
+export const POST = async (req: Request) => {
   try {
     const body = await req.json();
-    const {
-      roles,
-      resumeContext,
-      goals,
-    }: { roles: any[]; resumeContext?: string; goals?: Goal[] } = body;
+    const { goals } = body;
 
-    if (!roles || !Array.isArray(roles) || roles.length === 0) {
+    if (!goals || !Array.isArray(goals) || goals.length === 0) {
       return new Response(
-        JSON.stringify({ error: 'Selected roles are required' }),
+        JSON.stringify({ error: 'Selected goals are required' }),
         {
           status: 400,
           headers: { 'Content-Type': 'application/json' },
@@ -113,201 +110,25 @@ export async function POST(req: Request) {
       );
     }
 
-    const connections: any[] = [];
+    const resumeContext = getResumeContext() || 'No resume data available';
 
-    for (const role of roles) {
-      const prompt = buildPrompt({
-        roleTitle: role.title,
-        resumeContext,
-        goalTitles: goals?.map((g) => g.title) || [],
-      });
-
-      try {
-        const raw = await callClaude(prompt, {
-          tools: CLAUDE_WEB_SEARCH_TOOL,
-          maxTokens: 800,
-        });
-
-        // Clean the response to ensure we only have JSON
-        let cleanedResponse = raw
-          .trim()
-          // Remove markdown code blocks
-          .replace(/^```json\s*|\s*```$/g, '')
-          // Remove any non-JSON text before or after
-          .replace(/^[^{]*/, '')
-          .replace(/[^}]*$/, '')
-          // Fix common JSON formatting issues
-          .replace(/,(\s*[}\]])/g, '$1') // Remove trailing commas
-          .replace(/([^,{[:])\s*}/g, '$1}') // Fix missing commas
-          .replace(/\n/g, ' ') // Remove newlines
-          .replace(/\s+/g, ' ') // Normalize whitespace
-          .replace(/,\s*,/g, ',') // Fix double commas
-          .replace(/}\s*{/g, '},{') // Fix object concatenation
-          .replace(/]\s*\[/g, '],[') // Fix array concatenation
-          .replace(/"\s*"/g, '","') // Fix string concatenation
-          .replace(/:\s*:/g, ':') // Fix double colons
-          .replace(/([{,])\s*}/g, '$1}') // Fix empty objects
-          .replace(/\[\s*]/g, '[]') // Fix empty arrays
-          .trim();
-
-        try {
-          // First attempt: direct parse
-          const parsed = JSON.parse(cleanedResponse);
-          if (parsed && Array.isArray(parsed.connections)) {
-            const validConnections = parsed.connections.filter((conn: any) => {
-              if (
-                !conn ||
-                typeof conn !== 'object' ||
-                typeof conn.name !== 'string'
-              ) {
-                return false;
-              }
-              // Ensure type defaults to person if not provided
-              conn.type = conn.type || 'person';
-              // Basic match details requirement
-              if (
-                !conn.match_details ||
-                typeof conn.match_details.total_percentage !== 'number'
-              ) {
-                conn.match_details = { total_percentage: 0 } as any;
-              }
-              return true;
-            });
-            connections.push(...validConnections);
-          } else {
-            console.warn(
-              'Invalid JSON structure from Claude. Skipping role:',
-              role.title,
-              '\nReceived:',
-              cleanedResponse
-            );
-          }
-        } catch (parseError) {
-          console.error('First parse attempt failed:', parseError);
-          console.error('Problematic JSON:', cleanedResponse);
-
-          // Second attempt: try to find and extract a valid JSON object
-          const jsonMatch = cleanedResponse.match(/\{[\s\S]*\}/);
-          if (jsonMatch) {
-            try {
-              // Additional cleaning for the extracted JSON
-              let extractedJson = jsonMatch[0]
-                .replace(/,(\s*[}\]])/g, '$1')
-                .replace(/([^,{[:])\s*}/g, '$1}')
-                .replace(/\n/g, ' ')
-                .replace(/\s+/g, ' ')
-                .replace(/,\s*,/g, ',')
-                .replace(/}\s*{/g, '},{')
-                .replace(/]\s*\[/g, '],[')
-                .replace(/"\s*"/g, '","')
-                .replace(/:\s*:/g, ':')
-                .replace(/([{,])\s*}/g, '$1}')
-                .replace(/\[\s*]/g, '[]')
-                .trim();
-
-              const extracted = JSON.parse(extractedJson);
-              if (extracted && Array.isArray(extracted.connections)) {
-                const validConnections = extracted.connections.filter(
-                  (conn: any) => {
-                    if (
-                      !conn ||
-                      typeof conn !== 'object' ||
-                      typeof conn.name !== 'string'
-                    ) {
-                      return false;
-                    }
-                    conn.type = conn.type || 'person';
-                    if (
-                      !conn.match_details ||
-                      typeof conn.match_details.total_percentage !== 'number'
-                    ) {
-                      conn.match_details = { total_percentage: 0 } as any;
-                    }
-                    return true;
-                  }
-                );
-                connections.push(...validConnections);
-              }
-            } catch (extractError) {
-              console.error('Failed to parse extracted JSON:', extractError);
-              console.error('Problematic JSON:', jsonMatch[0]);
-            }
-          } else {
-            console.error('No valid JSON found in response');
-            console.error('Raw response:', raw);
-          }
-        }
-      } catch (err) {
-        console.error('Error while processing role', role.title, err);
-        continue;
-      }
-    }
-
-    // Deduplicate connections by name + type + company/org
-    const unique = new Map<string, any>();
-    for (const conn of connections) {
-      const key = `${conn.type || 'person'}-${conn.name}-${
-        (conn as any).company || (conn as any).organization || ''
-      }`;
-      if (!unique.has(key)) {
-        unique.set(key, conn);
-      }
-    }
-
-    // Sort by match percentage (fall back to 0)
-    const sorted = Array.from(unique.values()).sort((a, b) => {
-      return (
-        (b.match_details?.total_percentage || 0) -
-        (a.match_details?.total_percentage || 0)
-      );
+    // Format the prompt with the parser's instructions
+    const formattedPrompt = await connectionAnalysisPrompt.format({
+      profile: resumeContext,
+      goals: goals.map((g: any) => g.title).join('\n- '),
+      format_instructions: connectionAnalysisParser.getFormatInstructions(),
     });
 
-    const stripCite = (str: string) =>
-      typeof str === 'string' ? str.replace(/<cite[^>]*>|<\/cite>/g, '') : str;
+    // Get the response from the model
+    const response = await chatModel.invoke(formattedPrompt);
+    const responseContent = response.content.toString();
 
-    // Transform connections to match frontend interface
-    const transformedConnections = sorted.map((conn) => {
-      const isProgram = conn.type === 'program';
-      const companyOrOrg =
-        (conn as any).company || (conn as any).organization || '';
-      return {
-        id:
-          conn.id ||
-          `${conn.type || 'person'}-${conn.name}-${companyOrOrg}`
-            .replace(/\s+/g, '-')
-            .toLowerCase(),
-        type: conn.type || 'person',
-        name: stripCite(conn.name),
-        imageUrl: '',
-        matchPercentage: conn.match_details?.total_percentage || 0,
-        matchReason: isProgram
-          ? stripCite(
-              (conn as any).how_this_helps || (conn as any).program_description
-            )
-          : stripCite(
-              (conn as any).outreach_strategy?.unique_connection_angle || ''
-            ),
-        status: 'not_contacted',
-        ...conn,
-      };
-    });
-
-    console.log('API Response Structure:', {
-      sample_connection: transformedConnections[0] || 'No connections found',
-      total_connections: transformedConnections.length,
-    });
+    // Parse the response using our structured parser
+    const parsedResponse = await connectionAnalysisParser.parse(responseContent);
 
     return new Response(
       JSON.stringify({
-        response: {
-          connections: transformedConnections,
-          processingSteps: {
-            resumeAnalyzed: true,
-            rolesEvaluated: true,
-            connectionsFound: sorted.length > 0,
-            matchesRanked: true,
-          },
-        },
+        response: parsedResponse,
         timestamp: new Date().toISOString(),
         status: 'success',
       }),
@@ -317,10 +138,10 @@ export async function POST(req: Request) {
       }
     );
   } catch (error) {
-    console.error('Fatal error in connection search:', error);
+    console.error('Error processing request:', error);
     return new Response(JSON.stringify({ error: 'Internal server error' }), {
       status: 500,
       headers: { 'Content-Type': 'application/json' },
     });
   }
-}
+};

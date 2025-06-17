@@ -1,52 +1,22 @@
-import { callClaude } from '../../../lib/anthropicClient';
 import { getResumeContext } from '../../../lib/memory';
-
-const PROMPT_TEMPLATE = (resume: string, userInput: string) => `
-You are an AI assistant with access to the user's resume data. Use this context to provide personalized responses.
-
-Resume Context:
-${resume}
-
-Current Request:
-${userInput}
-
-Read between the lines and analyze 5 actual potential career goals and opportunities that the person wants out of this.
-
-Focus on identifying specific, actionable goals that align with their experience and skills.
-
-Return ONLY valid JSON with the exact structure:
-{
-  "endGoals": [
-    {
-      "id": "1",
-      "title": "Goal Title",
-      "description": "Detailed description"
-    }
-  ]
-}`;
+import { chatModel, goalAnalysisParser, goalAnalysisPrompt } from '../../../lib/langchainClient';
 
 export const POST = async (req: Request) => {
   try {
-    const body = await req.json();
-    const { goal } = body;
-
-    if (!goal) {
-      return new Response(JSON.stringify({ error: 'Goal is required' }), {
-        status: 400,
-        headers: { 'Content-Type': 'application/json' },
-      });
-    }
-
     const resumeContext = getResumeContext() || 'No resume data available';
 
-    const prompt = PROMPT_TEMPLATE(resumeContext, goal);
+    // Format the prompt with the parser's instructions
+    const formattedPrompt = await goalAnalysisPrompt.format({
+      resume: resumeContext,
+      format_instructions: goalAnalysisParser.getFormatInstructions(),
+    });
 
-    const raw = await callClaude(prompt);
+    // Get the response from the model
+    const response = await chatModel.invoke(formattedPrompt);
+    const responseContent = response.content.toString();
 
-    const jsonMatch = raw.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) throw new Error('Claude did not return JSON');
-
-    const parsedResponse = JSON.parse(jsonMatch[0]);
+    // Parse the response using our structured parser
+    const parsedResponse = await goalAnalysisParser.parse(responseContent);
 
     return new Response(
       JSON.stringify({

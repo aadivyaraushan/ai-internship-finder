@@ -1,33 +1,5 @@
 import { getResumeContext } from '../../../lib/memory';
-import { callClaude } from '../../../lib/anthropicClient';
-
-const PROMPT_TEMPLATE = (resume: string, goalTitles: string[]) => `
-You are an AI career advisor with access to the user's resume data and their career goals.
-
-Resume Context:
-${resume}
-
-Selected Goals:
-${goalTitles.join('\n- ')}
-
-Based on the user's background and their selected career goals, analyze and identify the most suitable roles they could pursue.
-Focus on roles that:
-1. Align with their current skills and experience
-2. Represent realistic transition paths
-3. Match their stated career goals
-
-Return ONLY JSON with the exact structure:
-{
-  "suggestedRoles": [
-    {
-      "title": "Role Title",
-      "bulletPoints": [
-        "First key point",
-        "Second key point"
-      ]
-    }
-  ]
-}`;
+import { chatModel, roleAnalysisParser, roleAnalysisPrompt } from '../../../lib/langchainClient';
 
 export const POST = async (req: Request) => {
   try {
@@ -46,17 +18,19 @@ export const POST = async (req: Request) => {
 
     const resumeContext = getResumeContext() || 'No resume data available';
 
-    const prompt = PROMPT_TEMPLATE(
-      resumeContext,
-      goals.map((g: any) => g.title)
-    );
+    // Format the prompt with the parser's instructions
+    const formattedPrompt = await roleAnalysisPrompt.format({
+      resume: resumeContext,
+      goals: goals.map((g: any) => g.title).join('\n- '),
+      format_instructions: roleAnalysisParser.getFormatInstructions(),
+    });
 
-    const raw = await callClaude(prompt);
+    // Get the response from the model
+    const response = await chatModel.invoke(formattedPrompt);
+    const responseContent = response.content.toString();
 
-    const jsonMatch = raw.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) throw new Error('Claude did not return JSON');
-
-    const parsedResponse = JSON.parse(jsonMatch[0]);
+    // Parse the response using our structured parser
+    const parsedResponse = await roleAnalysisParser.parse(responseContent);
 
     return new Response(
       JSON.stringify({
