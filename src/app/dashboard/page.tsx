@@ -29,7 +29,7 @@ interface Goal {
 
 export default function Dashboard() {
   const [file, setFile] = useState<File | null>(null);
-  const [goals, setGoals] = useState<string | Goal[]>('');
+  const [goals, setGoals] = useState<Goal[]>([]);
   const [selectedView, setSelectedView] = useState<'roles' | 'goals' | 'people'>('roles');
   const [roles, setRoles] = useState<Role[]>([]);
   const [loading, setLoading] = useState(true);
@@ -69,16 +69,17 @@ export default function Dashboard() {
           console.log('Fetched userData from Firestore:', userData);
           // Handle goals: can be a string or array of objects
           if (userData.goals) {
-            if (typeof userData.goals === 'string') {
-              setGoals(userData.goals);
-              console.log('Set goals (string):', userData.goals);
-            } else if (Array.isArray(userData.goals)) {
+            if (Array.isArray(userData.goals)) {
               setGoals(userData.goals);
               console.log('Set goals (array):', userData.goals);
             } else {
-              setGoals('');
-              console.log('Set goals (unknown type):', userData.goals);
+              // Convert string to Goal array if needed
+              setGoals([{ title: userData.goals }]);
+              console.log('Set goals (converted string):', userData.goals);
             }
+          } else {
+            setGoals([]);
+            console.log('Set goals: []');
           }
           // Handle roles: should be an array of Role objects
           if (userData.roles && Array.isArray(userData.roles)) {
@@ -147,7 +148,7 @@ export default function Dashboard() {
 
     try {
       await setDoc(doc(db, 'users', auth.currentUser.uid), {
-        goals: typeof goals === 'string' ? goals.trim() : goals
+        goals: goals
       }, { merge: true });
       setError('');
     } catch (err: any) {
@@ -222,7 +223,7 @@ export default function Dashboard() {
                     <div key={index} className='bg-[#2a2a2a] p-4 rounded-lg'>
                       <h3 className='text-white font-medium mb-2'>{role.title}</h3>
                       <ul className='space-y-1'>
-                        {role.bulletPoints.map((point, i) => (
+                        {role.bulletPoints.map((point: string, i: number) => (
                           <li key={i} className='text-gray-400 text-sm flex items-start'>
                             <span className='mr-2'>•</span>
                             <span>{point}</span>
@@ -240,8 +241,16 @@ export default function Dashboard() {
                 <div className='bg-[#2a2a2a] p-4 rounded-lg'>
                   <h3 className='text-white font-medium mb-2'>Your Goals</h3>
                   <textarea
-                    value={typeof goals === 'string' ? goals : JSON.stringify(goals)}
-                    onChange={(e) => setGoals(e.target.value)}
+                    value={JSON.stringify(goals, null, 2)}
+                    onChange={(e) => {
+                      try {
+                        const parsed = JSON.parse(e.target.value);
+                        setGoals(Array.isArray(parsed) ? parsed : []);
+                      } catch {
+                        // If JSON parsing fails, create a new goal with the text
+                        setGoals([{ title: e.target.value }]);
+                      }
+                    }}
                     placeholder='For example: if you wish to pivot into tech, or if you want to find an internship. Any information helps.'
                     className='w-full h-24 px-3 py-2 text-gray-300 bg-[#1a1a1a] rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none'
                   />
@@ -319,7 +328,7 @@ export default function Dashboard() {
                     Resume uploaded
                   </li>
                   <li className='flex items-center'>
-                    {userData && ((Array.isArray(userData.goals) && userData.goals.length > 0) || (typeof userData.goals === 'string' && userData.goals.trim() !== '')) ? (
+                    {userData && goals.length > 0 ? (
                       <span className='text-green-400 mr-2'>✔</span>
                     ) : (
                       <span className='text-gray-500 mr-2'>○</span>
@@ -342,13 +351,13 @@ export default function Dashboard() {
                   {userData && !userData.resume_id && (
                     <li>• Upload your resume</li>
                   )}
-                  {userData && !((Array.isArray(userData.goals) && userData.goals.length > 0) || (typeof userData.goals === 'string' && userData.goals.trim() !== '')) && (
+                  {userData && goals.length === 0 && (
                     <li>• Set your career goals</li>
                   )}
                   {userData && !(Array.isArray(userData.roles) && userData.roles.length > 0) && (
                     <li>• Explore suggested roles</li>
                   )}
-                  {userData && userData.resume_id && ((Array.isArray(userData.goals) && userData.goals.length > 0) || (typeof userData.goals === 'string' && userData.goals.trim() !== '')) && (Array.isArray(userData.roles) && userData.roles.length > 0) && (
+                  {userData && userData.resume_id && goals.length > 0 && (Array.isArray(userData.roles) && userData.roles.length > 0) && (
                     <li className='text-green-400'>All steps complete! 🎉</li>
                   )}
                 </ul>
@@ -360,8 +369,16 @@ export default function Dashboard() {
           <div className='bg-[#1a1a1a] p-6 rounded-2xl mt-4'>
             <h3 className='text-white font-medium mb-2'>Update your goal</h3>
             <textarea
-              value={typeof goals === 'string' ? goals : JSON.stringify(goals)}
-              onChange={(e) => setGoals(e.target.value)}
+              value={JSON.stringify(goals, null, 2)}
+              onChange={(e) => {
+                try {
+                  const parsed = JSON.parse(e.target.value);
+                  setGoals(Array.isArray(parsed) ? parsed : []);
+                } catch {
+                  // If JSON parsing fails, create a new goal with the text
+                  setGoals([{ title: e.target.value }]);
+                }
+              }}
               onBlur={handleGoalsUpdate}
               placeholder='For example: if you wish to pivot into tech, or if you want to find an internship. Any information helps.'
               className='w-full h-24 px-3 py-2 text-gray-300 bg-[#2a2a2a] rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none'
