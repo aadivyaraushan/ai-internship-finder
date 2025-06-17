@@ -1,23 +1,33 @@
 'use client';
-import { useEffect } from 'react';
+
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { checkAuth } from '@/lib/firebase';
+import { auth } from '@/lib/firebase';
 
 export default function Home() {
   const router = useRouter();
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const checkAuthentication = async () => {
-      const isAuthenticated = await checkAuth();
-      if (isAuthenticated) {
-        router.push('/upload-resume');
+    const unsubscribe = auth.onAuthStateChanged((user) => {
+      if (user) {
+        router.push('/top-goals');
       } else {
         router.push('/signup');
       }
-    };
+      setLoading(false);
+    });
 
-    checkAuthentication();
+    return () => unsubscribe();
   }, [router]);
 
-  return null; // This page will redirect immediately
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#0a0a0a]">
+        <div className="text-white">Loading...</div>
+      </div>
+    );
+  }
+
+  return null;
 }

@@ -4,6 +4,9 @@ import React from 'react';
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { checkAuth, auth } from '@/lib/firebase';
+import { User } from 'firebase/auth';
+import { getDoc, doc } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
 
 interface Connection {
   id: string;
@@ -187,19 +190,23 @@ export default function TopConnections() {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    if (!checkAuth()) {
-      router.push('/signup');
-      return;
-    }
+    const unsubscribe = auth.onAuthStateChanged(async (user) => {
+      if (!user) {
+        router.push('/signup');
+        return;
+      }
 
-    const loadConnections = async () => {
       try {
-        // Try to get connections from localStorage first
-        const stored = localStorage.getItem('topConnections');
-        if (stored) {
-          const parsedConnections = JSON.parse(stored);
-          console.log('Loaded connections from storage:', parsedConnections);
-          setConnections(parsedConnections);
+        const userDoc = await getDoc(doc(db, 'users', user.uid));
+        if (!userDoc.exists()) {
+          throw new Error('User data not found');
+        }
+
+        const userData = userDoc.data();
+        if (userData.connections) {
+          setConnections(userData.connections);
+        } else {
+          setConnections([]);
         }
       } catch (err: any) {
         console.error('Error loading connections:', err);
@@ -207,9 +214,9 @@ export default function TopConnections() {
       } finally {
         setLoading(false);
       }
-    };
+    });
 
-    loadConnections();
+    return () => unsubscribe();
   }, [router]);
 
   if (loading) {
@@ -278,12 +285,12 @@ export default function TopConnections() {
                   <div className='min-w-0'>
                     <h3 className='text-white font-medium text-lg truncate'>
                       {connection.name}
-                      {connection.type === 'program' && (
-                        <span className='ml-2 px-2 py-0.5 rounded bg-indigo-600 text-xs text-white'>
-                          PROGRAM
-                        </span>
-                      )}
                     </h3>
+                    {connection.type === 'program' && (
+                      <span className='px-2 py-0.5 rounded bg-indigo-600 text-xs text-white mt-1 inline-block'>
+                        PROGRAM
+                      </span>
+                    )}
                     {connection.type === 'person' &&
                       connection.current_role && (
                         <p className='text-gray-400 truncate'>

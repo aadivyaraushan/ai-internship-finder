@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { useRouter } from 'next/navigation';
 import { checkAuth, auth } from '@/lib/firebase';
@@ -8,13 +8,12 @@ import {
   createOrUpdateResume,
   createOrUpdateUser,
 } from '@/lib/firestoreHelpers';
-import { useEffect } from 'react';
 import StatusUpdate, { ProcessingStep } from '@/components/StatusUpdate';
 
 export default function UploadResume() {
   const [file, setFile] = useState<File | null>(null);
   const [goals, setGoals] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [currentStatus, setCurrentStatus] = useState<string>('');
   const [steps, setSteps] = useState<ProcessingStep[]>([
@@ -28,14 +27,14 @@ export default function UploadResume() {
   const router = useRouter();
 
   useEffect(() => {
-    const checkAuthentication = async () => {
-      const isAuthenticated = await checkAuth();
-      if (!isAuthenticated) {
+    const unsubscribe = auth.onAuthStateChanged((user) => {
+      if (!user) {
         router.push('/signup');
       }
-    };
+      setLoading(false);
+    });
 
-    checkAuthentication();
+    return () => unsubscribe();
   }, [router]);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
@@ -170,6 +169,14 @@ export default function UploadResume() {
       setLoading(false);
     }
   };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#0a0a0a]">
+        <div className="text-white">Loading...</div>
+      </div>
+    );
+  }
 
   return (
     <div className='min-h-screen flex items-center justify-center bg-[#0a0a0a] p-4'>
