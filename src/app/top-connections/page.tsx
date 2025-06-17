@@ -1,5 +1,6 @@
 'use client';
 
+import React from 'react';
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { checkAuth, auth } from '@/lib/firebase';
@@ -10,6 +11,13 @@ interface Connection {
   imageUrl: string;
   matchPercentage: number;
   matchReason: string;
+  type?: 'person' | 'program';
+  program_description?: string;
+  program_type?: string;
+  organization?: string;
+  url?: string;
+  enrollment_info?: string;
+  how_this_helps?: string;
   status?:
     | 'not_contacted'
     | 'email_sent'
@@ -67,8 +75,109 @@ function getRandomColor(name: string): string {
   return colors[index % colors.length];
 }
 
-function generateMatchExplanation(connection: Connection): string {
-  return connection.matchReason || 'Strong background match';
+function generateMatchExplanation(connection: Connection): React.ReactNode {
+  const sharedBackgroundPoints: string[] =
+    connection.outreach_strategy?.shared_background_points || [];
+  const matchDetails: string[] = [];
+
+  const sanitize = (text: string | undefined): string =>
+    text ? text.replace(/<cite[^>]*>|<\/cite>/g, '') : '';
+
+  if (connection.type === 'program') {
+    // Build explanation for program
+    return (
+      <div className='space-y-2'>
+        {connection.program_description && (
+          <p className='text-gray-300'>
+            {sanitize(connection.program_description)}
+          </p>
+        )}
+        <div className='space-y-1'>
+          <p className='text-blue-400 font-medium'>
+            Why this program is a fit:
+          </p>
+          <ul className='list-disc list-inside space-y-1 text-gray-400 text-sm'>
+            {connection.how_this_helps && (
+              <li>{sanitize(connection.how_this_helps)}</li>
+            )}
+            {matchDetails.map((detail, index) => (
+              <li key={index}>{sanitize(detail)}</li>
+            ))}
+          </ul>
+          {connection.url && (
+            <p className='text-gray-400 text-sm mt-2'>
+              <a
+                href={connection.url}
+                target='_blank'
+                rel='noopener noreferrer'
+                className='text-blue-400 underline'
+              >
+                Program website
+              </a>
+              {connection.enrollment_info &&
+                ` – ${sanitize(connection.enrollment_info)}`}
+            </p>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // Add education matches
+  if (connection.exact_matches?.education) {
+    const edu = connection.exact_matches.education;
+    matchDetails.push(`Same university: ${sanitize(edu.university)}`);
+    if (edu.degree) matchDetails.push(`Same degree: ${sanitize(edu.degree)}`);
+    if (edu.graduation_year)
+      matchDetails.push(`Graduation year: ${sanitize(edu.graduation_year)}`);
+  }
+
+  // Add shared activities
+  connection.exact_matches?.shared_activities?.forEach((activity) => {
+    matchDetails.push(
+      `${sanitize(activity.type)}: ${sanitize(activity.name)} (${sanitize(
+        activity.year
+      )})`
+    );
+  });
+
+  return (
+    <div className='space-y-2'>
+      <p className='text-gray-300 font-medium'>
+        {connection.current_role &&
+          `${sanitize(connection.name)} is a ${sanitize(
+            connection.current_role
+          )} at ${sanitize(connection.company)}`}
+        {connection.hiring_power &&
+          ` with ${
+            connection.hiring_power.role_type === 'manager'
+              ? 'management'
+              : 'hiring'
+          } responsibilities in ${sanitize(
+            connection.hiring_power.department
+          )}`}
+      </p>
+      <div className='space-y-1'>
+        <p className='text-blue-400 font-medium'>
+          We think this person is a great match because:
+        </p>
+        <ul className='list-disc list-inside space-y-1 text-gray-400 text-sm'>
+          {matchDetails.map((detail, index) => (
+            <li key={index}>{sanitize(detail)}</li>
+          ))}
+          {sharedBackgroundPoints.map((point, index) => (
+            <li key={`bp-${index}`}>{sanitize(point)}</li>
+          ))}
+        </ul>
+        {connection.outreach_strategy?.suggested_approach && (
+          <p className='text-gray-400 text-sm mt-2'>
+            <span className='text-blue-400'>Suggested approach:</span>{' '}
+            {sanitize(connection.outreach_strategy.suggested_approach)}
+          </p>
+        )}
+      </div>
+    </div>
+  );
 }
 
 export default function TopConnections() {
@@ -135,7 +244,7 @@ export default function TopConnections() {
 
   return (
     <div className='min-h-screen flex items-center justify-center bg-[#0a0a0a] p-4'>
-      <div className='bg-[#1a1a1a] p-8 rounded-2xl w-full max-w-4xl'>
+      <div className='bg-[#1a1a1a] p-8 rounded-2xl w-full max-w-7xl'>
         <h1 className='text-2xl font-semibold text-white text-center mb-1'>
           Your Top Connections
         </h1>
@@ -149,46 +258,53 @@ export default function TopConnections() {
           </div>
         )}
 
-        <div className='grid grid-cols-1 md:grid-cols-2 gap-4'>
-          {connections.map((connection, index) => {
-            console.log('Rendering connection:', connection);
-            return (
-              <div
-                key={index}
-                className='bg-[#2a2a2a] p-4 rounded-lg flex items-start gap-4'
-              >
-                <div className='relative'>
-                  <div
-                    className={`w-12 h-12 rounded-full flex items-center justify-center text-white font-medium ${getRandomColor(
-                      connection.name
-                    )}`}
-                  >
-                    {getInitials(connection.name)}
-                  </div>
+        <div className='grid grid-cols-1 md:grid-cols-2 gap-6'>
+          {connections.map((connection, index) => (
+            <div
+              key={index}
+              className='bg-[#2a2a2a] p-6 rounded-lg flex items-start gap-4 h-full'
+            >
+              <div className='relative'>
+                <div
+                  className={`w-12 h-12 rounded-full flex items-center justify-center text-white font-medium ${getRandomColor(
+                    connection.name
+                  )}`}
+                >
+                  {getInitials(connection.name)}
                 </div>
-                <div className='flex-1'>
-                  <div className='flex items-center justify-between mb-2'>
-                    <div>
-                      <h3 className='text-white font-medium'>
-                        {connection.name}
-                      </h3>
-                      {connection.current_role && (
-                        <p className='text-gray-400 text-sm'>
+              </div>
+              <div className='flex-1 min-w-0'>
+                <div className='flex items-center justify-between mb-4'>
+                  <div className='min-w-0'>
+                    <h3 className='text-white font-medium text-lg truncate'>
+                      {connection.name}
+                      {connection.type === 'program' && (
+                        <span className='ml-2 px-2 py-0.5 rounded bg-indigo-600 text-xs text-white'>
+                          PROGRAM
+                        </span>
+                      )}
+                    </h3>
+                    {connection.type === 'person' &&
+                      connection.current_role && (
+                        <p className='text-gray-400 truncate'>
                           {connection.current_role} at {connection.company}
                         </p>
                       )}
-                    </div>
-                    <div className='text-blue-500 font-medium'>
-                      {connection.matchPercentage}%
-                    </div>
+                    {connection.type === 'program' &&
+                      connection.organization && (
+                        <p className='text-gray-400 truncate'>
+                          {connection.organization}
+                        </p>
+                      )}
                   </div>
-                  <p className='text-gray-400 text-sm'>
-                    {generateMatchExplanation(connection)}
-                  </p>
+                  <div className='text-blue-500 font-medium text-lg flex-shrink-0 ml-2'>
+                    {connection.matchPercentage}% Match
+                  </div>
                 </div>
+                {generateMatchExplanation(connection)}
               </div>
-            );
-          })}
+            </div>
+          ))}
         </div>
       </div>
     </div>

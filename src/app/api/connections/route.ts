@@ -6,8 +6,9 @@ interface Goal {
 }
 
 // Add interface at the top of the file after imports
-interface ConnectionResponse {
+interface PersonConnection {
   name: string;
+  type?: 'person';
   current_role: string;
   company: string;
   hiring_power: {
@@ -36,6 +37,25 @@ interface ConnectionResponse {
   };
 }
 
+interface ProgramConnection {
+  type: 'program';
+  name: string;
+  organization: string;
+  program_type: string; // internship, fellowship, bootcamp, etc
+  program_description: string;
+  url?: string;
+  enrollment_info?: string;
+  how_this_helps?: string;
+  match_details: {
+    total_percentage: number;
+    relevance_score: number;
+    opportunity_quality_score: number;
+    scoring_explanation: string;
+  };
+}
+
+type ConnectionResponse = PersonConnection | ProgramConnection;
+
 // Helper tool definition for Claude web search
 const CLAUDE_WEB_SEARCH_TOOL = [
   {
@@ -55,48 +75,23 @@ function buildPrompt({
   resumeContext?: string;
   goalTitles?: string[];
 }) {
-  return `<system>JSON-only output required. No other text allowed.</system>
+  const resume = resumeContext || 'N/A';
+  const goals = goalTitles?.join('|') || 'N/A';
 
-<input>
-  <resume>${resumeContext || 'N/A'}</resume>
-  <goals>${goalTitles?.join(', ') || 'N/A'}</goals>
-  <role>${roleTitle}</role>
-</input>
-
+  return `<system>Return ONLY valid JSON.</system>
+<input>resume:${resume};goals:${goals};role:${roleTitle}</input>
 <rules>
-- Search for people with hiring power and matching backgrounds
-- Score: hiring(30%): manager=30|lead=25|senior=20
-- Score: background(50%): uni=15|degree=5|activity=10|work=10|grad=10
-- Score: career(20%): start=10|transition=10
+1. Return up to 3 best matches.
+2. Each item must have a "type" field: "person" or "program".
+3. Person requirements: include outreach_strategy.shared_background_points (≥1) & suggested_approach.
+4. Program requirements: describe how opportunity helps achieve goals.
+5. Provide match_details.total_percentage (0-100).
 </rules>
-
-<format>Empty response: {"connections":[]}
-Full response: {"connections":[{
-  "name": "Jane Doe",
-  "current_role": "Tech Lead",
-  "company": "Example Corp",
-  "hiring_power": {"role_type": "team_lead", "can_hire_interns": true, "department": "Engineering"},
-  "exact_matches": {
-    "education": {"university": "MIT", "graduation_year": "2018", "degree": "CS"},
-    "shared_activities": [{"name": "Hackathon", "year": "2017", "type": "competition"}]
-  },
-  "career_path": {"starting_point": "Intern", "key_transition": "To leadership", "time_in_industry": "5y"},
-  "outreach_strategy": {
-    "shared_background_points": ["Same hackathon"],
-    "unique_connection_angle": "Similar path",
-    "suggested_approach": "Mention hackathon"
-  },
-  "contact_info": {"public_profile": "linkedin/jane", "work_email": null, "contact_source": "LinkedIn"},
-  "match_details": {
-    "total_percentage": 80,
-    "hiring_power_score": 25,
-    "background_match_score": 35,
-    "career_path_score": 20,
-    "scoring_explanation": "Strong match"
-  }
-}]}</format>
-
-<critical>Output must be valid JSON only. No other text allowed.</critical>`;
+<schema>
+Person:{"type":"person","name":"","current_role":"","company":"","outreach_strategy":{"shared_background_points":[],"suggested_approach":""},"match_details":{"total_percentage":0}}
+Program:{"type":"program","name":"","organization":"","program_type":"","program_description":"","how_this_helps":"","match_details":{"total_percentage":0}}
+</schema>
+If none:{"connections":[]} `;
 }
 
 export async function POST(req: Request) {
@@ -130,7 +125,7 @@ export async function POST(req: Request) {
       try {
         const raw = await callClaude(prompt, {
           tools: CLAUDE_WEB_SEARCH_TOOL,
-          maxTokens: 1200,
+          maxTokens: 800,
         });
 
         // Clean the response to ensure we only have JSON
@@ -159,43 +154,26 @@ export async function POST(req: Request) {
           // First attempt: direct parse
           const parsed = JSON.parse(cleanedResponse);
           if (parsed && Array.isArray(parsed.connections)) {
-            // Validate each connection object
-            const validConnections = parsed.connections.filter(
-              (conn: unknown) => {
-                try {
-                  return (
-                    conn &&
-                    typeof conn === 'object' &&
-                    typeof (conn as ConnectionResponse).name === 'string' &&
-                    typeof (conn as ConnectionResponse).current_role ===
-                      'string' &&
-                    typeof (conn as ConnectionResponse).company === 'string' &&
-                    (conn as ConnectionResponse).hiring_power &&
-                    typeof (conn as ConnectionResponse).hiring_power ===
-                      'object' &&
-                    typeof (conn as ConnectionResponse).hiring_power
-                      .role_type === 'string' &&
-                    typeof (conn as ConnectionResponse).hiring_power
-                      .can_hire_interns === 'boolean' &&
-                    (conn as ConnectionResponse).exact_matches &&
-                    typeof (conn as ConnectionResponse).exact_matches ===
-                      'object' &&
-                    (conn as ConnectionResponse).match_details &&
-                    typeof (conn as ConnectionResponse).match_details ===
-                      'object' &&
-                    typeof (conn as ConnectionResponse).match_details
-                      .total_percentage === 'number'
-                  );
-                } catch (validationError) {
-                  console.error(
-                    'Connection validation error:',
-                    validationError
-                  );
-                  return false;
-                }
+            const validConnections = parsed.connections.filter((conn: any) => {
+              if (
+                !conn ||
+                typeof conn !== 'object' ||
+                typeof conn.name !== 'string'
+              ) {
+                return false;
               }
-            );
-            connections.push(...(validConnections as ConnectionResponse[]));
+              // Ensure type defaults to person if not provided
+              conn.type = conn.type || 'person';
+              // Basic match details requirement
+              if (
+                !conn.match_details ||
+                typeof conn.match_details.total_percentage !== 'number'
+              ) {
+                conn.match_details = { total_percentage: 0 } as any;
+              }
+              return true;
+            });
+            connections.push(...validConnections);
           } else {
             console.warn(
               'Invalid JSON structure from Claude. Skipping role:',
@@ -230,42 +208,25 @@ export async function POST(req: Request) {
               const extracted = JSON.parse(extractedJson);
               if (extracted && Array.isArray(extracted.connections)) {
                 const validConnections = extracted.connections.filter(
-                  (conn: unknown) => {
-                    try {
-                      return (
-                        conn &&
-                        typeof conn === 'object' &&
-                        typeof (conn as ConnectionResponse).name === 'string' &&
-                        typeof (conn as ConnectionResponse).current_role ===
-                          'string' &&
-                        typeof (conn as ConnectionResponse).company ===
-                          'string' &&
-                        (conn as ConnectionResponse).hiring_power &&
-                        typeof (conn as ConnectionResponse).hiring_power ===
-                          'object' &&
-                        typeof (conn as ConnectionResponse).hiring_power
-                          .role_type === 'string' &&
-                        typeof (conn as ConnectionResponse).hiring_power
-                          .can_hire_interns === 'boolean' &&
-                        (conn as ConnectionResponse).exact_matches &&
-                        typeof (conn as ConnectionResponse).exact_matches ===
-                          'object' &&
-                        (conn as ConnectionResponse).match_details &&
-                        typeof (conn as ConnectionResponse).match_details ===
-                          'object' &&
-                        typeof (conn as ConnectionResponse).match_details
-                          .total_percentage === 'number'
-                      );
-                    } catch (validationError) {
-                      console.error(
-                        'Connection validation error:',
-                        validationError
-                      );
+                  (conn: any) => {
+                    if (
+                      !conn ||
+                      typeof conn !== 'object' ||
+                      typeof conn.name !== 'string'
+                    ) {
                       return false;
                     }
+                    conn.type = conn.type || 'person';
+                    if (
+                      !conn.match_details ||
+                      typeof conn.match_details.total_percentage !== 'number'
+                    ) {
+                      conn.match_details = { total_percentage: 0 } as any;
+                    }
+                    return true;
                   }
                 );
-                connections.push(...(validConnections as ConnectionResponse[]));
+                connections.push(...validConnections);
               }
             } catch (extractError) {
               console.error('Failed to parse extracted JSON:', extractError);
@@ -282,16 +243,18 @@ export async function POST(req: Request) {
       }
     }
 
-    // Deduplicate connections by name and company
+    // Deduplicate connections by name + type + company/org
     const unique = new Map<string, any>();
     for (const conn of connections) {
-      const key = `${conn.name}-${conn.company}`;
+      const key = `${conn.type || 'person'}-${conn.name}-${
+        (conn as any).company || (conn as any).organization || ''
+      }`;
       if (!unique.has(key)) {
         unique.set(key, conn);
       }
     }
 
-    // Sort by match percentage
+    // Sort by match percentage (fall back to 0)
     const sorted = Array.from(unique.values()).sort((a, b) => {
       return (
         (b.match_details?.total_percentage || 0) -
@@ -299,19 +262,35 @@ export async function POST(req: Request) {
       );
     });
 
+    const stripCite = (str: string) =>
+      typeof str === 'string' ? str.replace(/<cite[^>]*>|<\/cite>/g, '') : str;
+
     // Transform connections to match frontend interface
-    const transformedConnections = sorted.map((conn) => ({
-      id:
-        conn.id ||
-        `${conn.name}-${conn.company}`.replace(/\s+/g, '-').toLowerCase(),
-      name: conn.name,
-      imageUrl: '', // We don't have images yet
-      matchPercentage: conn.match_details.total_percentage,
-      matchReason: conn.outreach_strategy.unique_connection_angle,
-      status: 'not_contacted',
-      // Keep the original data for reference
-      ...conn,
-    }));
+    const transformedConnections = sorted.map((conn) => {
+      const isProgram = conn.type === 'program';
+      const companyOrOrg =
+        (conn as any).company || (conn as any).organization || '';
+      return {
+        id:
+          conn.id ||
+          `${conn.type || 'person'}-${conn.name}-${companyOrOrg}`
+            .replace(/\s+/g, '-')
+            .toLowerCase(),
+        type: conn.type || 'person',
+        name: stripCite(conn.name),
+        imageUrl: '',
+        matchPercentage: conn.match_details?.total_percentage || 0,
+        matchReason: isProgram
+          ? stripCite(
+              (conn as any).how_this_helps || (conn as any).program_description
+            )
+          : stripCite(
+              (conn as any).outreach_strategy?.unique_connection_angle || ''
+            ),
+        status: 'not_contacted',
+        ...conn,
+      };
+    });
 
     console.log('API Response Structure:', {
       sample_connection: transformedConnections[0] || 'No connections found',
