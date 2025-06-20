@@ -1,50 +1,81 @@
-import Anthropic from '@anthropic-ai/sdk';
+import OpenAI from 'openai';
 
-// Singleton Anthropics client
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
+// Singleton OpenAI client
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
 });
 
 export interface ClaudeCallOptions {
-  tools?: any[];
+  tools?: any[]; // Currently ignored for OpenAI calls, kept for API-compatibility
   maxTokens?: number;
   model?: string;
 }
 
 /**
- * Call Claude with the given prompt and optional tool definitions.
- * If the response includes multiple content blocks (e.g. tool events),
- * this helper extracts the text content of the final assistant block.
+ * Convert the legacy prompt format that may include a <system>...</system> block
+ * into OpenAI Chat Completion messages. If a <system> block is present it will
+ * be sent as the system message and the remainder will be sent as the user
+ * message. Otherwise, the entire prompt is sent as a single user message.
+ */
+function buildMessages(
+  prompt: string
+): Array<{ role: 'system' | 'user'; content: string }> {
+  const systemTagRegex = /<system>([\s\S]*?)<\/system>/i;
+  const match = prompt.match(systemTagRegex);
+
+  if (match) {
+    const systemContent = match[1].trim();
+    const userContent = prompt.replace(systemTagRegex, '').trim();
+    return [
+      { role: 'system', content: systemContent },
+      { role: 'user', content: userContent },
+    ];
+  }
+
+  return [{ role: 'user', content: prompt }];
+}
+
+/**
+ * Call OpenAI Chat Completions (defaults to gpt-4o-mini). The function name and
+ * signature are preserved so that the rest of the codebase continues to work
+ * without modification.
  */
 export async function callClaude(
   prompt: string,
   {
     tools = [],
     maxTokens = 1024,
-    model = 'claude-3-5-sonnet-latest',
+    model = 'gpt-4.1-mini',
   }: ClaudeCallOptions = {}
 ): Promise<string> {
-  const response = await anthropic.messages.create({
-    model,
-    max_tokens: maxTokens,
-    messages: [
-      {
-        role: 'user',
-        content: prompt,
-      },
-    ],
-    tools,
-  });
+  const client = new OpenAI();
+  const messages = buildMessages(prompt);
 
-  // The response content is an array of content blocks.
-  // We assume the final text block contains the answer.
-  const blocks = response.content;
-  for (let i = blocks.length - 1; i >= 0; i--) {
-    const block = blocks[i] as any;
-    if (block?.type === 'text' && typeof block.text === 'string') {
-      return block.text.trim();
-    }
+  const completionOptions: any = {
+    model,
+    input: messages,
+  } as any;
+
+  // If an array of tools was provided, pass it through to OpenAI. The OpenAI
+  // web-search tool expects objects of the form `{ type: 'web_search' }`.
+  if (tools && tools.length > 0) {
+    completionOptions.tools = tools;
+    // Let the model decide when to call a tool.
+    completionOptions.tool_choice = 'auto';
   }
 
-  throw new Error('Claude response did not include text content');
+  const response = await client.responses.create(completionOptions);
+
+  const assistantMessage = response.output_text;
+  if (!assistantMessage) {
+    throw new Error('OpenAI response did not include a message');
+  }
+
+  if (assistantMessage) {
+    return assistantMessage.trim();
+  }
+
+  // Fallback: if the assistant responded with a function call or no content
+  // just return the stringified message so downstream code can handle it.
+  return JSON.stringify(assistantMessage, null, 2);
 }

@@ -11,6 +11,7 @@ interface PersonConnection {
   type?: 'person';
   current_role: string;
   company: string;
+  linkedin_url?: string;
   hiring_power: {
     role_type: string;
     can_hire_interns: boolean;
@@ -55,15 +56,6 @@ interface ProgramConnection {
 }
 
 type ConnectionResponse = PersonConnection | ProgramConnection;
-
-// Helper tool definition for Claude web search
-const CLAUDE_WEB_SEARCH_TOOL = [
-  {
-    type: 'web_search_20250305',
-    name: 'web_search',
-    max_uses: 5,
-  },
-];
 
 function buildResumeAspectAnalyzerPrompt(resumeContext: string) {
   return `<system>You are an agent specialized in analyzing resumes and career goals to find key aspects for networking connections. You MUST return ONLY valid JSON matching the schema below EXACTLY. Do not include any other text or explanation.</system>
@@ -226,9 +218,10 @@ ${
 3. Optional strengthening factors:
    - Parallel experiences or transitions
    - Potential for meaningful mentorship
-4. For people: Include name, current role, company
-5. For programs: Include name, organization, program type
-6. REJECT any potential match missing either direct matches or goal alignment
+4. For people: Include name, current role, company, and their direct LinkedIn URL (linkedin_url)
+5. For programs: Include name, organization, program type, website_url and why it's a fit for the candidate's career goals (how_this_helps)
+6. Do NOT return any programs that are already mentioned in the candidate's resume (avoid duplicates)
+7. REJECT any potential match missing either direct matches or goal alignment
 </rules>
 <schema>
 {
@@ -238,6 +231,7 @@ ${
       "name": "string",
       "current_role": "string",
       "company": "string",
+      "linkedin_url": "string",
       "direct_matches": ["string"],
       "goal_alignment": "string",
       "additional_factors": ["string"]
@@ -247,6 +241,8 @@ ${
       "name": "string",
       "organization": "string",
       "program_type": "string",
+      "website_url": "string",
+      "how_this_helps": "string",
       "direct_matches": ["string"],
       "goal_alignment": "string",
       "additional_factors": ["string"]
@@ -540,8 +536,7 @@ async function processConnectionWithAgents(
     console.log('Scoring prompt:', scoringPrompt);
 
     const scoringResponse = await callClaude(scoringPrompt, {
-      tools: CLAUDE_WEB_SEARCH_TOOL,
-      maxTokens: 500,
+      maxTokens: 2500,
     });
     console.log('Raw scoring response:', scoringResponse);
 
@@ -565,7 +560,6 @@ async function processConnectionWithAgents(
     console.log('Strategy prompt:', strategyPrompt);
 
     const strategyResponse = await callClaude(strategyPrompt, {
-      tools: CLAUDE_WEB_SEARCH_TOOL,
       maxTokens: 500,
     });
     console.log('Raw strategy response:', strategyResponse);
@@ -667,7 +661,6 @@ export async function POST(req: Request) {
         console.log('Resume analysis prompt:', aspectsPrompt);
 
         const aspectsResponse = await callClaude(aspectsPrompt, {
-          tools: CLAUDE_WEB_SEARCH_TOOL,
           maxTokens: 1000,
         });
         console.log('Raw aspects response from Claude:', aspectsResponse);
@@ -791,7 +784,7 @@ export async function POST(req: Request) {
         while (retryCount <= MAX_RETRIES) {
           try {
             finderResponse = await callClaude(finderPrompt, {
-              tools: CLAUDE_WEB_SEARCH_TOOL,
+              tools: [{ type: 'web_search_preview' }],
               maxTokens: 1000,
             });
             console.log('Raw finder response:', finderResponse);
@@ -934,8 +927,19 @@ export async function POST(req: Request) {
       }
     }
 
+    // Filter out program connections that are already mentioned in the resume
+    const filtered = Array.from(unique.values()).filter((conn) => {
+      if (conn.type === 'program' && resumeContext) {
+        const lcResume = resumeContext.toLowerCase();
+        const name = (conn.name || '').toLowerCase();
+        const org = (conn.organization || '').toLowerCase();
+        return !lcResume.includes(name) && !lcResume.includes(org);
+      }
+      return true;
+    });
+
     // Sort by match percentage
-    const sorted = Array.from(unique.values()).sort((a, b) => {
+    const sorted = filtered.sort((a, b) => {
       return (
         (b.match_details?.total_percentage || 0) -
         (a.match_details?.total_percentage || 0)
@@ -953,10 +957,7 @@ export async function POST(req: Request) {
       name: conn.name,
       imageUrl: '',
       matchPercentage: conn.match_details?.total_percentage || 0,
-      matchReason:
-        conn.type === 'program'
-          ? conn.how_this_helps || conn.program_description
-          : conn.match_details?.scoring_explanation || '',
+      linkedin_url: conn.linkedin_url,
       status: 'not_contacted',
       current_role: conn.current_role,
       company: conn.company,

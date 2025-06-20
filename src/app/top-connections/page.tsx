@@ -9,13 +9,13 @@ interface Connection {
   id: string;
   name: string;
   imageUrl: string;
-  matchPercentage: number;
-  matchReason: string;
+  matchPercentage?: number;
+  linkedin_url?: string;
   type?: 'person' | 'program';
   program_description?: string;
   program_type?: string;
   organization?: string;
-  url?: string;
+  website_url?: string;
   enrollment_info?: string;
   how_this_helps?: string;
   status?:
@@ -99,14 +99,11 @@ function generateMatchExplanation(connection: Connection): React.ReactNode {
             {connection.how_this_helps && (
               <li>{sanitize(connection.how_this_helps)}</li>
             )}
-            {matchDetails.map((detail, index) => (
-              <li key={index}>{sanitize(detail)}</li>
-            ))}
           </ul>
-          {connection.url && (
+          {connection.website_url && (
             <p className='text-gray-400 text-sm mt-2'>
               <a
-                href={connection.url}
+                href={connection.website_url}
                 target='_blank'
                 rel='noopener noreferrer'
                 className='text-blue-400 underline'
@@ -161,9 +158,6 @@ function generateMatchExplanation(connection: Connection): React.ReactNode {
           We think this person is a great match because:
         </p>
         <ul className='list-disc list-inside space-y-1 text-gray-400 text-sm'>
-          {connection.matchReason && (
-            <li>{sanitize(connection.matchReason)}</li>
-          )}
           {matchDetails.map((detail, index) => (
             <li key={index}>{sanitize(detail)}</li>
           ))}
@@ -299,8 +293,33 @@ export default function TopConnections() {
                         </p>
                       )}
                   </div>
-                  <div className='text-blue-500 font-medium text-lg flex-shrink-0 ml-2'>
-                    {connection.matchPercentage}% Match
+                  {/* External links for this connection */}
+                  <div className='flex items-center flex-shrink-0 ml-2 space-x-2'>
+                    {/* Show program website link */}
+                    {connection.type === 'program' &&
+                      connection.website_url && (
+                        <a
+                          href={connection.website_url}
+                          target='_blank'
+                          rel='noopener noreferrer'
+                          className='text-blue-500 font-medium text-sm underline'
+                        >
+                          Website
+                        </a>
+                      )}
+
+                    {/* Show LinkedIn link only for person connections */}
+                    {connection.type === 'person' &&
+                      connection.linkedin_url && (
+                        <a
+                          href={connection.linkedin_url}
+                          target='_blank'
+                          rel='noopener noreferrer'
+                          className='text-blue-500 font-medium text-sm underline'
+                        >
+                          LinkedIn
+                        </a>
+                      )}
                   </div>
                 </div>
                 {generateMatchExplanation(connection)}

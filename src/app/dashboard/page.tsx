@@ -4,17 +4,33 @@ import { useState, useEffect } from 'react';
 import Image from 'next/image';
 import { useDropzone } from 'react-dropzone';
 import { auth, db } from '@/lib/firebase';
-import { getCurrentUser } from '@/lib/firestoreHelpers';
+import { getCurrentUser, updateConnectionStatus } from '@/lib/firestoreHelpers';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { onAuthStateChanged, User } from 'firebase/auth';
 
 interface Connection {
-  id: number;
+  id: string;
   name: string;
-  imageUrl: string;
-  matchPercentage: number;
-  matchReason: string;
-  status?: 'Awaiting response' | 'Responded' | null;
+  imageUrl?: string;
+  matchPercentage?: number;
+  linkedin_url?: string;
+  type?: 'person' | 'program';
+  program_description?: string;
+  program_type?: string;
+  organization?: string;
+  website_url?: string;
+  enrollment_info?: string;
+  how_this_helps?: string;
+  status?:
+    | 'not_contacted'
+    | 'email_sent'
+    | 'response_received'
+    | 'meeting_scheduled'
+    | 'rejected'
+    | 'ghosted'
+    | 'internship_acquired';
+  current_role?: string;
+  company?: string;
 }
 
 interface Role {
@@ -49,6 +65,43 @@ function getInitials(name: string): string {
     .join('')
     .toUpperCase()
     .slice(0, 2);
+}
+
+// Map status to label and color classes for badge UI
+function getStatusInfo(status: Connection['status'] | undefined): {
+  label: string;
+  colorClass: string;
+} {
+  switch (status) {
+    case 'email_sent':
+      return {
+        label: 'Email Sent',
+        colorClass: 'bg-blue-600/20 text-blue-400',
+      };
+    case 'response_received':
+      return {
+        label: 'Responded',
+        colorClass: 'bg-cyan-600/20 text-cyan-400',
+      };
+    case 'internship_acquired':
+      return {
+        label: 'Internship Acquired',
+        colorClass: 'bg-green-600/20 text-green-400',
+      };
+    case 'rejected':
+      return { label: 'Rejected', colorClass: 'bg-red-600/20 text-red-400' };
+    case 'ghosted':
+      return {
+        label: 'No Response',
+        colorClass: 'bg-yellow-600/20 text-yellow-400',
+      };
+    case 'not_contacted':
+    default:
+      return {
+        label: 'Not Contacted',
+        colorClass: 'bg-gray-600/20 text-gray-400',
+      };
+  }
 }
 
 export default function Dashboard() {
@@ -113,6 +166,14 @@ export default function Dashboard() {
             setRoles([]);
             console.log('Set roles: []');
           }
+          // Handle connections if present
+          if (userData.connections && Array.isArray(userData.connections)) {
+            setConnections(userData.connections);
+            console.log(
+              'Set connections from Firestore:',
+              userData.connections
+            );
+          }
         } else {
           console.log('No userDoc found for user:', currentUser.uid);
         }
@@ -124,6 +185,27 @@ export default function Dashboard() {
     };
     fetchUserData();
   }, [currentUser]);
+
+  // Load connections from localStorage as a fallback when component mounts
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem('topConnections');
+      if (stored) {
+        const parsedConnections: Connection[] = JSON.parse(stored);
+        if (parsedConnections.length > 0) {
+          setConnections((prev) =>
+            prev.length === 0 ? parsedConnections : prev
+          );
+          console.log(
+            'Loaded connections from localStorage:',
+            parsedConnections
+          );
+        }
+      }
+    } catch (err) {
+      console.error('Error loading connections from localStorage', err);
+    }
+  }, []);
 
   // When roles are loaded, initialize expandedRoles state
   useEffect(() => {
@@ -164,6 +246,29 @@ export default function Dashboard() {
       setFile(acceptedFiles[0]);
     },
   });
+
+  // Handler to update a connection's status
+  const handleStatusChange = async (
+    connectionId: string,
+    newStatus: Connection['status']
+  ) => {
+    if (!currentUser) return;
+    try {
+      // Optimistic UI update
+      setConnections((prev) =>
+        prev.map((c) =>
+          c.id === connectionId ? { ...c, status: newStatus } : c
+        )
+      );
+      await updateConnectionStatus(
+        currentUser.uid,
+        connectionId,
+        newStatus as any
+      );
+    } catch (err) {
+      console.error('Failed to update status', err);
+    }
+  };
 
   return (
     <div className='min-h-screen bg-[#0a0a0a] p-4'>
@@ -348,17 +453,97 @@ export default function Dashboard() {
                               </div>
                             </div>
                             <div className='flex-1'>
-                              <div className='flex items-center justify-between mb-2'>
-                                <h3 className='text-white font-medium'>
-                                  {connection.name}
-                                </h3>
-                                <div className='text-blue-500 font-medium'>
-                                  {connection.matchPercentage}%
+                              {/* Header: name + status badge + LinkedIn */}
+                              <div className='flex flex-wrap items-center justify-between gap-2 mb-1'>
+                                <div className='flex items-center gap-2 min-w-0'>
+                                  <h3 className='text-white font-medium truncate'>
+                                    {connection.name}
+                                  </h3>
+                                  {/* Status badge */}
+                                  {(() => {
+                                    const { label, colorClass } = getStatusInfo(
+                                      connection.status
+                                    );
+                                    return (
+                                      <span
+                                        className={`text-xs font-medium px-2 py-0.5 rounded ${colorClass}`}
+                                      >
+                                        {label}
+                                      </span>
+                                    );
+                                  })()}
                                 </div>
+                                {connection.linkedin_url && (
+                                  <a
+                                    href={connection.linkedin_url}
+                                    target='_blank'
+                                    rel='noopener noreferrer'
+                                    className='text-blue-500 font-medium text-sm underline flex-shrink-0'
+                                  >
+                                    LinkedIn
+                                  </a>
+                                )}
                               </div>
-                              <p className='text-gray-400 text-sm'>
-                                {connection.matchReason}
+
+                              {/* Secondary info */}
+                              <p className='text-gray-400 text-sm mb-1'>
+                                {connection.type === 'program' ? (
+                                  <>
+                                    {connection.program_type && (
+                                      <span className='capitalize'>
+                                        {connection.program_type}
+                                      </span>
+                                    )}
+                                    {connection.organization && (
+                                      <>
+                                        {connection.program_type && ' • '}
+                                        <span>{connection.organization}</span>
+                                      </>
+                                    )}
+                                  </>
+                                ) : (
+                                  <>
+                                    {connection.current_role && (
+                                      <span>{connection.current_role}</span>
+                                    )}
+                                    {connection.company && (
+                                      <>
+                                        {connection.current_role && ' at '}
+                                        <span>{connection.company}</span>
+                                      </>
+                                    )}
+                                  </>
+                                )}
                               </p>
+
+                              {/* Status selector */}
+                              <div className='mt-2'>
+                                <select
+                                  value={connection.status || 'not_contacted'}
+                                  onChange={(e) =>
+                                    handleStatusChange(
+                                      connection.id,
+                                      e.target.value as Connection['status']
+                                    )
+                                  }
+                                  className='bg-[#2a2a2a] text-gray-300 text-xs px-2 py-1 rounded focus:outline-none'
+                                >
+                                  <option value='not_contacted'>
+                                    Not Contacted
+                                  </option>
+                                  <option value='email_sent'>
+                                    Email/Message Sent / Waiting for Response
+                                  </option>
+                                  <option value='response_received'>
+                                    Responded
+                                  </option>
+                                  <option value='internship_acquired'>
+                                    Internship Acquired
+                                  </option>
+                                  <option value='ghosted'>No Response</option>
+                                  <option value='rejected'>Rejected</option>
+                                </select>
+                              </div>
                             </div>
                           </div>
                         );
