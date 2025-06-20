@@ -135,18 +135,18 @@ export default function UploadResume() {
           updateStep('store', 'in_progress');
           setCurrentStatus('Processing analysis results...');
 
-          // Store resume data in Firestore
-          const resumeId = `${auth.currentUser.uid}_${Date.now()}`;
-          await createOrUpdateResume(resumeId, {
-            ...data.response.resumeData,
+          // Store resume data in Firestore with correct ID format
+          await createOrUpdateResume(auth.currentUser.uid, {
+            text: data.response.rawText, // Store the actual resume text
+            structuredData: data.response.structuredData,
             userId: auth.currentUser.uid,
             uploadedAt: new Date().toISOString(),
           });
 
-          // Update user with resume reference
+          // Update user with resume reference (no need to store resume_id since it's predictable)
           await createOrUpdateUser(auth.currentUser.uid, {
-            resume_id: resumeId,
             goals: goals.trim(),
+            hasResume: true,
           });
         }
 

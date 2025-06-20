@@ -226,6 +226,60 @@ export default function TopRoles() {
     fetchRoles();
   }, [searchParams]);
 
+  const handleSubmit = async () => {
+    setSubmitting(true);
+    setError('');
+
+    try {
+      const user = auth.currentUser;
+      if (!user) throw new Error('Not authenticated');
+
+      // Get resume data
+      const resumeData = await getResume(user.uid);
+      if (!resumeData) throw new Error('Resume not found');
+
+      // Save roles to Firestore
+      await updateUserRoles(user.uid, roles);
+
+      // Get connections with resume context
+      const connectionsResponse = await fetch('/api/connections', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          roles,
+          goals: JSON.parse(searchParams.get('goals') || '[]'),
+          resumeContext: resumeData.text,
+        }),
+      });
+
+      if (!connectionsResponse.ok) {
+        throw new Error('Failed to find connections');
+      }
+
+      const connectionsData = await connectionsResponse.json();
+
+      // Save connections to localStorage and Firestore
+      localStorage.setItem(
+        'topConnections',
+        JSON.stringify(connectionsData.response.connections)
+      );
+      await updateUserConnections(
+        user.uid,
+        connectionsData.response.connections
+      );
+
+      // Navigate to connections page
+      router.push('/top-connections');
+    } catch (err: any) {
+      console.error('Error submitting roles:', err);
+      setError(err.message || 'Failed to submit roles');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   return (
     <div className='min-h-screen flex items-center justify-center bg-[#0a0a0a] p-4'>
       <div className='bg-[#1a1a1a] p-8 rounded-2xl w-full max-w-xl'>
@@ -274,154 +328,7 @@ export default function TopRoles() {
           </button>
           <button
             className='px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2'
-            onClick={async () => {
-              if (!auth.currentUser) {
-                setError('Please sign in to continue');
-                router.push('/signup');
-                return;
-              }
-
-              setSubmitting(true);
-              setError('');
-
-              try {
-                // Save roles to Firestore
-                await updateUserRoles(auth.currentUser.uid, roles);
-
-                // Initialize connections array
-                let allConnections = [];
-
-                // Try to get existing connections from localStorage
-                const existingConnections =
-                  localStorage.getItem('topConnections');
-                if (existingConnections) {
-                  try {
-                    allConnections = JSON.parse(existingConnections);
-                  } catch (e) {
-                    // If parsing fails, clear the invalid data
-                    localStorage.removeItem('topConnections');
-                  }
-                }
-
-                // Create a Set to track unique connection IDs
-                const processedConnectionIds = new Set(
-                  allConnections.map((c: any) => c.id)
-                );
-
-                // Fetch new connections only for roles that don't have connections yet
-                for (const role of roles) {
-                  console.log(`\n🎯 Processing role: ${role.title}`);
-
-                  // Get user data including resume context
-                  console.log('🔍 Fetching user data...');
-                  const userData = await getUser(auth.currentUser!.uid);
-                  if (!userData?.resume_id) {
-                    console.log('❌ No resume found');
-                    throw new Error('No resume found');
-                  }
-
-                  // Get resume data
-                  console.log('📄 Fetching resume data...');
-                  const resumeData = await getResume(userData.resume_id);
-                  if (!resumeData) {
-                    console.log('❌ Resume data not found');
-                    throw new Error('Resume data not found');
-                  }
-                  console.log('✅ Resume data fetched');
-
-                  console.log('🌐 Fetching connections from API...');
-                  const response = await fetch('/api/connections', {
-                    method: 'POST',
-                    headers: {
-                      'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                      roles: [role],
-                      resumeContext: resumeData.content,
-                      goals: userData.goals,
-                    }),
-                  });
-
-                  if (!response.ok) {
-                    const errorData = await response.json();
-                    console.error('❌ API request failed:', errorData);
-                    throw new Error(
-                      errorData.error ||
-                        `Failed to fetch connections for ${role.title}`
-                    );
-                  }
-
-                  console.log('✅ API request successful');
-                  const data = await response.json();
-                  console.log(
-                    `📊 Received ${data.response.connections.length} connections for role`
-                  );
-
-                  // Process new connections and add required fields
-                  console.log('🔄 Processing connections...');
-                  const newConnections = data.response.connections
-                    .filter(
-                      (connection: any) =>
-                        !processedConnectionIds.has(connection.id)
-                    )
-                    .map((connection: any, index: number) => ({
-                      ...connection,
-                      id: `${role.title}_${index}`,
-                      status: 'not_contacted',
-                      lastUpdated: new Date().toISOString(),
-                    }));
-                  console.log(
-                    `✅ Processed ${newConnections.length} new connections`
-                  );
-
-                  // Add new connection IDs to the Set
-                  console.log('🔄 Updating processed IDs set...');
-                  newConnections.forEach((connection: any) => {
-                    processedConnectionIds.add(connection.id);
-                  });
-
-                  // Add new connections to the array
-                  allConnections = [...allConnections, ...newConnections];
-                  console.log(
-                    `📊 Total connections so far: ${allConnections.length}`
-                  );
-                }
-
-                // Sort all connections by relevance score
-                console.log(
-                  '🔄 Sorting all connections by match percentage...'
-                );
-                allConnections.sort(
-                  (a: any, b: any) => b.matchPercentage - a.matchPercentage
-                );
-
-                // Store updated connections in localStorage
-                console.log('💾 Storing all connections in localStorage...');
-                localStorage.setItem(
-                  'topConnections',
-                  JSON.stringify(allConnections)
-                );
-                console.log('✅ Connections cached');
-
-                // Store in Firebase as well
-                console.log('💾 Storing connections in Firebase...');
-                await updateUserConnections(
-                  auth.currentUser.uid,
-                  allConnections
-                );
-                console.log('✅ Connections stored in Firebase');
-
-                // Redirect to top-connections page
-                console.log('✅ Process completed, redirecting...');
-                router.push('/top-connections');
-              } catch (err: any) {
-                setError(
-                  err.message || 'Failed to save roles or fetch connections'
-                );
-              } finally {
-                setSubmitting(false);
-              }
-            }}
+            onClick={handleSubmit}
             disabled={submitting || roles.length === 0}
           >
             {submitting ? (

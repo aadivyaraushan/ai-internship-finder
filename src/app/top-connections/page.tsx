@@ -46,7 +46,6 @@ interface Connection {
   };
   outreach_strategy?: {
     shared_background_points: string[];
-    unique_connection_angle: string;
     suggested_approach: string;
   };
 }
@@ -162,6 +161,9 @@ function generateMatchExplanation(connection: Connection): React.ReactNode {
           We think this person is a great match because:
         </p>
         <ul className='list-disc list-inside space-y-1 text-gray-400 text-sm'>
+          {connection.matchReason && (
+            <li>{sanitize(connection.matchReason)}</li>
+          )}
           {matchDetails.map((detail, index) => (
             <li key={index}>{sanitize(detail)}</li>
           ))}

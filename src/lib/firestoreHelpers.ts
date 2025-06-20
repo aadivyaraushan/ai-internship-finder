@@ -193,8 +193,8 @@ export async function addEmailToConnection(
 }
 
 // RESUME
-export async function createOrUpdateResume(resumeId: string, data: any) {
-  const resumeRef = doc(db, 'resume', resumeId);
+export async function createOrUpdateResume(userId: string, data: any) {
+  const resumeRef = doc(db, 'resume', `${userId}_resume`);
   await setDoc(resumeRef, data, { merge: true });
 }
 
@@ -205,10 +205,13 @@ export async function getUser(userId: string) {
   return snap.exists() ? snap.data() : null;
 }
 
-export async function getResume(resumeId: string) {
-  const resumeRef = doc(db, 'resume', resumeId);
-  const snap = await getDoc(resumeRef);
-  return snap.exists() ? snap.data() : null;
+export async function getResume(userId: string) {
+  const resumeRef = doc(db, 'resume', `${userId}_resume`);
+  const resumeDoc = await getDoc(resumeRef);
+  if (!resumeDoc.exists()) {
+    return null;
+  }
+  return resumeDoc.data();
 }
 
 export const getCurrentUser = () => {
