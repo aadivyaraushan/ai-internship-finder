@@ -1,0 +1,18 @@
+import 'react';
+import * as THREE from 'three';
+import { BufferGeometry, Material, Object3DNode, CanvasProps } from '@react-three/fiber';
+
+declare global {
+  namespace JSX {
+    interface IntrinsicElements {
+      line: Object3DNode<THREE.Line, typeof THREE.Line>;
+      mesh: Object3DNode<THREE.Mesh, typeof THREE.Mesh>;
+      group: Object3DNode<THREE.Group, typeof THREE.Group>;
+      pointLight: Object3DNode<THREE.PointLight, typeof THREE.PointLight>;
+      ambientLight: Object3DNode<THREE.AmbientLight, typeof THREE.AmbientLight>;
+      sphereGeometry: Object3DNode<THREE.SphereGeometry, typeof THREE.SphereGeometry>;
+      orbitControls: any;
+      canvas: CanvasProps & { logDepthBuffer?: boolean };
+    }
+  }
+} 
