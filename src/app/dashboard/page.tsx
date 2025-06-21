@@ -473,16 +473,41 @@ export default function Dashboard() {
                                     );
                                   })()}
                                 </div>
-                                {connection.linkedin_url && (
-                                  <a
-                                    href={connection.linkedin_url}
-                                    target='_blank'
-                                    rel='noopener noreferrer'
-                                    className='text-blue-500 font-medium text-sm underline flex-shrink-0'
-                                  >
-                                    LinkedIn
-                                  </a>
-                                )}
+                                {/* External links */}
+                                <div className='flex items-center gap-2 flex-shrink-0'>
+                                  {/* Program website link */}
+                                  {connection.type === 'program' && (
+                                    <>
+                                      {(connection.website_url ||
+                                        (connection as any).url) && (
+                                        <a
+                                          href={
+                                            connection.website_url ||
+                                            (connection as any).url
+                                          }
+                                          target='_blank'
+                                          rel='noopener noreferrer'
+                                          className='text-blue-500 font-medium text-sm underline'
+                                        >
+                                          Website
+                                        </a>
+                                      )}
+                                    </>
+                                  )}
+
+                                  {/* LinkedIn link for person connections */}
+                                  {connection.type === 'person' &&
+                                    connection.linkedin_url && (
+                                      <a
+                                        href={connection.linkedin_url}
+                                        target='_blank'
+                                        rel='noopener noreferrer'
+                                        className='text-blue-500 font-medium text-sm underline'
+                                      >
+                                        LinkedIn
+                                      </a>
+                                    )}
+                                </div>
                               </div>
 
                               {/* Secondary info */}

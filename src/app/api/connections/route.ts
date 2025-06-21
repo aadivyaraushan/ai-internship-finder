@@ -964,7 +964,7 @@ export async function POST(req: Request) {
       program_description: conn.program_description,
       program_type: conn.program_type,
       organization: conn.organization,
-      url: conn.url,
+      website_url: conn.website_url || conn.url,
       enrollment_info: conn.enrollment_info,
       how_this_helps: conn.how_this_helps,
       hiring_power: conn.hiring_power,

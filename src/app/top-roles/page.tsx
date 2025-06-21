@@ -3,12 +3,7 @@
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useState, useRef } from 'react';
 import { checkAuth, auth } from '@/lib/firebase';
-import {
-  updateUserRoles,
-  getUser,
-  getResume,
-  updateUserConnections,
-} from '@/lib/firestoreHelpers';
+import { updateUserRoles } from '@/lib/firestoreHelpers';
 import StatusUpdate, { ProcessingStep } from '@/components/StatusUpdate';
 
 interface Role {
@@ -234,43 +229,10 @@ export default function TopRoles() {
       const user = auth.currentUser;
       if (!user) throw new Error('Not authenticated');
 
-      // Get resume data
-      const resumeData = await getResume(user.uid);
-      if (!resumeData) throw new Error('Resume not found');
-
-      // Save roles to Firestore
+      // Persist the ordered roles
       await updateUserRoles(user.uid, roles);
 
-      // Get connections with resume context
-      const connectionsResponse = await fetch('/api/connections', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          roles,
-          goals: JSON.parse(searchParams.get('goals') || '[]'),
-          resumeContext: resumeData.text,
-        }),
-      });
-
-      if (!connectionsResponse.ok) {
-        throw new Error('Failed to find connections');
-      }
-
-      const connectionsData = await connectionsResponse.json();
-
-      // Save connections to localStorage and Firestore
-      localStorage.setItem(
-        'topConnections',
-        JSON.stringify(connectionsData.response.connections)
-      );
-      await updateUserConnections(
-        user.uid,
-        connectionsData.response.connections
-      );
-
-      // Navigate to connections page
+      // Defer the connection-finding process to the /top-connections page
       router.push('/top-connections');
     } catch (err: any) {
       console.error('Error submitting roles:', err);

@@ -4,6 +4,12 @@ import React from 'react';
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { checkAuth, auth } from '@/lib/firebase';
+import StatusUpdate, { ProcessingStep } from '@/components/StatusUpdate';
+import {
+  getUser,
+  getResume,
+  updateUserConnections,
+} from '@/lib/firestoreHelpers';
 
 interface Connection {
   id: string;
@@ -181,6 +187,20 @@ export default function TopConnections() {
   const [connections, setConnections] = useState<Connection[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [currentStatus, setCurrentStatus] = useState<string>('');
+  const [steps, setSteps] = useState<ProcessingStep[]>([
+    { id: 'load', label: 'Loading profile data', status: 'pending' },
+    { id: 'analyze', label: 'Analyzing profile', status: 'pending' },
+    { id: 'find', label: 'Finding connections', status: 'pending' },
+    { id: 'score', label: 'Scoring matches', status: 'pending' },
+    { id: 'prepare', label: 'Preparing recommendations', status: 'pending' },
+  ]);
+
+  const updateStep = (stepId: string, status: ProcessingStep['status']) => {
+    setSteps((prev) =>
+      prev.map((step) => (step.id === stepId ? { ...step, status } : step))
+    );
+  };
 
   useEffect(() => {
     if (!checkAuth()) {
@@ -188,64 +208,106 @@ export default function TopConnections() {
       return;
     }
 
-    const loadConnections = async () => {
+    const runConnectionSearch = async () => {
       try {
-        // Try to get connections from localStorage first
+        // 1. Check local storage first
         const stored = localStorage.getItem('topConnections');
         if (stored) {
-          const parsedConnections = JSON.parse(stored);
-          console.log('Loaded connections from storage:', parsedConnections);
-          setConnections(parsedConnections);
+          const parsed = JSON.parse(stored);
+          setConnections(parsed);
+          setLoading(false);
+          return;
         }
+
+        // 2. Load user + resume data
+        updateStep('load', 'in_progress');
+        setCurrentStatus('Loading your profile data...');
+
+        const user = auth.currentUser;
+        if (!user) throw new Error('Not authenticated');
+
+        const userData: any = await getUser(user.uid);
+        const resumeData: any = await getResume(user.uid);
+
+        updateStep('load', 'completed');
+        await new Promise((r) => setTimeout(r, 600));
+
+        // 3. Analyze step (visual only)
+        updateStep('analyze', 'in_progress');
+        setCurrentStatus('Analyzing your resume and goals...');
+        await new Promise((r) => setTimeout(r, 900));
+        updateStep('analyze', 'completed');
+
+        // 4. Find connections
+        updateStep('find', 'in_progress');
+        setCurrentStatus('Searching for potential connections...');
+
+        const response = await fetch('/api/connections', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            roles: userData.roles || [],
+            goals: userData.goals || [],
+            resumeContext: resumeData?.text || '',
+          }),
+        });
+
+        if (!response.ok) {
+          const err = await response.json();
+          throw new Error(err.error || 'Failed to find connections');
+        }
+
+        const data = await response.json();
+
+        updateStep('find', 'completed');
+        await new Promise((r) => setTimeout(r, 800));
+
+        // 5. Scoring step (visual)
+        updateStep('score', 'in_progress');
+        setCurrentStatus('Scoring and ranking matches...');
+        await new Promise((r) => setTimeout(r, 800));
+        updateStep('score', 'completed');
+
+        // 6. Prepare final recommendations
+        updateStep('prepare', 'in_progress');
+        setCurrentStatus('Preparing your outreach strategies...');
+        await new Promise((r) => setTimeout(r, 700));
+        updateStep('prepare', 'completed');
+        setCurrentStatus('Your connections are ready!');
+
+        setConnections(data.response.connections);
+
+        // Persist for later sessions
+        localStorage.setItem(
+          'topConnections',
+          JSON.stringify(data.response.connections)
+        );
+        await updateUserConnections(user.uid, data.response.connections);
       } catch (err: any) {
-        console.error('Error loading connections:', err);
-        setError(err.message || 'Failed to load connections');
+        console.error('Error during connection search:', err);
+        setError(err.message || 'Failed to find connections');
       } finally {
         setLoading(false);
       }
     };
 
-    loadConnections();
+    runConnectionSearch();
   }, [router]);
 
-  if (loading) {
-    return (
-      <div className='min-h-screen flex items-center justify-center bg-[#0a0a0a]'>
-        <div className='text-white'>Finding potential connections...</div>
-      </div>
-    );
-  }
-
-  if (connections.length === 0) {
-    return (
-      <div className='min-h-screen flex items-center justify-center bg-[#0a0a0a] p-4'>
-        <div className='bg-[#1a1a1a] p-8 rounded-2xl w-full max-w-4xl text-center'>
-          <h1 className='text-2xl font-semibold text-white mb-4'>
-            No Connections Found
-          </h1>
-          <p className='text-gray-400 mb-6'>
-            We couldn't find any relevant connections. Please try updating your
-            roles and goals.
-          </p>
-          <button
-            onClick={() => router.push('/top-roles')}
-            className='px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors'
-          >
-            Update Roles
-          </button>
-        </div>
-      </div>
-    );
-  }
+  // Helper to decide if we're mid-process
+  const inProgress =
+    loading || steps.some((step) => step.status === 'in_progress');
 
   return (
     <div className='min-h-screen flex items-center justify-center bg-[#0a0a0a] p-4'>
       <div className='bg-[#1a1a1a] p-8 rounded-2xl w-full max-w-7xl'>
         <h1 className='text-2xl font-semibold text-white text-center mb-1'>
-          Your Top Connections
+          {inProgress ? 'Finding Your Top Connections' : 'Your Top Connections'}
         </h1>
         <p className='text-gray-400 text-sm text-center mb-8'>
-          Based on our AI search based on your roles, goals and resume
+          {inProgress
+            ? 'Please wait while we analyze your profile and identify the best matches for you'
+            : 'Based on our AI search using your roles, goals and resume'}
         </p>
 
         {error && (
@@ -254,79 +316,100 @@ export default function TopConnections() {
           </div>
         )}
 
-        <div className='grid grid-cols-1 md:grid-cols-2 gap-6'>
-          {connections.map((connection, index) => (
-            <div
-              key={index}
-              className='bg-[#2a2a2a] p-6 rounded-lg flex items-start gap-4 h-full'
-            >
-              <div className='relative'>
-                <div
-                  className={`w-12 h-12 rounded-full flex items-center justify-center text-white font-medium ${getRandomColor(
-                    connection.name
-                  )}`}
-                >
-                  {getInitials(connection.name)}
-                </div>
-              </div>
-              <div className='flex-1 min-w-0'>
-                <div className='flex items-center justify-between mb-4'>
-                  <div className='min-w-0'>
-                    <h3 className='text-white font-medium text-lg truncate'>
-                      {connection.name}
-                      {connection.type === 'program' && (
-                        <span className='ml-2 px-2 py-0.5 rounded bg-indigo-600 text-xs text-white'>
-                          PROGRAM
-                        </span>
-                      )}
-                    </h3>
-                    {connection.type === 'person' &&
-                      connection.current_role && (
-                        <p className='text-gray-400 truncate'>
-                          {connection.current_role} at {connection.company}
-                        </p>
-                      )}
-                    {connection.type === 'program' &&
-                      connection.organization && (
-                        <p className='text-gray-400 truncate'>
-                          {connection.organization}
-                        </p>
-                      )}
-                  </div>
-                  {/* External links for this connection */}
-                  <div className='flex items-center flex-shrink-0 ml-2 space-x-2'>
-                    {/* Show program website link */}
-                    {connection.type === 'program' &&
-                      connection.website_url && (
-                        <a
-                          href={connection.website_url}
-                          target='_blank'
-                          rel='noopener noreferrer'
-                          className='text-blue-500 font-medium text-sm underline'
-                        >
-                          Website
-                        </a>
-                      )}
+        {(loading || steps.some((s) => s.status === 'completed')) && (
+          <StatusUpdate steps={steps} currentStatus={currentStatus} />
+        )}
 
-                    {/* Show LinkedIn link only for person connections */}
-                    {connection.type === 'person' &&
-                      connection.linkedin_url && (
-                        <a
-                          href={connection.linkedin_url}
-                          target='_blank'
-                          rel='noopener noreferrer'
-                          className='text-blue-500 font-medium text-sm underline'
-                        >
-                          LinkedIn
-                        </a>
-                      )}
+        {!inProgress && connections.length === 0 && (
+          <div className='text-center'>
+            <p className='text-gray-400 mb-6'>
+              We couldn't find any relevant connections. Please try updating
+              your roles and goals.
+            </p>
+            <button
+              onClick={() => router.push('/top-roles')}
+              className='px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors'
+            >
+              Update Roles
+            </button>
+          </div>
+        )}
+
+        {!inProgress && connections.length > 0 && (
+          <div className='grid grid-cols-1 md:grid-cols-2 gap-6'>
+            {connections.map((connection, index) => (
+              <div
+                key={index}
+                className='bg-[#2a2a2a] p-6 rounded-lg flex items-start gap-4 h-full'
+              >
+                <div className='relative'>
+                  <div
+                    className={`w-12 h-12 rounded-full flex items-center justify-center text-white font-medium ${getRandomColor(
+                      connection.name
+                    )}`}
+                  >
+                    {getInitials(connection.name)}
                   </div>
                 </div>
-                {generateMatchExplanation(connection)}
+                <div className='flex-1 min-w-0'>
+                  <div className='flex items-center justify-between mb-4'>
+                    <div className='min-w-0'>
+                      <h3 className='text-white font-medium text-lg truncate'>
+                        {connection.name}
+                        {connection.type === 'program' && (
+                          <span className='ml-2 px-2 py-0.5 rounded bg-indigo-600 text-xs text-white'>
+                            PROGRAM
+                          </span>
+                        )}
+                      </h3>
+                      {connection.type === 'person' &&
+                        connection.current_role && (
+                          <p className='text-gray-400 truncate'>
+                            {connection.current_role} at {connection.company}
+                          </p>
+                        )}
+                      {connection.type === 'program' &&
+                        connection.organization && (
+                          <p className='text-gray-400 truncate'>
+                            {connection.organization}
+                          </p>
+                        )}
+                    </div>
+                    {/* External links for this connection */}
+                    <div className='flex items-center flex-shrink-0 ml-2 space-x-2'>
+                      {/* Show program website link */}
+                      {connection.type === 'program' &&
+                        connection.website_url && (
+                          <a
+                            href={connection.website_url}
+                            target='_blank'
+                            rel='noopener noreferrer'
+                            className='text-blue-500 font-medium text-sm underline'
+                          >
+                            Website
+                          </a>
+                        )}
+
+                      {/* Show LinkedIn link only for person connections */}
+                      {connection.type === 'person' &&
+                        connection.linkedin_url && (
+                          <a
+                            href={connection.linkedin_url}
+                            target='_blank'
+                            rel='noopener noreferrer'
+                            className='text-blue-500 font-medium text-sm underline'
+                          >
+                            LinkedIn
+                          </a>
+                        )}
+                    </div>
+                  </div>
+                  {generateMatchExplanation(connection)}
+                </div>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
