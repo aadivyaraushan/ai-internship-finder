@@ -249,7 +249,7 @@ export default function TopRoles() {
           Your Top Roles
         </h1>
         <p className='text-gray-400 text-sm text-center mb-6'>
-          Based on our AI analysis of your goals
+          Based on the goals you provided
         </p>
 
         {error && (

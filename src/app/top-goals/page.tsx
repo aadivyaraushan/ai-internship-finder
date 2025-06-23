@@ -48,7 +48,7 @@ export default function TopGoals() {
 
   const fetchGoals = async () => {
     setLoading(true);
-    setCurrentStatus('Starting goal analysis...');
+    setCurrentStatus('Processing your goals...');
 
     // Reset all steps to pending
     setSteps(steps.map((step) => ({ ...step, status: 'pending' })));
@@ -256,10 +256,8 @@ export default function TopGoals() {
       // Store selected goals in Firestore
       await updateUserGoals(auth.currentUser.uid, selectedGoals);
 
-      // Navigate to next page
-      router.push(
-        `/top-roles?goals=${encodeURIComponent(JSON.stringify(selectedGoals))}`
-      );
+      // Skip the roles-analysis step and jump straight to finding connections
+      router.push('/top-connections');
     } catch (err: any) {
       setError(err.message || 'Failed to save goals');
     }
@@ -272,7 +270,7 @@ export default function TopGoals() {
           Your Top Goals
         </h1>
         <p className='text-gray-400 text-sm text-center mb-6'>
-          Based on our AI analysis of your goals
+          Based on the goals you provided
         </p>
 
         {error && (

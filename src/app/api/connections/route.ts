@@ -191,10 +191,14 @@ function buildConnectionFinderPrompt({
   roleTitle,
   goalTitles,
   connectionAspects,
+  race,
+  location,
 }: {
   roleTitle: string;
   goalTitles?: string[];
   connectionAspects: any;
+  race?: string;
+  location?: string;
 }) {
   const backgroundInfo = buildBackgroundInfoString(connectionAspects);
   console.log('Background info for connection finder:', backgroundInfo);
@@ -204,6 +208,8 @@ function buildConnectionFinderPrompt({
 Target role: ${roleTitle}
 Background information for matching:
     ${backgroundInfo}
+${race ? `\nCandidate race/ethnicity: ${race}` : ''}
+${location ? `\nCandidate location: ${location}` : ''}
 ${
   goalTitles?.length
     ? `\nCareer goals to consider for matching: ${goalTitles.join(', ')}`
@@ -211,17 +217,21 @@ ${
 }
 </input>
 <rules>
-1. Return up to 3 best potential matches (people or programs)
+1. Return up to 5 best potential matches (people or programs) making sure to include AT LEAST one person and one program, plus:
+   - At least one peer-level connection (intern, entry-level or junior) who can refer the user to roles
+   - At least one senior/managerial connection (e.g., hiring managers, mentors) who has influence over hiring decisions or can provide high-level guidance
 2. REQUIRED - each match MUST have BOTH:
    a) At least one direct background match (same institution, company, organization)
    b) Clear alignment with stated career goals
 3. Optional strengthening factors:
    - Parallel experiences or transitions
    - Potential for meaningful mentorship
-4. For people: Include name, current role, company, and their direct LinkedIn URL (linkedin_url)
+4. For people: Include at minimum name, current role, and company (LinkedIn URL is NOT required at this stage)
 5. For programs: Include name, organization, program type, website_url and why it's a fit for the candidate's career goals (how_this_helps)
 6. Do NOT return any programs that are already mentioned in the candidate's resume (avoid duplicates)
-7. REJECT any potential match missing either direct matches or goal alignment
+7. If a program has explicit race/ethnicity eligibility requirements, ONLY include if they match the candidate race. Otherwise, exclude.
+8. If a program requires on-site presence or is limited to a specific geographic location, ONLY include if it matches the candidate location.
+9. REJECT any potential match missing either direct matches or goal alignment.
 </rules>
 <schema>
 {
@@ -603,31 +613,71 @@ async function processConnectionWithAgents(
   }
 }
 
+// ===== New helper to find verified profile URLs for a given person connection =====
+
+function buildConnectionUrlFinderPrompt(connection: any) {
+  return `<system>You are a research assistant that ONLY provides verified public profile URLs for the given person. Use web_search tool if necessary. Return ONLY valid JSON.</system>
+<input>
+Name: ${connection.name}
+Current role: ${connection.current_role}
+Company/Organization: ${connection.company}
+</input>
+<rules>
+1. Use a web search query like: "${connection.name} ${connection.company} LinkedIn" (and optionally current role) to locate their REAL LinkedIn profile.
+2. A valid profile MUST satisfy BOTH:
+   a) The URL domain is linkedin.com/in/ or linkedin.com/pub/
+   b) The profile headline or "experience" section clearly references the same company name (case-insensitive partial match acceptable).
+3. If multiple results satisfy the rule choose the one whose headline also includes the current role keywords (e.g. "intern", "software engineer", etc.).
+4. If no profile passes rule 2, set linkedin_url to null.
+5. Never hallucinate or fabricate a URL.
+6. Output MUST be ONLY the JSON matching the schema, with no additional text or markdown.
+7. Return exactly one key: linkedin_url.
+</rules>
+<schema>
+{
+  "linkedin_url": "string"
+}
+</schema>`;
+}
+
 export async function POST(req: Request) {
   console.log('\n🚀 Starting connection search process');
 
   try {
     const body = await req.json();
     const {
-      roles,
+      roles = [],
       resumeContext,
       goals,
-    }: { roles: any[]; resumeContext?: string; goals?: Goal[] } = body;
+      race,
+      location,
+    }: {
+      roles?: any[];
+      resumeContext?: string;
+      goals?: Goal[];
+      race?: string;
+      location?: string;
+    } = body;
+
+    // Determine which targets (formerly roles) we should process
+    const rolesToProcess =
+      Array.isArray(roles) && roles.length > 0
+        ? roles
+        : (goals || []).map((g) => ({ title: g.title }));
+
     console.log('📝 Request details:', {
-      roles: roles.map((r) => r.title),
+      roles: rolesToProcess.map((r) => r.title),
       hasResume: !!resumeContext,
       goals: goals?.map((g) => g.title),
     });
 
-    if (!roles || !Array.isArray(roles) || roles.length === 0) {
-      console.error('❌ No roles provided in request');
-      return new Response(
-        JSON.stringify({ error: 'Selected roles are required' }),
-        {
-          status: 400,
-          headers: { 'Content-Type': 'application/json' },
-        }
-      );
+    // Ensure we have at least goals data to work with
+    if ((!goals || goals.length === 0) && rolesToProcess.length === 0) {
+      console.error('❌ No goals provided in request');
+      return new Response(JSON.stringify({ error: 'Goals are required' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      });
     }
 
     if (!resumeContext) {
@@ -765,7 +815,7 @@ export async function POST(req: Request) {
       JSON.stringify(connectionAspects, null, 2)
     );
 
-    for (const role of roles) {
+    for (const role of rolesToProcess) {
       console.log('\n📋 Processing role:', role.title);
       try {
         // Step 2: Find initial connections using analyzed aspects
@@ -773,6 +823,8 @@ export async function POST(req: Request) {
           roleTitle: role.title,
           goalTitles: goals?.map((g) => g.title) || [],
           connectionAspects,
+          race,
+          location,
         });
         console.log('Connection finder prompt:', finderPrompt);
 
@@ -848,6 +900,26 @@ export async function POST(req: Request) {
               '✅ Found valid connections:',
               initialConnections.length
             );
+
+            // === SECOND PASS: verify / fetch URLs ===
+            for (const conn of initialConnections) {
+              if (conn.type === 'person') {
+                try {
+                  const urlPrompt = buildConnectionUrlFinderPrompt(conn);
+                  const urlResp = await callClaude(urlPrompt, {
+                    tools: [{ type: 'web_search_preview' }],
+                    maxTokens: 400,
+                  });
+                  const parsedUrl = cleanAndParseJSON(urlResp);
+                  if (parsedUrl && parsedUrl.linkedin_url) {
+                    conn.linkedin_url = parsedUrl.linkedin_url;
+                  }
+                } catch (e) {
+                  console.warn('URL enrichment failed for', conn.name);
+                }
+              }
+            }
+
             break;
           } catch (error) {
             console.error(

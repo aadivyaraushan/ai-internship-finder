@@ -106,20 +106,7 @@ function generateMatchExplanation(connection: Connection): React.ReactNode {
               <li>{sanitize(connection.how_this_helps)}</li>
             )}
           </ul>
-          {connection.website_url && (
-            <p className='text-gray-400 text-sm mt-2'>
-              <a
-                href={connection.website_url}
-                target='_blank'
-                rel='noopener noreferrer'
-                className='text-blue-400 underline'
-              >
-                Program website
-              </a>
-              {connection.enrollment_info &&
-                ` – ${sanitize(connection.enrollment_info)}`}
-            </p>
-          )}
+          {/* Removed inline program website line to avoid redundancy */}
         </div>
       </div>
     );
@@ -210,16 +197,7 @@ export default function TopConnections() {
 
     const runConnectionSearch = async () => {
       try {
-        // 1. Check local storage first
-        const stored = localStorage.getItem('topConnections');
-        if (stored) {
-          const parsed = JSON.parse(stored);
-          setConnections(parsed);
-          setLoading(false);
-          return;
-        }
-
-        // 2. Load user + resume data
+        // Load user + resume data
         updateStep('load', 'in_progress');
         setCurrentStatus('Loading your profile data...');
 
@@ -242,13 +220,24 @@ export default function TopConnections() {
         updateStep('find', 'in_progress');
         setCurrentStatus('Searching for potential connections...');
 
+        // Ensure goals are always passed as an array of objects with a `title` key
+        const goalsPayload = Array.isArray(userData.goals)
+          ? userData.goals.map((g: any) =>
+              typeof g === 'string' ? { title: g } : g
+            )
+          : userData.goals
+          ? [{ title: userData.goals }]
+          : [];
+
         const response = await fetch('/api/connections', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             roles: userData.roles || [],
-            goals: userData.goals || [],
+            goals: goalsPayload,
             resumeContext: resumeData?.text || '',
+            race: userData.race || '',
+            location: userData.location || '',
           }),
         });
 
@@ -264,7 +253,9 @@ export default function TopConnections() {
 
         // 5. Scoring step (visual)
         updateStep('score', 'in_progress');
-        setCurrentStatus('Scoring and ranking matches...');
+        setCurrentStatus(
+          `${data.response.connections.length} connections found! Scoring and ranking matches...`
+        );
         await new Promise((r) => setTimeout(r, 800));
         updateStep('score', 'completed');
 
@@ -277,11 +268,7 @@ export default function TopConnections() {
 
         setConnections(data.response.connections);
 
-        // Persist for later sessions
-        localStorage.setItem(
-          'topConnections',
-          JSON.stringify(data.response.connections)
-        );
+        // Persist connections to Firestore only
         await updateUserConnections(user.uid, data.response.connections);
       } catch (err: any) {
         console.error('Error during connection search:', err);
@@ -302,12 +289,16 @@ export default function TopConnections() {
     <div className='min-h-screen flex items-center justify-center bg-[#0a0a0a] p-4'>
       <div className='bg-[#1a1a1a] p-8 rounded-2xl w-full max-w-7xl'>
         <h1 className='text-2xl font-semibold text-white text-center mb-1'>
-          {inProgress ? 'Finding Your Top Connections' : 'Your Top Connections'}
+          {inProgress
+            ? `Finding Your Top Connections${
+                connections.length > 0 ? ` (${connections.length} found)` : ''
+              }`
+            : `Your Top Connections (${connections.length})`}
         </h1>
         <p className='text-gray-400 text-sm text-center mb-8'>
           {inProgress
             ? 'Please wait while we analyze your profile and identify the best matches for you'
-            : 'Based on our AI search using your roles, goals and resume'}
+            : 'Based on your goals and resume'}
         </p>
 
         {error && (
@@ -316,7 +307,7 @@ export default function TopConnections() {
           </div>
         )}
 
-        {(loading || steps.some((s) => s.status === 'completed')) && (
+        {(loading || steps.some((step) => step.status === 'completed')) && (
           <StatusUpdate steps={steps} currentStatus={currentStatus} />
         )}
 
@@ -324,13 +315,13 @@ export default function TopConnections() {
           <div className='text-center'>
             <p className='text-gray-400 mb-6'>
               We couldn't find any relevant connections. Please try updating
-              your roles and goals.
+              your goals and resume.
             </p>
             <button
-              onClick={() => router.push('/top-roles')}
+              onClick={() => router.push('/upload-resume')}
               className='px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors'
             >
-              Update Roles
+              Update Goals
             </button>
           </div>
         )}
@@ -408,6 +399,18 @@ export default function TopConnections() {
                 </div>
               </div>
             ))}
+          </div>
+        )}
+
+        {/* Go to Dashboard button now at bottom */}
+        {!inProgress && (
+          <div className='flex justify-center mt-8'>
+            <button
+              onClick={() => router.push('/dashboard')}
+              className='px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors'
+            >
+              Go to Dashboard
+            </button>
           </div>
         )}
       </div>

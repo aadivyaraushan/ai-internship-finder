@@ -160,7 +160,8 @@ export default function UploadResume() {
 
       // Final delay before redirect
       await new Promise((resolve) => setTimeout(resolve, 1500));
-      router.push(`/top-goals?goal=${encodeURIComponent(goals)}`);
+      // Directly move to connection-finding, passing no intermediate goal-analysis step
+      router.push('/top-connections');
     } catch (err: any) {
       setError(err.message || 'Failed to process resume');
       setCurrentStatus('');

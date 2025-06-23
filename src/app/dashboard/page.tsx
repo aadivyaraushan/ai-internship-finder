@@ -4,7 +4,13 @@ import { useState, useEffect } from 'react';
 import Image from 'next/image';
 import { useDropzone } from 'react-dropzone';
 import { auth, db } from '@/lib/firebase';
-import { getCurrentUser, updateConnectionStatus } from '@/lib/firestoreHelpers';
+import {
+  getCurrentUser,
+  updateConnectionStatus,
+  getUser,
+  getResume,
+  updateUserConnections,
+} from '@/lib/firestoreHelpers';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { onAuthStateChanged, User } from 'firebase/auth';
 
@@ -107,9 +113,7 @@ function getStatusInfo(status: Connection['status'] | undefined): {
 export default function Dashboard() {
   const [file, setFile] = useState<File | null>(null);
   const [goals, setGoals] = useState<string | Goal[]>('');
-  const [selectedView, setSelectedView] = useState<
-    'roles' | 'goals' | 'people'
-  >('roles');
+  const [selectedView, setSelectedView] = useState<'goal' | 'people'>('goal');
   const [roles, setRoles] = useState<Role[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -117,6 +121,7 @@ export default function Dashboard() {
   const [userData, setUserData] = useState<any>(null);
   const [expandedRoles, setExpandedRoles] = useState<boolean[]>([]);
   const [connections, setConnections] = useState<Connection[]>([]);
+  const [findingMore, setFindingMore] = useState(false);
 
   // Listen for Firebase Auth state changes
   useEffect(() => {
@@ -186,33 +191,12 @@ export default function Dashboard() {
     fetchUserData();
   }, [currentUser]);
 
-  // Load connections from localStorage as a fallback when component mounts
-  useEffect(() => {
-    try {
-      const stored = localStorage.getItem('topConnections');
-      if (stored) {
-        const parsedConnections: Connection[] = JSON.parse(stored);
-        if (parsedConnections.length > 0) {
-          setConnections((prev) =>
-            prev.length === 0 ? parsedConnections : prev
-          );
-          console.log(
-            'Loaded connections from localStorage:',
-            parsedConnections
-          );
-        }
-      }
-    } catch (err) {
-      console.error('Error loading connections from localStorage', err);
-    }
-  }, []);
-
   // When roles are loaded, initialize expandedRoles state
   useEffect(() => {
     setExpandedRoles(Array(roles.length).fill(false));
   }, [roles.length]);
 
-  const saveGoals = async () => {
+  const saveGoal = async () => {
     if (!currentUser) {
       console.error('No user logged in');
       return;
@@ -223,12 +207,12 @@ export default function Dashboard() {
       await setDoc(
         doc(db, 'users', currentUser.uid),
         {
-          goals: goals,
+          goals: typeof goals === 'string' ? goals : JSON.stringify(goals),
         },
         { merge: true }
       );
     } catch (error) {
-      console.error('Error saving goals:', error);
+      console.error('Error saving goal:', error);
     } finally {
       setSaving(false);
     }
@@ -270,6 +254,65 @@ export default function Dashboard() {
     }
   };
 
+  // Fetch additional connections from the backend and merge with existing list
+  const fetchMoreConnections = async () => {
+    if (!currentUser) return;
+
+    try {
+      setFindingMore(true);
+
+      // Refresh user + resume data to build the payload
+      const userData: any = await getUser(currentUser.uid);
+      const resumeData: any = await getResume(currentUser.uid);
+
+      // Build goals payload in the format the API expects
+      const goalsPayload = Array.isArray(userData?.goals)
+        ? userData.goals.map((g: any) =>
+            typeof g === 'string' ? { title: g } : g
+          )
+        : userData?.goals
+        ? [{ title: userData.goals }]
+        : [];
+
+      const response = await fetch('/api/connections', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          roles: userData?.roles || [],
+          goals: goalsPayload,
+          resumeContext: resumeData?.text || '',
+          race: userData?.race || '',
+          location: userData?.location || '',
+        }),
+      });
+
+      if (!response.ok) {
+        console.error('Failed to find more connections');
+        return;
+      }
+
+      const data = await response.json();
+      const newConnections: Connection[] = data.response.connections || [];
+
+      setConnections((prev) => {
+        const existingIds = new Set(prev.map((c) => c.id));
+        const merged = [
+          ...prev,
+          ...newConnections.filter((c) => !existingIds.has(c.id)),
+        ];
+
+        // Persist merged list back to Firestore
+        updateUserConnections(currentUser.uid, merged as any);
+
+        return merged;
+      });
+    } catch (err) {
+      console.error('Error fetching more connections:', err);
+    } finally {
+      setFindingMore(false);
+    }
+  };
+
   return (
     <div className='min-h-screen bg-[#0a0a0a] p-4'>
       {/* Logo */}
@@ -286,24 +329,14 @@ export default function Dashboard() {
             {/* View Selector */}
             <div className='flex gap-4 mb-6'>
               <button
-                onClick={() => setSelectedView('roles')}
+                onClick={() => setSelectedView('goal')}
                 className={`px-4 py-2 rounded-lg transition-colors ${
-                  selectedView === 'roles'
+                  selectedView === 'goal'
                     ? 'bg-blue-500 text-white'
                     : 'bg-[#2a2a2a] text-gray-300 hover:bg-[#3a3a3a]'
                 }`}
               >
-                Roles
-              </button>
-              <button
-                onClick={() => setSelectedView('goals')}
-                className={`px-4 py-2 rounded-lg transition-colors ${
-                  selectedView === 'goals'
-                    ? 'bg-blue-500 text-white'
-                    : 'bg-[#2a2a2a] text-gray-300 hover:bg-[#3a3a3a]'
-                }`}
-              >
-                Goals
+                Current Goal
               </button>
               <button
                 onClick={() => setSelectedView('people')}
@@ -313,117 +346,28 @@ export default function Dashboard() {
                     : 'bg-[#2a2a2a] text-gray-300 hover:bg-[#3a3a3a]'
                 }`}
               >
-                People
+                Programs/Connections
               </button>
             </div>
 
             {/* Content Sections */}
-            {selectedView === 'roles' && (
-              <div>
-                {loading ? (
-                  <div className='text-gray-400 text-center'>
-                    Loading roles...
-                  </div>
-                ) : (
-                  <div className='grid grid-cols-1 md:grid-cols-2 gap-4'>
-                    {roles.map((role, index) => {
-                      const expanded = expandedRoles[index];
-                      const handleToggle = () => {
-                        setExpandedRoles((prev) => {
-                          const newExpanded = [...prev];
-                          newExpanded[index] = !expanded;
-                          return newExpanded;
-                        });
-                      };
-                      // If expanded, span both columns
-                      const colSpanClass = expanded ? 'md:col-span-2' : '';
-                      return (
-                        <div
-                          key={index}
-                          className={`bg-[#2a2a2a] rounded-lg overflow-hidden ${colSpanClass} transition-all duration-300 ${
-                            expanded
-                              ? 'shadow-lg bg-blue-500/30 border border-blue-500'
-                              : ''
-                          }`}
-                          style={{
-                            transition: 'box-shadow 0.3s, background 0.3s',
-                          }}
-                        >
-                          <button
-                            className='w-full text-left px-4 py-3 focus:outline-none flex items-center justify-between'
-                            onClick={handleToggle}
-                          >
-                            <span className='text-white font-medium'>
-                              {role.title}
-                            </span>
-                            <svg
-                              className={`w-5 h-5 ml-2 transition-transform ${
-                                expanded ? 'rotate-180' : ''
-                              }`}
-                              fill='none'
-                              stroke='currentColor'
-                              viewBox='0 0 24 24'
-                            >
-                              <path
-                                strokeLinecap='round'
-                                strokeLinejoin='round'
-                                strokeWidth={2}
-                                d='M19 9l-7 7-7-7'
-                              />
-                            </svg>
-                          </button>
-                          <div
-                            className={`transition-all duration-300 ease-in-out ${
-                              expanded
-                                ? 'max-h-96 opacity-100 py-4 px-4'
-                                : 'max-h-0 opacity-0 py-0 px-4'
-                            }`}
-                            style={{ overflow: 'hidden' }}
-                          >
-                            <ul className='space-y-1'>
-                              {role.bulletPoints.map((point, i) => (
-                                <li
-                                  key={i}
-                                  className='text-gray-400 text-sm flex items-start'
-                                >
-                                  <span className='mr-2'>•</span>
-                                  <span>{point}</span>
-                                </li>
-                              ))}
-                            </ul>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {selectedView === 'goals' && (
+            {selectedView === 'goal' && (
               <div className='space-y-4'>
                 <div className='bg-[#2a2a2a] p-4 rounded-lg'>
-                  <h3 className='text-white font-medium mb-2'>Your Goals</h3>
-                  {Array.isArray(goals) ? (
-                    <div className='space-y-3'>
-                      {goals.map((goal, i) => (
-                        <div key={i} className='bg-[#1a1a1a] p-3 rounded-lg'>
-                          <h4 className='text-white font-semibold'>
-                            {goal.title}
-                          </h4>
-                          {goal.description && (
-                            <p className='text-gray-400 text-sm'>
-                              {goal.description}
-                            </p>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className='bg-[#1a1a1a] p-3 rounded-lg text-gray-300'>
-                      {goals || 'No goals set yet.'}
-                    </div>
-                  )}
+                  <h3 className='text-white font-medium mb-2'>Current Goal</h3>
+                  <textarea
+                    className='w-full h-24 px-3 py-2 text-gray-300 bg-[#1a1a1a] rounded-lg focus:outline-none'
+                    value={typeof goals === 'string' ? goals : ''}
+                    onChange={(e) => setGoals(e.target.value)}
+                    placeholder='Describe your current career goal...'
+                  />
+                  <button
+                    onClick={saveGoal}
+                    disabled={saving}
+                    className='mt-2 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors disabled:opacity-50'
+                  >
+                    {saving ? 'Saving...' : 'Save Goal'}
+                  </button>
                 </div>
               </div>
             )}
@@ -431,9 +375,6 @@ export default function Dashboard() {
             {selectedView === 'people' && (
               <div className='space-y-4'>
                 <div className='bg-[#2a2a2a] p-4 rounded-lg'>
-                  <h3 className='text-white font-medium mb-2'>
-                    Suggested Connections
-                  </h3>
                   {connections && connections.length > 0 ? (
                     <div className='space-y-3'>
                       {connections.map((connection) => {
@@ -573,11 +514,37 @@ export default function Dashboard() {
                           </div>
                         );
                       })}
+                      {/* Find more connections button */}
+                      <div className='pt-2 flex justify-center'>
+                        <button
+                          onClick={fetchMoreConnections}
+                          disabled={findingMore}
+                          className={`mt-2 px-4 py-2 rounded-lg bg-blue-500 text-white hover:bg-blue-600 transition-colors ${
+                            findingMore ? 'opacity-50 cursor-not-allowed' : ''
+                          }`}
+                        >
+                          {findingMore
+                            ? 'Finding more...'
+                            : 'Find more connections'}
+                        </button>
+                      </div>
                     </div>
                   ) : (
                     <p className='text-gray-400 text-sm'>
                       Coming soon: AI-powered connection suggestions based on
                       your profile and goals.
+                      <br />
+                      <button
+                        onClick={fetchMoreConnections}
+                        disabled={findingMore}
+                        className={`mt-3 px-4 py-2 rounded-lg bg-blue-500 text-white hover:bg-blue-600 transition-colors ${
+                          findingMore ? 'opacity-50 cursor-not-allowed' : ''
+                        }`}
+                      >
+                        {findingMore
+                          ? 'Finding more...'
+                          : 'Find more connections'}
+                      </button>
                     </p>
                   )}
                 </div>
