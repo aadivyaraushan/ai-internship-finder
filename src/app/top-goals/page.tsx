@@ -80,7 +80,6 @@ export default function TopGoals() {
       updateStep('analyze', 'in_progress');
       setCurrentStatus('AI analyzing your profile...');
       const data = await response.json();
-      console.log('Goal Analysis API Response:', data);
 
       if (data.processingSteps) {
         const apiSteps = data.processingSteps;
@@ -118,7 +117,7 @@ export default function TopGoals() {
         }
       }
 
-      const endGoals = data.response.suggestedGoals;
+      const endGoals = data.response.endGoals;
       const goals = endGoals.map((goal: any, index: number) => ({
         id: index + 1,
         title: goal.title,

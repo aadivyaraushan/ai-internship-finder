@@ -171,19 +171,10 @@ export default function TopRoles() {
       }
 
       const data = await response.json();
-      console.log('Roles Analysis API Response:', data);
-      console.log('Response structure:', {
-        hasResponse: !!data.response,
-        hasProcessingSteps: !!data.response?.processingSteps,
-        hasSuggestedRoles: !!data.response?.suggestedRoles,
-        processingSteps: data.response?.processingSteps,
-        suggestedRoles: data.response?.suggestedRoles,
-      });
 
       // Update steps based on API response
-      if (data.response?.processingSteps) {
+      if (data.response.processingSteps) {
         const apiSteps = data.response.processingSteps;
-        console.log('Processing Steps:', apiSteps);
 
         if (apiSteps.contextAnalyzed) {
           updateStep('analyze', 'completed');
@@ -362,14 +353,13 @@ export default function TopRoles() {
 
                   console.log('✅ API request successful');
                   const data = await response.json();
-                  console.log(data);
                   console.log(
-                    `📊 Received ${data.response.suggestedConnections.length} connections for role`
+                    `📊 Received ${data.response.connections.length} connections for role`
                   );
 
                   // Process new connections and add required fields
                   console.log('🔄 Processing connections...');
-                  const newConnections = data.response.suggestedConnections
+                  const newConnections = data.response.connections
                     .filter(
                       (connection: any) =>
                         !processedConnectionIds.has(connection.id)
