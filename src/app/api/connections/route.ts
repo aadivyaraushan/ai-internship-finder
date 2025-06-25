@@ -1,4 +1,6 @@
 import { callClaude } from '../../../lib/anthropicClient';
+import * as cheerio from 'cheerio';
+import axios from 'axios';
 
 interface Goal {
   title: string;
@@ -433,28 +435,61 @@ function cleanAndParseJSON(raw: string) {
   }
 
   try {
-    // Remove markdown code fences if present
-    let withoutFences = raw.replace(/```json\s*|```/g, '');
+    // First, clean up any markdown or code block markers
+    let cleaned = raw
+      // Remove any markdown code block markers
+      .replace(/```(?:json)?\s*|\s*```/g, '')
+      // Remove any XML/HTML-like tags
+      .replace(/<\/?[^>]+(>|$)/g, '')
+      // Trim whitespace
+      .trim();
 
-    // Attempt direct parse first
+    console.log('🧹 Initial cleaning:', cleaned);
+
+    // Try direct parse first
     try {
-      const direct = JSON.parse(withoutFences.trim());
+      const direct = JSON.parse(cleaned);
       console.log('✅ Direct parse successful');
       return direct;
-    } catch {
-      // fall-through
+    } catch (directError) {
+      console.log('⚠️ Direct parse failed, trying extraction:', directError);
     }
 
     // Extract the first JSON substring (object or array)
-    const jsonSubstring = extractFirstJSON(withoutFences);
+    const jsonSubstring = extractFirstJSON(cleaned);
     if (!jsonSubstring) {
-      throw new Error('No JSON substring found');
+      // If no JSON found, try more aggressive cleaning
+      cleaned = cleaned
+        // Remove non-standard whitespace characters
+        .replace(/[\u2028\u2029\u0085]/g, ' ')
+        // Fix single quotes to double quotes
+        .replace(/'/g, '"')
+        // Remove trailing commas before } or ]
+        .replace(/,(\s*[}\]])/g, '$1')
+        // Fix missing quotes around property names (best-effort)
+        .replace(/([{,]\s*)([a-zA-Z_][a-zA-Z0-9_]*)\s*:/g, '$1"$2":')
+        // Remove any remaining non-JSON characters at start/end
+        .replace(/^[^{[]+/, '')
+        .replace(/[^}\]]+$/, '');
+
+      console.log('🧹 Aggressive cleaning result:', cleaned);
+
+      // Try parsing again after aggressive cleaning
+      try {
+        const parsed = JSON.parse(cleaned);
+        console.log('✅ Parse successful after aggressive cleaning');
+        return parsed;
+      } catch (error) {
+        console.error('❌ All parsing attempts failed:', error);
+        console.error('Final cleaned version:', cleaned);
+        throw new Error('Failed to parse JSON response after all attempts');
+      }
     }
 
     console.log('➡️ Extracted JSON substring:', jsonSubstring);
 
-    // Clean common issues before parse
-    let cleaned = jsonSubstring
+    // Clean the extracted JSON
+    let cleanedJson = jsonSubstring
       // Remove non-standard whitespace characters
       .replace(/[\u2028\u2029\u0085]/g, ' ')
       // Fix single quotes to double quotes
@@ -464,11 +499,40 @@ function cleanAndParseJSON(raw: string) {
       // Fix missing quotes around property names (best-effort)
       .replace(/([{,]\s*)([a-zA-Z_][a-zA-Z0-9_]*)\s*:/g, '$1"$2":');
 
-    console.log('🧹 Cleaned JSON substring:', cleaned);
+    console.log('🧹 Cleaned JSON substring:', cleanedJson);
 
-    const parsed = JSON.parse(cleaned);
-    console.log('✅ Parse successful after extraction');
-    return parsed;
+    try {
+      const parsed = JSON.parse(cleanedJson);
+      console.log('✅ Parse successful after extraction and cleaning');
+      return parsed;
+    } catch (error) {
+      // One last attempt: try to fix any remaining issues
+      cleanedJson = cleanedJson
+        // Remove any non-JSON characters at the start
+        .replace(/^[^{[]+/, '')
+        // Remove any non-JSON characters at the end
+        .replace(/[^}\]]+$/, '')
+        // Ensure property names are quoted
+        .replace(/([{,]\s*)([a-zA-Z_][a-zA-Z0-9_]*)\s*:/g, '$1"$2":')
+        // Fix potential unescaped quotes in strings
+        .replace(/(?<!\\)"/g, '\\"')
+        .replace(/^/, '"')
+        .replace(/$/, '"')
+        .replace(/\\"{/g, '{')
+        .replace(/\\"}$/g, '}');
+
+      console.log('🧹 Final cleaning attempt:', cleanedJson);
+
+      try {
+        const parsed = JSON.parse(cleanedJson);
+        console.log('✅ Parse successful after final cleaning');
+        return parsed;
+      } catch (finalError) {
+        console.error('❌ All parsing attempts failed:', finalError);
+        console.error('Final cleaned version:', cleanedJson);
+        throw new Error('Failed to parse JSON response after all attempts');
+      }
+    }
   } catch (error) {
     console.error('❌ JSON cleaning/parsing error:', error);
     console.error('Original input snippet:', raw.slice(0, 500));
@@ -613,31 +677,260 @@ async function processConnectionWithAgents(
   }
 }
 
-// ===== New helper to find verified profile URLs for a given person connection =====
+// Add new scraping utilities
+async function scrapeLinkedInProfile(url: string): Promise<{
+  name?: string;
+  currentRole?: string;
+  company?: string;
+  error?: string;
+}> {
+  try {
+    // First try to get public data from LinkedIn
+    const response = await axios.get(url, {
+      headers: {
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+      },
+    });
+
+    const $ = cheerio.load(response.data);
+
+    // Extract data from public profile
+    // Note: These selectors might need adjustment based on LinkedIn's current structure
+    const name = $('h1').first().text().trim();
+    const currentRole = $('.experience-section .pv-entity__summary-info h3')
+      .first()
+      .text()
+      .trim();
+    const company = $('.experience-section .pv-entity__secondary-title')
+      .first()
+      .text()
+      .trim();
+
+    return { name, currentRole, company };
+  } catch (error) {
+    // If direct scraping fails, try to get data from Google's cached version
+    try {
+      const cachedUrl = `https://webcache.googleusercontent.com/search?q=cache:${encodeURIComponent(
+        url
+      )}`;
+      const response = await axios.get(cachedUrl, {
+        headers: {
+          'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+        },
+      });
+
+      const $ = cheerio.load(response.data);
+
+      const name = $('h1').first().text().trim();
+      const currentRole = $('.experience-section .pv-entity__summary-info h3')
+        .first()
+        .text()
+        .trim();
+      const company = $('.experience-section .pv-entity__secondary-title')
+        .first()
+        .text()
+        .trim();
+
+      return { name, currentRole, company };
+    } catch (cacheError) {
+      return { error: 'Failed to scrape profile data' };
+    }
+  }
+}
+
+async function scrapeProgramWebsite(url: string): Promise<{
+  programName?: string;
+  organizationName?: string;
+  programType?: string;
+  pageText?: string;
+  error?: string;
+}> {
+  try {
+    const response = await axios.get(url, {
+      headers: {
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+      },
+    });
+
+    const $ = cheerio.load(response.data);
+
+    // Get all text content
+    const pageText = $('body').text().toLowerCase();
+
+    return {
+      pageText,
+    };
+  } catch (error) {
+    return { error: 'Failed to scrape program website' };
+  }
+}
+
+async function findAndVerifyLinkedInUrl(
+  connection: any
+): Promise<string | null> {
+  try {
+    // First use web search to find potential LinkedIn URLs
+    const searchQuery = `${connection.name} ${connection.current_role} ${connection.company} site:linkedin.com/in/`;
+    const searchResponse = await callClaude(
+      `<system>You are a LinkedIn profile URL finder. Return ONLY valid JSON.</system>
+<input>
+Search query: ${searchQuery}
+Expected details:
+- Name: ${connection.name}
+- Role: ${connection.current_role}
+- Company: ${connection.company}
+</input>
+<rules>
+1. Use web_search to find LinkedIn profile URLs
+2. Return up to 3 most likely profile URLs
+3. URLs must be from linkedin.com/in/ or linkedin.com/pub/
+4. Never fabricate URLs
+</rules>
+<schema>
+{
+  "potential_urls": ["string"]
+}
+</schema>`,
+      {
+        tools: [{ type: 'web_search_preview' }],
+        maxTokens: 500,
+      }
+    );
+
+    const result = cleanAndParseJSON(searchResponse);
+    if (!result?.potential_urls?.length) {
+      return null;
+    }
+
+    // Try to verify each URL by scraping
+    for (const url of result.potential_urls) {
+      const profileData = await scrapeLinkedInProfile(url);
+
+      if (profileData.error) {
+        console.warn(`Failed to scrape ${url}:`, profileData.error);
+        continue;
+      }
+
+      // Check if scraped data matches our connection
+      const nameMatch = profileData.name
+        ?.toLowerCase()
+        .includes(connection.name.toLowerCase());
+      const roleMatch = profileData.currentRole
+        ?.toLowerCase()
+        .includes(connection.current_role.toLowerCase());
+      const companyMatch = profileData.company
+        ?.toLowerCase()
+        .includes(connection.company.toLowerCase());
+
+      if (nameMatch && roleMatch && companyMatch) {
+        return url;
+      }
+    }
+
+    return null;
+  } catch (error) {
+    console.error('Error finding LinkedIn URL:', error);
+    return null;
+  }
+}
+
+async function verifyProgramWebsite(connection: any): Promise<boolean> {
+  try {
+    if (!connection.website_url) return false;
+
+    // Scrape the program website
+    const websiteData = await scrapeProgramWebsite(connection.website_url);
+
+    if (websiteData.error) {
+      console.warn('Failed to scrape program website:', websiteData.error);
+      return false;
+    }
+
+    // Use Claude to analyze the scraped content
+    const analysisResponse = await callClaude(
+      `<system>You are a program website validator. Analyze scraped website content to verify program details. Return ONLY valid JSON.</system>
+<input>
+Website content: ${websiteData.pageText}
+Expected program:
+- Name: ${connection.name}
+- Organization: ${connection.organization}
+- Type: ${connection.program_type}
+</input>
+<rules>
+1. Analyze the website content for matches
+2. Check if program name, organization, and type are mentioned
+3. Return detailed validation results
+</rules>
+<schema>
+{
+  "validation": {
+    "is_valid": boolean,
+    "matches_found": {
+      "program_name": boolean,
+      "organization": boolean,
+      "program_type": boolean
+    },
+    "explanation": string
+  }
+}
+</schema>`,
+      {
+        maxTokens: 400,
+      }
+    );
+
+    const result = cleanAndParseJSON(analysisResponse);
+    return result?.validation?.is_valid || false;
+  } catch (error) {
+    console.error('Error verifying program website:', error);
+    return false;
+  }
+}
 
 function buildConnectionUrlFinderPrompt(connection: any) {
-  return `<system>You are a research assistant that ONLY provides verified public profile URLs for the given person. Use web_search tool if necessary. Return ONLY valid JSON.</system>
+  return `<system>You are a research assistant that ONLY provides verified public profile URLs for the given person. Use web_search tool to find and verify candidates. Return ONLY valid JSON.</system>
 <input>
 Name: ${connection.name}
 Current role: ${connection.current_role}
 Company/Organization: ${connection.company}
 </input>
 <rules>
-1. Use a web search query like: "${connection.name} ${connection.company} LinkedIn" (and optionally current role) to locate their REAL LinkedIn profile.
-2. A valid profile MUST satisfy BOTH:
-   a) The URL domain is linkedin.com/in/ or linkedin.com/pub/
-   b) The profile headline or "experience" section clearly references the same company name (case-insensitive partial match acceptable).
-3. If multiple results satisfy the rule choose the one whose headline also includes the current role keywords (e.g. "intern", "software engineer", etc.).
-4. If no profile passes rule 2, set linkedin_url to null.
-5. Never hallucinate or fabricate a URL.
-6. Output MUST be ONLY the JSON matching the schema, with no additional text or markdown.
-7. Return exactly one key: linkedin_url.
+1. Use findAndVerifyLinkedInUrl to locate and verify their REAL LinkedIn profile
+2. A valid profile MUST satisfy ALL:
+   a) URL domain is linkedin.com/in/ or linkedin.com/pub/
+   b) Profile name matches (allowing for middle names/initials)
+   c) Current company matches (case-insensitive)
+   d) Current role keywords match (e.g. "software engineer" matches "senior software engineer")
+3. If no valid profile is found, set linkedin_url to null
+4. Never hallucinate or fabricate URLs
+5. Output MUST be ONLY the JSON matching the schema
 </rules>
 <schema>
 {
   "linkedin_url": "string"
 }
 </schema>`;
+}
+
+interface ProfileData {
+  name?: string;
+  currentRole?: string;
+  company?: string;
+  error?: string;
+  confidence?: {
+    name: boolean;
+    role: boolean;
+    company: boolean;
+  };
+}
+
+interface SharedActivity {
+  name: string;
+  year: string;
+  type: string;
 }
 
 export async function POST(req: Request) {
@@ -905,20 +1198,497 @@ export async function POST(req: Request) {
             for (const conn of initialConnections) {
               if (conn.type === 'person') {
                 try {
-                  const urlPrompt = buildConnectionUrlFinderPrompt(conn);
-                  const urlResp = await callClaude(urlPrompt, {
-                    tools: [{ type: 'web_search_preview' }],
-                    maxTokens: 400,
-                  });
-                  const parsedUrl = cleanAndParseJSON(urlResp);
-                  if (parsedUrl && parsedUrl.linkedin_url) {
-                    conn.linkedin_url = parsedUrl.linkedin_url;
+                  let verifiedUrl = null;
+                  let attempts = 0;
+                  const MAX_ATTEMPTS = 3; // Try up to 3 different search queries
+
+                  while (!verifiedUrl && attempts < MAX_ATTEMPTS) {
+                    // Build different search queries for each attempt
+                    let searchQuery;
+                    if (attempts === 0) {
+                      searchQuery = `${conn.name} ${conn.current_role} ${conn.company} (site:linkedin.com/in/ OR site:github.com OR site:medium.com OR site:about.me OR site:personalwebsite)`;
+                    } else if (attempts === 1) {
+                      // Try with just name and company
+                      searchQuery = `${conn.name} ${conn.company} profile contact`;
+                    } else {
+                      // Try with name and role keywords
+                      const roleKeywords = conn.current_role
+                        .split(' ')
+                        .filter(
+                          (word: string) =>
+                            ![
+                              'the',
+                              'a',
+                              'an',
+                              'and',
+                              'or',
+                              'but',
+                              'in',
+                              'on',
+                              'at',
+                              'to',
+                              'for',
+                            ].includes(word.toLowerCase())
+                        )
+                        .join(' ');
+                      searchQuery = `${conn.name} ${roleKeywords} contact profile`;
+                    }
+
+                    const urlPrompt = `<system>You are a professional profile URL finder. Return ONLY valid JSON.</system>
+<input>
+Search query: ${searchQuery}
+Expected details:
+- Name: ${conn.name}
+- Role: ${conn.current_role}
+- Company: ${conn.company}
+</input>
+<rules>
+1. Use web_search to find professional profile URLs
+2. Return up to 5 most likely profile URLs
+3. Accept URLs from:
+   - LinkedIn (linkedin.com/in/ or linkedin.com/pub/)
+   - Personal websites
+   - Professional portfolios
+   - GitHub profiles
+   - Medium profiles
+   - Company team/about pages
+   - Professional social networks
+4. Never fabricate URLs
+5. Order results by likelihood of match
+6. Include source_type for each URL to indicate what kind of profile it is
+</rules>
+<schema>
+{
+  "potential_urls": [
+    {
+      "url": "string",
+      "source_type": "string"
+    }
+  ]
+}
+</schema>`;
+
+                    const urlResp = await callClaude(urlPrompt, {
+                      tools: [{ type: 'web_search_preview' }],
+                      maxTokens: 400,
+                    });
+
+                    console.log('Raw URL response from Claude:', urlResp);
+
+                    let parsedUrl = null;
+                    try {
+                      parsedUrl = cleanAndParseJSON(urlResp);
+                      if (!parsedUrl) {
+                        console.warn(
+                          '⚠️ Failed to parse URL response:',
+                          urlResp
+                        );
+                        // Try to extract URLs directly from the response using regex
+                        const urlMatches = urlResp.match(
+                          /https?:\/\/[^\s"'<>()[\]]+/g
+                        );
+                        if (urlMatches) {
+                          parsedUrl = {
+                            potential_urls: urlMatches.map((url) => ({
+                              url,
+                              source_type: url.includes('linkedin.com')
+                                ? 'linkedin'
+                                : url.includes('github.com')
+                                ? 'github'
+                                : url.includes('medium.com')
+                                ? 'medium'
+                                : 'other',
+                            })),
+                          };
+                          console.log(
+                            '📝 Extracted URLs directly from response:',
+                            parsedUrl.potential_urls
+                          );
+                        }
+                      }
+                    } catch (parseError) {
+                      console.error(
+                        '❌ Error parsing URL response:',
+                        parseError
+                      );
+                      const urlMatches = urlResp.match(
+                        /https?:\/\/[^\s"'<>()[\]]+/g
+                      );
+                      if (urlMatches) {
+                        parsedUrl = {
+                          potential_urls: urlMatches.map((url) => ({
+                            url,
+                            source_type: url.includes('linkedin.com')
+                              ? 'linkedin'
+                              : url.includes('github.com')
+                              ? 'github'
+                              : url.includes('medium.com')
+                              ? 'medium'
+                              : 'other',
+                          })),
+                        };
+                        console.log(
+                          '📝 Extracted URLs directly from response:',
+                          parsedUrl.potential_urls
+                        );
+                      }
+                    }
+
+                    if (parsedUrl?.potential_urls?.length > 0) {
+                      // Try each URL until we find a match
+                      for (const urlData of parsedUrl.potential_urls) {
+                        const url =
+                          typeof urlData === 'string' ? urlData : urlData.url;
+                        const sourceType =
+                          typeof urlData === 'string'
+                            ? url.includes('linkedin.com')
+                              ? 'linkedin'
+                              : url.includes('github.com')
+                              ? 'github'
+                              : url.includes('medium.com')
+                              ? 'medium'
+                              : 'other'
+                            : urlData.source_type;
+
+                        console.log(
+                          `🔍 Attempting to verify URL (attempt ${
+                            attempts + 1
+                          }):`,
+                          { url, sourceType }
+                        );
+
+                        try {
+                          let profileData: ProfileData;
+                          if (sourceType === 'linkedin') {
+                            profileData = await scrapeLinkedInProfile(url);
+                          } else {
+                            // For non-LinkedIn URLs, use a general scraping approach
+                            console.log(`🔍 Scraping non-LinkedIn URL: ${url}`);
+                            const response = await axios.get(url, {
+                              headers: {
+                                'User-Agent':
+                                  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                              },
+                              timeout: 10000, // 10 second timeout
+                            });
+
+                            console.log(
+                              `✅ Got response from ${url}, status: ${response.status}`
+                            );
+                            const $ = cheerio.load(response.data);
+
+                            // Get text content from important elements first
+                            const titleText = $('title').text().toLowerCase();
+                            const h1Text = $('h1')
+                              .map((_, el) => $(el).text())
+                              .get()
+                              .join(' ')
+                              .toLowerCase();
+                            const metaDescription =
+                              $('meta[name="description"]')
+                                .attr('content')
+                                ?.toLowerCase() || '';
+                            const bodyText = $('body').text().toLowerCase();
+
+                            console.log('Scraped content:', {
+                              title: titleText,
+                              h1: h1Text,
+                              metaDescription:
+                                metaDescription.substring(0, 100) + '...',
+                              bodyLength: bodyText.length,
+                            });
+
+                            // Look for name and company/role matches in the page content
+                            const searchTerms = {
+                              name: conn.name.toLowerCase(),
+                              role: conn.current_role.toLowerCase(),
+                              company: conn.company.toLowerCase(),
+                              // Add variations of the name
+                              nameVariations: [
+                                conn.name.toLowerCase(),
+                                conn.name.toLowerCase().replace(/\s+/g, ''),
+                                conn.name.toLowerCase().split(' ')[0], // First name
+                                conn.name.toLowerCase().split(' ').pop(), // Last name
+                              ],
+                              // Add variations of the role
+                              roleKeywords: conn.current_role
+                                .toLowerCase()
+                                .split(' ')
+                                .filter(
+                                  (word: string) =>
+                                    ![
+                                      'the',
+                                      'a',
+                                      'an',
+                                      'and',
+                                      'or',
+                                      'but',
+                                      'in',
+                                      'on',
+                                      'at',
+                                      'to',
+                                      'for',
+                                    ].includes(word)
+                                ),
+                            };
+
+                            console.log('Searching for terms:', searchTerms);
+
+                            // Check for matches in different parts of the page
+                            const matches = {
+                              nameInTitle: searchTerms.nameVariations.some(
+                                (name: string) => titleText.includes(name)
+                              ),
+                              nameInH1: searchTerms.nameVariations.some(
+                                (name: string) => h1Text.includes(name)
+                              ),
+                              nameInMeta: searchTerms.nameVariations.some(
+                                (name: string) => metaDescription.includes(name)
+                              ),
+                              nameInBody: searchTerms.nameVariations.some(
+                                (name: string) => bodyText.includes(name)
+                              ),
+                              roleInBody: searchTerms.roleKeywords.some(
+                                (keyword: string) => bodyText.includes(keyword)
+                              ),
+                              companyInBody: bodyText.includes(
+                                searchTerms.company
+                              ),
+                            };
+
+                            console.log('Content matches:', matches);
+
+                            // More lenient matching logic
+                            const nameFound =
+                              matches.nameInTitle ||
+                              matches.nameInH1 ||
+                              matches.nameInMeta ||
+                              matches.nameInBody;
+                            const roleOrCompanyFound =
+                              matches.roleInBody || matches.companyInBody;
+
+                            profileData = {
+                              name: nameFound ? conn.name : undefined,
+                              currentRole: matches.roleInBody
+                                ? conn.current_role
+                                : undefined,
+                              company: matches.companyInBody
+                                ? conn.company
+                                : undefined,
+                              error: !nameFound
+                                ? 'Name not found in content'
+                                : undefined,
+                              confidence: {
+                                name: nameFound,
+                                role: matches.roleInBody,
+                                company: matches.companyInBody,
+                              },
+                            };
+                          }
+
+                          if (!profileData.error) {
+                            // Check if scraped data matches our connection
+                            const nameMatch =
+                              profileData.name
+                                ?.toLowerCase()
+                                .includes(conn.name.toLowerCase()) ||
+                              profileData.confidence?.name === true;
+                            const roleMatch =
+                              profileData.currentRole
+                                ?.toLowerCase()
+                                .includes(conn.current_role.toLowerCase()) ||
+                              profileData.confidence?.role === true;
+                            const companyMatch =
+                              profileData.company
+                                ?.toLowerCase()
+                                .includes(conn.company.toLowerCase()) ||
+                              profileData.confidence?.company === true;
+
+                            console.log('Profile data comparison:', {
+                              source: sourceType,
+                              found: {
+                                name: profileData.name,
+                                role: profileData.currentRole,
+                                company: profileData.company,
+                                confidence: profileData.confidence,
+                              },
+                              expected: {
+                                name: conn.name,
+                                role: conn.current_role,
+                                company: conn.company,
+                              },
+                              matches: {
+                                name: nameMatch,
+                                role: roleMatch,
+                                company: companyMatch,
+                              },
+                            });
+
+                            // Much more lenient matching for non-LinkedIn sources
+                            const isMatch =
+                              sourceType === 'linkedin'
+                                ? nameMatch && (roleMatch || companyMatch) // LinkedIn needs stronger verification
+                                : nameMatch || // For other sources, just need some confidence
+                                  (url
+                                    .toLowerCase()
+                                    .includes(
+                                      conn.name
+                                        .toLowerCase()
+                                        .replace(/\s+/g, '')
+                                    ) &&
+                                    (roleMatch ||
+                                      companyMatch ||
+                                      url
+                                        .toLowerCase()
+                                        .includes(
+                                          conn.company
+                                            .toLowerCase()
+                                            .replace(/\s+/g, '')
+                                        )));
+
+                            if (isMatch) {
+                              verifiedUrl = url;
+                              conn.profile_source = sourceType;
+                              conn.match_confidence = {
+                                name: nameMatch,
+                                role: roleMatch,
+                                company: companyMatch,
+                              };
+                              console.log(
+                                `✅ Found and verified ${sourceType} profile for:`,
+                                conn.name
+                              );
+                              break;
+                            } else {
+                              console.log(
+                                `❌ Profile data mismatch for ${sourceType}`
+                              );
+                            }
+                          } else {
+                            console.warn(
+                              '⚠️ Failed to scrape URL:',
+                              url,
+                              profileData.error
+                            );
+                          }
+                        } catch (error: any) {
+                          console.error('❌ Error during profile scraping:', {
+                            url,
+                            error: error.message,
+                            stack: error.stack,
+                          });
+                          continue;
+                        }
+                      }
+                    } else {
+                      console.warn(
+                        '⚠️ No valid URLs found in response for attempt',
+                        attempts + 1
+                      );
+                    }
+
+                    if (verifiedUrl) {
+                      break; // Found a match, exit attempt loop
+                    }
+
+                    attempts++;
+                    if (attempts < MAX_ATTEMPTS) {
+                      console.log(
+                        `⏳ No match found, trying different search query (attempt ${
+                          attempts + 1
+                        }/${MAX_ATTEMPTS})`
+                      );
+                      // Add a small delay between attempts to avoid rate limiting
+                      await new Promise((resolve) => setTimeout(resolve, 1000));
+                    }
+                  }
+
+                  if (verifiedUrl) {
+                    conn.linkedin_url = verifiedUrl;
+                  } else {
+                    console.warn(
+                      '⚠️ Could not verify any LinkedIn profile for:',
+                      conn.name
+                    );
+                    conn.linkedin_url = null;
                   }
                 } catch (e) {
-                  console.warn('URL enrichment failed for', conn.name);
+                  console.warn('❌ URL verification failed for:', conn.name, e);
+                }
+              } else if (conn.type === 'program' && conn.website_url) {
+                try {
+                  // Verify program website by scraping
+                  const websiteData = await scrapeProgramWebsite(
+                    conn.website_url
+                  );
+                  if (!websiteData.error) {
+                    // Use Claude to analyze the scraped content
+                    const analysisResponse = await callClaude(
+                      `<system>You are a program website validator. Analyze scraped website content to verify program details. Return ONLY valid JSON.</system>
+<input>
+Website content: ${websiteData.pageText}
+Expected program:
+- Name: ${conn.name}
+- Organization: ${conn.organization}
+- Type: ${conn.program_type}
+</input>
+<rules>
+1. Analyze the website content for matches
+2. Check if program name, organization, and type are mentioned
+3. Return detailed validation results
+</rules>
+<schema>
+{
+  "validation": {
+    "is_valid": boolean,
+    "matches_found": {
+      "program_name": boolean,
+      "organization": boolean,
+      "program_type": boolean
+    },
+    "explanation": string
+  }
+}
+</schema>`,
+                      {
+                        maxTokens: 400,
+                      }
+                    );
+
+                    const result = cleanAndParseJSON(analysisResponse);
+                    if (!result?.validation?.is_valid) {
+                      console.warn(
+                        '⚠️ Invalid program website:',
+                        conn.website_url
+                      );
+                      conn.website_url = null;
+                    }
+                  } else {
+                    console.warn(
+                      '⚠️ Failed to scrape program website:',
+                      conn.website_url
+                    );
+                    conn.website_url = null;
+                  }
+                } catch (e) {
+                  console.warn('❌ Program verification failed:', e);
                 }
               }
             }
+
+            // Filter out connections with failed verifications
+            initialConnections = initialConnections.filter((conn) => {
+              if (conn.type === 'person') {
+                // Keep person connections that either have a verified LinkedIn URL or don't need one
+                return conn.linkedin_url || !conn.current_role || !conn.company;
+              } else if (conn.type === 'program') {
+                // Keep program connections that either have a verified website or don't need one
+                return (
+                  !conn.website_url || (conn.website_url && conn.organization)
+                );
+              }
+              return false;
+            });
 
             break;
           } catch (error) {
@@ -1019,34 +1789,123 @@ export async function POST(req: Request) {
     });
 
     // Transform connections to match frontend interface
-    const transformedConnections = sorted.map((conn) => ({
-      id: `${conn.type || 'person'}-${conn.name}-${
-        conn.company || conn.organization || ''
-      }`
-        .replace(/\s+/g, '-')
-        .toLowerCase(),
-      type: conn.type || 'person',
-      name: conn.name,
-      imageUrl: '',
-      matchPercentage: conn.match_details?.total_percentage || 0,
-      linkedin_url: conn.linkedin_url,
-      status: 'not_contacted',
-      current_role: conn.current_role,
-      company: conn.company,
-      program_description: conn.program_description,
-      program_type: conn.program_type,
-      organization: conn.organization,
-      website_url: conn.website_url || conn.url,
-      enrollment_info: conn.enrollment_info,
-      how_this_helps: conn.how_this_helps,
-      hiring_power: conn.hiring_power,
-      exact_matches: conn.exact_matches,
-      outreach_strategy: {
-        shared_background_points:
-          conn.outreach_strategy?.shared_background_points || [],
-        suggested_approach: conn.outreach_strategy?.suggested_approach || '',
-      },
-    }));
+    const transformedConnections = sorted.map((conn) => {
+      // Generate a description based on connection type and match details
+      let description = '';
+      if (conn.type === 'person') {
+        const matchPoints = [];
+
+        // Add direct matches if available
+        if (conn.direct_matches?.length > 0) {
+          matchPoints.push(`Direct matches: ${conn.direct_matches.join(', ')}`);
+        }
+
+        // Add goal alignment
+        if (conn.goal_alignment) {
+          matchPoints.push(conn.goal_alignment);
+        }
+
+        // Add hiring power details if available
+        if (conn.hiring_power) {
+          const hiringDetails = [];
+          if (conn.hiring_power.role_type) {
+            hiringDetails.push(conn.hiring_power.role_type);
+          }
+          if (conn.hiring_power.department) {
+            hiringDetails.push(`in ${conn.hiring_power.department}`);
+          }
+          if (conn.hiring_power.can_hire_interns) {
+            hiringDetails.push('can hire interns');
+          }
+          if (hiringDetails.length > 0) {
+            matchPoints.push(`Hiring capacity: ${hiringDetails.join(', ')}`);
+          }
+        }
+
+        // Add exact matches if available
+        if (conn.exact_matches) {
+          if (conn.exact_matches.education?.university) {
+            matchPoints.push(
+              `Attended ${conn.exact_matches.education.university}`
+            );
+          }
+          if (conn.exact_matches.shared_activities?.length > 0) {
+            const activities = conn.exact_matches.shared_activities
+              .map((act: SharedActivity) => `${act.name} (${act.year})`)
+              .join(', ');
+            matchPoints.push(`Shared activities: ${activities}`);
+          }
+        }
+
+        description = matchPoints.join('. ');
+      } else if (conn.type === 'program') {
+        const programPoints = [];
+
+        // Add direct matches if available
+        if (conn.direct_matches?.length > 0) {
+          programPoints.push(
+            `Matches your background: ${conn.direct_matches.join(', ')}`
+          );
+        }
+
+        // Add goal alignment
+        if (conn.goal_alignment) {
+          programPoints.push(conn.goal_alignment);
+        }
+
+        // Add program description
+        if (conn.program_description) {
+          programPoints.push(conn.program_description);
+        }
+
+        // Add how this helps
+        if (conn.how_this_helps) {
+          programPoints.push(conn.how_this_helps);
+        }
+
+        // Add enrollment info if available
+        if (conn.enrollment_info) {
+          programPoints.push(`Enrollment: ${conn.enrollment_info}`);
+        }
+
+        description = programPoints.join('. ');
+      }
+
+      // If no description was generated, use match details
+      if (!description && conn.match_details?.scoring_explanation) {
+        description = conn.match_details.scoring_explanation;
+      }
+
+      return {
+        id: `${conn.type || 'person'}-${conn.name}-${
+          conn.company || conn.organization || ''
+        }`
+          .replace(/\s+/g, '-')
+          .toLowerCase(),
+        type: conn.type || 'person',
+        name: conn.name,
+        imageUrl: '',
+        matchPercentage: conn.match_details?.total_percentage || 0,
+        linkedin_url: conn.linkedin_url,
+        status: 'not_contacted',
+        current_role: conn.current_role,
+        company: conn.company,
+        program_description: conn.program_description,
+        program_type: conn.program_type,
+        organization: conn.organization,
+        website_url: conn.website_url || conn.url,
+        enrollment_info: conn.enrollment_info,
+        how_this_helps: conn.how_this_helps,
+        hiring_power: conn.hiring_power,
+        exact_matches: conn.exact_matches,
+        outreach_strategy: {
+          shared_background_points:
+            conn.outreach_strategy?.shared_background_points || [],
+          suggested_approach: conn.outreach_strategy?.suggested_approach || '',
+        },
+        description: description || 'No additional details available',
+      };
+    });
 
     return new Response(
       JSON.stringify({

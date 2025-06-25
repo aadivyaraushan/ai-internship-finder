@@ -27,6 +27,7 @@ interface Connection {
   website_url?: string;
   enrollment_info?: string;
   how_this_helps?: string;
+  description?: string;
   status?:
     | 'not_contacted'
     | 'email_sent'
@@ -378,7 +379,13 @@ export default function Dashboard() {
                   {connections && connections.length > 0 ? (
                     <div className='space-y-3'>
                       {connections.map((connection) => {
-                        console.log('Rendering connection:', connection);
+                        console.log('Connection data:', {
+                          id: connection.id,
+                          name: connection.name,
+                          description: connection.description,
+                          type: connection.type,
+                          matchPercentage: connection.matchPercentage,
+                        });
                         return (
                           <div
                             key={connection.id}
@@ -445,7 +452,7 @@ export default function Dashboard() {
                                         rel='noopener noreferrer'
                                         className='text-blue-500 font-medium text-sm underline'
                                       >
-                                        LinkedIn
+                                        Connect
                                       </a>
                                     )}
                                 </div>
@@ -481,6 +488,18 @@ export default function Dashboard() {
                                   </>
                                 )}
                               </p>
+
+                              {/* Description - with debug comment */}
+                              {connection.description ? (
+                                <p className='text-gray-400 text-sm mt-2 mb-2 border-t border-gray-700 pt-2'>
+                                  {connection.description}
+                                </p>
+                              ) : (
+                                <p className='text-gray-500 text-xs mt-2 mb-2 border-t border-gray-700 pt-2'>
+                                  {/* Debug info */}
+                                  No description available for {connection.name}
+                                </p>
+                              )}
 
                               {/* Status selector */}
                               <div className='mt-2'>
