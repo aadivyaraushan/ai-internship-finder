@@ -6,51 +6,85 @@ import { OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
 import { EffectComposer, ShaderPass, RenderPass } from 'three-stdlib';
 
-function GraphNodes({ isTransitioning, transitionProgress, scrollZ }: { isTransitioning: boolean; transitionProgress: number; scrollZ: number }) {
+function GraphNodes({
+  isTransitioning,
+  transitionProgress,
+  scrollZ,
+}: {
+  isTransitioning: boolean;
+  transitionProgress: number;
+  scrollZ: number;
+}) {
   const group = useRef<THREE.Group>(null!);
   const nodeCount = 30;
 
-  const randomNodes = useMemo(() =>
-    Array.from({ length: nodeCount - 1 }).map(() => ({
-      position: new THREE.Vector3(
-        (Math.random() - 0.5) * 80,
-        (Math.random() - 0.5) * 80,
-        (Math.random() - 0.5) * 80
-      ),
-    })), [nodeCount]);
-  
+  const randomNodes = useMemo(
+    () =>
+      Array.from({ length: nodeCount - 1 }).map(() => ({
+        position: new THREE.Vector3(
+          (Math.random() - 0.5) * 80,
+          (Math.random() - 0.5) * 80,
+          (Math.random() - 0.5) * 80
+        ),
+      })),
+    [nodeCount]
+  );
+
   const edges = useMemo(() => {
-    const allNodePositions = [new THREE.Vector3(0, 0, 0), ...randomNodes.map(n => n.position)];
+    const allNodePositions = [
+      new THREE.Vector3(0, 0, 0),
+      ...randomNodes.map((n) => n.position),
+    ];
     const temp = [];
     for (let i = 0; i < nodeCount; i++) {
       for (let j = i + 1; j < nodeCount; j++) {
         if (allNodePositions[i].distanceTo(allNodePositions[j]) < 25) {
-          temp.push([allNodePositions[i], allNodePositions[j]] as [THREE.Vector3, THREE.Vector3]);
+          temp.push([allNodePositions[i], allNodePositions[j]] as [
+            THREE.Vector3,
+            THREE.Vector3
+          ]);
         }
       }
     }
     return temp;
   }, [randomNodes, nodeCount]);
-  
+
   const randomNodeRefs = useRef<(THREE.Mesh | null)[]>([]);
   const edgeRefs = useRef<(THREE.Line | null)[]>([]);
   const solidCenterRef = useRef<THREE.Mesh>(null!);
   const wireframeCenterRef = useRef<THREE.Mesh>(null!);
 
-  const nodeMaterial = useMemo(() => new THREE.MeshStandardMaterial({
-    color: 0x727272, emissive: 0x727272, emissiveIntensity: 0.8, transparent: true, opacity: 0
-  }), []);
-  
-  const solidCenterMaterial = useMemo(() => nodeMaterial.clone(), [nodeMaterial]);
+  const nodeMaterial = useMemo(
+    () =>
+      new THREE.MeshStandardMaterial({
+        color: 0x727272,
+        emissive: 0x727272,
+        emissiveIntensity: 0.8,
+        transparent: true,
+        opacity: 0,
+      }),
+    []
+  );
+
+  const solidCenterMaterial = useMemo(
+    () => nodeMaterial.clone(),
+    [nodeMaterial]
+  );
   const wireframeCenterMaterial = useMemo(() => {
-      const mat = nodeMaterial.clone();
-      mat.wireframe = true;
-      return mat;
+    const mat = nodeMaterial.clone();
+    mat.wireframe = true;
+    return mat;
   }, [nodeMaterial]);
 
-  const edgeMaterial = useMemo(() => new THREE.LineBasicMaterial({
-    color: 0x727272, transparent: true, opacity: 0
-  }), []);
+  const edgeMaterial = useMemo(
+    () =>
+      new THREE.LineBasicMaterial({
+        color: 0x727272,
+        transparent: true,
+        opacity: 0,
+      }),
+    []
+  );
 
   useFrame(({ clock, camera }, delta) => {
     const t = clock.getElapsedTime();
@@ -58,47 +92,62 @@ function GraphNodes({ isTransitioning, transitionProgress, scrollZ }: { isTransi
     // Calculate scroll-based transition progress
     const TRANSITION_START = 80;
     const TRANSITION_END = 120;
-    const scrollProgress = Math.max(0, Math.min(1, (scrollZ - TRANSITION_START) / (TRANSITION_END - TRANSITION_START)));
+    const scrollProgress = Math.max(
+      0,
+      Math.min(
+        1,
+        (scrollZ - TRANSITION_START) / (TRANSITION_END - TRANSITION_START)
+      )
+    );
 
     randomNodeRefs.current.forEach((mesh, i) => {
-        if (!mesh) return;
-        const delay = (i + 1) * 0.05;
-        const animDuration = 2;
-        const progress = Math.min(1, Math.max(0, (t - delay) / animDuration));
+      if (!mesh) return;
+      const delay = (i + 1) * 0.05;
+      const animDuration = 2;
+      const progress = Math.min(1, Math.max(0, (t - delay) / animDuration));
 
-        mesh.scale.setScalar(THREE.MathUtils.lerp(0.01, 1.5, progress));
-        if (mesh.material instanceof THREE.Material) {
-            mesh.material.opacity = progress;
-            
-            // Smooth transition to wireframe based on scroll position
-            if (mesh.material instanceof THREE.MeshStandardMaterial) {
-                // Gradually enable wireframe after the wave effect completes
-                mesh.material.wireframe = transitionProgress > 0.8;
-                
-                // Keep the same gray color instead of transitioning to white
-                const grayColor = new THREE.Color(0x727272);
-                mesh.material.color.copy(grayColor);
-                
-                // Keep original emissive properties
-                mesh.material.emissive.copy(grayColor);
-                mesh.material.emissiveIntensity = 0.8;
-            }
+      mesh.scale.setScalar(THREE.MathUtils.lerp(0.01, 1.5, progress));
+      if (mesh.material instanceof THREE.Material) {
+        mesh.material.opacity = progress;
+
+        // Smooth transition to wireframe based on scroll position
+        if (mesh.material instanceof THREE.MeshStandardMaterial) {
+          // Gradually enable wireframe after the wave effect completes
+          mesh.material.wireframe = transitionProgress > 0.8;
+
+          // Keep the same gray color instead of transitioning to white
+          const grayColor = new THREE.Color(0x727272);
+          mesh.material.color.copy(grayColor);
+
+          // Keep original emissive properties
+          mesh.material.emissive.copy(grayColor);
+          mesh.material.emissiveIntensity = 0.8;
         }
+      }
     });
 
     const animDuration = 2;
     const proceduralProgress = Math.min(1, t / animDuration);
-    
+
     const transitionStart = 10;
     const transitionEnd = 80;
-    const centerScrollProgress = Math.min(1, Math.max(0, (camera.position.z - transitionStart) / (transitionEnd - transitionStart)));
-    
+    const centerScrollProgress = Math.min(
+      1,
+      Math.max(
+        0,
+        (camera.position.z - transitionStart) /
+          (transitionEnd - transitionStart)
+      )
+    );
+
     solidCenterMaterial.opacity = proceduralProgress * centerScrollProgress;
-    wireframeCenterMaterial.opacity = proceduralProgress * (1 - centerScrollProgress);
+    wireframeCenterMaterial.opacity =
+      proceduralProgress * (1 - centerScrollProgress);
 
     if (wireframeCenterRef.current) {
       const rotationSpeed = 0.2;
-      const effectiveRotation = rotationSpeed * delta * (1 - centerScrollProgress);
+      const effectiveRotation =
+        rotationSpeed * delta * (1 - centerScrollProgress);
       wireframeCenterRef.current.rotation.y += effectiveRotation;
     }
 
@@ -107,47 +156,47 @@ function GraphNodes({ isTransitioning, transitionProgress, scrollZ }: { isTransi
     }
 
     edgeRefs.current.forEach((line, i) => {
-        if (!line) return;
-        const delay = i * 0.02;
-        const animDuration = 2;
-        const progress = Math.min(1, Math.max(0, (t - delay) / animDuration));
-        if (line.material instanceof THREE.Material) {
-            line.material.opacity = progress * 0.2;
-            
-            // Smooth edge brightness transition based on scroll
-            if (line.material instanceof THREE.LineBasicMaterial) {
-                // Keep the same gray color
-                const grayColor = new THREE.Color(0x727272);
-                line.material.color.copy(grayColor);
-                line.material.opacity = progress * 0.2;
-            }
+      if (!line) return;
+      const delay = i * 0.02;
+      const animDuration = 2;
+      const progress = Math.min(1, Math.max(0, (t - delay) / animDuration));
+      if (line.material instanceof THREE.Material) {
+        line.material.opacity = progress * 0.2;
+
+        // Smooth edge brightness transition based on scroll
+        if (line.material instanceof THREE.LineBasicMaterial) {
+          // Keep the same gray color
+          const grayColor = new THREE.Color(0x727272);
+          line.material.color.copy(grayColor);
+          line.material.opacity = progress * 0.2;
         }
+      }
     });
   });
 
   return (
     <group ref={group}>
-        <mesh
-            ref={solidCenterRef}
-            position={[0,0,0]}
-            material={solidCenterMaterial}
-            scale={1.5}
-        >
-            <sphereGeometry args={[1.5, 12, 12]} />
-        </mesh>
-        <mesh
-            ref={wireframeCenterRef}
-            position={[0,0,0]}
-            material={wireframeCenterMaterial}
-            scale={1.5}
-        >
-            <sphereGeometry args={[1.5, 12, 12]} />
-        </mesh>
+      <mesh
+        ref={solidCenterRef}
+        position={[0, 0, 0]}
+        material={solidCenterMaterial}
+        scale={1.5}
+      >
+        <sphereGeometry args={[1.5, 12, 12]} />
+      </mesh>
+      <mesh
+        ref={wireframeCenterRef}
+        position={[0, 0, 0]}
+        material={wireframeCenterMaterial}
+        scale={1.5}
+      >
+        <sphereGeometry args={[1.5, 12, 12]} />
+      </mesh>
 
       {randomNodes.map((node, i) => (
         <mesh
           key={i}
-          ref={el => randomNodeRefs.current[i] = el}
+          ref={(el) => (randomNodeRefs.current[i] = el)}
           position={node.position}
           material={nodeMaterial}
           scale={0.01}
@@ -157,11 +206,14 @@ function GraphNodes({ isTransitioning, transitionProgress, scrollZ }: { isTransi
       ))}
 
       {edges.map(([start, end], i) => {
-        const geometry = useMemo(() => new THREE.BufferGeometry().setFromPoints([start, end]), [start, end]);
+        const geometry = useMemo(
+          () => new THREE.BufferGeometry().setFromPoints([start, end]),
+          [start, end]
+        );
         return (
           <line
             key={i}
-            ref={(el: THREE.Line | null) => edgeRefs.current[i] = el}
+            ref={(el: THREE.Line | null) => (edgeRefs.current[i] = el)}
             geometry={geometry}
             material={edgeMaterial}
           />
@@ -188,9 +240,16 @@ function CameraController({ onScroll }: { onScroll: (z: number) => void }) {
       const currentZ = targetZ.current;
       const potentialZ = currentZ + event.deltaY * zoomSpeed;
       const clampedZ = Math.max(10, Math.min(500, potentialZ)); // Increased max to 500
-      
-      console.log('Current Z:', currentZ, 'Potential Z:', potentialZ, 'Clamped Z:', clampedZ);
-      
+
+      console.log(
+        'Current Z:',
+        currentZ,
+        'Potential Z:',
+        potentialZ,
+        'Clamped Z:',
+        clampedZ
+      );
+
       const actualDeltaZ = clampedZ - currentZ;
 
       // Check if we should start zooming
@@ -206,11 +265,11 @@ function CameraController({ onScroll }: { onScroll: (z: number) => void }) {
         const zoomDelta = event.deltaY * 0.07; // Much smaller constant
         const currentTargetZ = targetZ.current;
         const newTargetZ = Math.max(5, currentTargetZ - zoomDelta); // Zoom in by reducing Z
-        
+
         targetZ.current = newTargetZ;
         targetPositionX.current = 0;
         targetPositionY.current = 0;
-        
+
         // Disable rotation during zoom
         targetRotationY.current = 0;
         console.log('Zoom delta:', zoomDelta, 'Target Z:', targetZ.current);
@@ -222,25 +281,41 @@ function CameraController({ onScroll }: { onScroll: (z: number) => void }) {
         // Re-enable rotation for normal scrolling
         targetRotationY.current += actualDeltaZ * rotationSpeed;
       }
-    }
+    };
 
     window.addEventListener('wheel', handleWheel);
     return () => window.removeEventListener('wheel', handleWheel);
   }, []);
 
   useFrame(() => {
-    camera.position.z = THREE.MathUtils.lerp(camera.position.z, targetZ.current, 0.05);
-    camera.position.x = THREE.MathUtils.lerp(camera.position.x, targetPositionX.current, 0.05);
-    camera.position.y = THREE.MathUtils.lerp(camera.position.y, targetPositionY.current, 0.05);
-    
+    camera.position.z = THREE.MathUtils.lerp(
+      camera.position.z,
+      targetZ.current,
+      0.05
+    );
+    camera.position.x = THREE.MathUtils.lerp(
+      camera.position.x,
+      targetPositionX.current,
+      0.05
+    );
+    camera.position.y = THREE.MathUtils.lerp(
+      camera.position.y,
+      targetPositionY.current,
+      0.05
+    );
+
     // Only apply rotation when not zooming (Z <= 130)
     if (targetZ.current <= 130) {
-      scene.rotation.y = THREE.MathUtils.lerp(scene.rotation.y, targetRotationY.current, 0.05);
+      scene.rotation.y = THREE.MathUtils.lerp(
+        scene.rotation.y,
+        targetRotationY.current,
+        0.05
+      );
     } else {
       // Lock rotation during zoom
       scene.rotation.y = 0;
     }
-    
+
     onScroll(camera.position.z);
   });
 
@@ -292,11 +367,17 @@ const TransitionShader = {
   `,
 };
 
-function Effects({ isTransitioning, onProgress }: { isTransitioning: boolean; onProgress: (progress: number) => void }) {
+function Effects({
+  isTransitioning,
+  onProgress,
+}: {
+  isTransitioning: boolean;
+  onProgress: (progress: number) => void;
+}) {
   const { gl, scene, camera } = useThree();
   const composer = useRef<EffectComposer | null>(null);
   const transitionPass = useRef<ShaderPass | null>(null);
-  
+
   const transitionProgress = useRef(0);
   const transitionStartTime = useRef<number | null>(null);
 
@@ -319,9 +400,10 @@ function Effects({ isTransitioning, onProgress }: { isTransitioning: boolean; on
       const elapsed = state.clock.elapsedTime - transitionStartTime.current;
       transitionProgress.current = Math.min(1.0, elapsed / duration);
     }
-    
+
     if (transitionPass.current) {
-      transitionPass.current.uniforms.progress.value = transitionProgress.current;
+      transitionPass.current.uniforms.progress.value =
+        transitionProgress.current;
     }
 
     composer.current?.render(delta);
@@ -352,15 +434,22 @@ export default function GraphAnimation() {
   };
 
   return (
-    <Canvas 
+    <Canvas
       style={{ position: 'fixed', top: 0, left: 0, zIndex: -1 }}
       camera={{ position: [0, 0, 10], fov: 60 }}
     >
-      <ambientLight intensity={0.2} color="#202020" />
-      <pointLight position={[50, 50, 50]} color="#727272" intensity={1} />
-      <GraphNodes isTransitioning={isTransitioning} transitionProgress={transitionProgress} scrollZ={scrollZ} />
+      <ambientLight intensity={0.2} color='#202020' />
+      <pointLight position={[50, 50, 50]} color='#727272' intensity={1} />
+      <GraphNodes
+        isTransitioning={isTransitioning}
+        transitionProgress={transitionProgress}
+        scrollZ={scrollZ}
+      />
       <CameraController onScroll={handleScroll} />
-      <Effects isTransitioning={isTransitioning} onProgress={handleTransitionProgress} />
+      <Effects
+        isTransitioning={isTransitioning}
+        onProgress={handleTransitionProgress}
+      />
     </Canvas>
   );
-} 
+}

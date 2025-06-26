@@ -8,4 +8,4 @@ declare global {
       line: Object3DNode<THREE.Line, typeof THREE.Line>;
     }
   }
-} 
+}
