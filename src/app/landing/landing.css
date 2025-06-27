@@ -1,18 +1,42 @@
 .glass {
-    background: rgba(255, 255, 255, 0.05); /* light tint for dark bg */
-    backdrop-filter: blur(10px);           /* glass blur effect */
-    -webkit-backdrop-filter: blur(50px);   /* Safari support */
-    border-radius: 16px; /* subtle border */
-    box-shadow: 0 4px 30px rgba(0, 0, 0, 0.6);  /* soft dark shadow */
-    padding: 2rem;
-    color: rgb(255, 255, 255); /* or your light color choice */
+  background: rgba(255, 255, 255, 0.05); /* light tint for dark bg */
+  backdrop-filter: blur(10px); /* glass blur effect */
+  -webkit-backdrop-filter: blur(50px); /* Safari support */
+  border-radius: 16px; /* subtle border */
+  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.6); /* soft dark shadow */
+  padding: 2rem;
+  color: rgb(255, 255, 255); /* or your light color choice */
 
-    margin-left: 20px;
-    margin-right: 20px;
+  margin-left: 20px;
+  margin-right: 20px;
 }
 
 .container {
-    display: flex;
-    width: 100vw;
-    
+  display: flex;
+  width: 100vw;
+}
+
+.no-scrollbar {
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE and Edge */
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none; /* Chrome, Safari, Opera */
+}
+
+@keyframes scroll {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(calc(-50% - var(--gap, 1rem)));
+  }
+}
+
+.animate-scroll {
+  animation: scroll var(--animation-duration, 40s)
+    var(--animation-direction, forwards) linear infinite;
+  width: max-content;
+  flex-shrink: 0;
+  gap: var(--gap, 1rem);
 }
