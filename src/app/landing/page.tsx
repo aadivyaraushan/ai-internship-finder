@@ -1,82 +1,101 @@
-'use client';
+"use client";
+import React from "react";
+import { ShootingStars } from "@/components/ui/ShootingStars";
+import { StarsBackground } from "@/components/ui/StarsBackground";
+import { TextHoverEffect } from "@/components/ui/TextHover";
+import { CardSpotlight } from "@/components/ui/CardSpotlight";
+import { StickyScroll } from "@/components/ui/StickyScrollReveal";
 
-import React, { useState, useEffect } from 'react';
-import Link from 'next/link';
-import dynamic from 'next/dynamic';
-const GraphAnimation = dynamic(() => import('@/components/GraphAnimation'), {
-  ssr: false,
-});
 
-const LandingPage = () => {
-  const [scrollZ, setScrollZ] = useState(10);
-  const [titleOpacity, setTitleOpacity] = useState(1);
+export default function ShootingStarsAndStarsBackgroundDemo() {
 
-  useEffect(() => {
-    const handleWheel = (event: WheelEvent) => {
-      // Convert wheel delta to scroll Z position
-      const delta = event.deltaY * 0.025;
-      const newScrollZ = Math.max(10, Math.min(500, scrollZ + delta));
-      setScrollZ(newScrollZ);
-      console.log(newScrollZ);
-      // Calculate title opacity based on scroll Z
-      const fadeStart = 20;
-      const fadeEnd = 50;
-      const opacity = Math.max(
-        0,
-        Math.min(1, 1 - (newScrollZ - fadeStart) / (fadeEnd - fadeStart))
-      );
-      setTitleOpacity(opacity);
-    };
-
-    window.addEventListener('wheel', handleWheel);
-    return () => window.removeEventListener('wheel', handleWheel);
-  }, [scrollZ]);
+  const content = [
+    {
+      title: "Real time changes",
+      description:
+        "See changes as they happen. With our platform, you can track every modification in real time. No more confusion about the latest version of your project. Say goodbye to the chaos of version control and embrace the simplicity of real-time updates.",
+      content: (
+        <div className="flex h-full w-full items-center justify-center text-white">
+          <img
+            src="/linear.webp"
+            width={300}
+            height={300}
+            className="h-full w-full object-cover"
+            alt="linear board demo"
+          />
+        </div>
+      ),
+    },
+    {
+      title: "Version control",
+      description:
+        "Experience real-time updates and never stress about version control again. Our platform ensures that you're always working on the most recent version of your project, eliminating the need for constant manual updates. Stay in the loop, keep your team aligned, and maintain the flow of your work without any interruptions.",
+      content: (
+        <div className="flex h-full w-full items-center justify-center bg-[linear-gradient(to_bottom_right,var(--orange-500),var(--yellow-500))] text-white">
+          Version control
+        </div>
+      ),
+    },
+    {
+      title: "Collaborative Editing",
+      description:
+        "Work together in real time with your team, clients, and stakeholders. Collaborate on documents, share ideas, and make decisions quickly. With our platform, you can streamline your workflow and increase productivity.",
+      content: (
+        <div className="flex h-full w-full items-center justify-center bg-[linear-gradient(to_bottom_right,var(--cyan-500),var(--emerald-500))] text-white">
+          Collaborative Editing
+        </div>
+      ),
+    },
+    
+  ];
 
   return (
-    <>
-      <GraphAnimation />
-      <div className='relative z-10 flex flex-col min-h-screen text-white'>
-        <header
-          className='py-6 px-8 flex justify-between items-center transition-opacity duration-300'
-          style={{ opacity: titleOpacity }}
-        >
-          <h1 className='text-3xl font-bold'>AI Internship Finder</h1>
-          <nav>
-            <Link href='/login' className='text-lg hover:underline'>
-              Login
-            </Link>
-          </nav>
-        </header>
-
-        <main
-          className='flex-grow flex flex-col items-center justify-center text-center px-4 transition-opacity duration-300'
-          style={{ opacity: titleOpacity }}
-        >
-          <h2 className='text-5xl font-extrabold mb-4'>
-            Find Your Dream AI Internship
-          </h2>
-          <p className='text-xl mb-8 max-w-2xl'>
-            Our platform uses cutting-edge AI to analyze your resume and skills,
-            matching you with the perfect internship opportunities from top
-            companies.
-          </p>
-          <Link
-            href='/signup'
-            className='bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg text-lg transition duration-300'
-          >
-            Get Started for Free
-          </Link>
-        </main>
-
-        <footer
-          className='py-6 px-8 text-center text-gray-400 transition-opacity duration-300'
-          style={{ opacity: titleOpacity }}
-        >
-          <p>&copy; 2024 AI Internship Finder. All rights reserved.</p>
-        </footer>
+    <div className="bg-neutral-900">
+      <div className="h-screen bg-neutral-900 flex flex-col items-center justify-center relative w-full">
+      <ShootingStars />
+      <StarsBackground />
+      <TextHoverEffect text="Refr" />
       </div>
-    </>
-  );
-};
 
-export default LandingPage;
+      <div className="w-full bg-neutral-900 flex items-center justify-center pt-12">
+        <h1 className="text-5xl font-extrabold text-white tracking-tight">THE PROBLEM</h1>
+      </div>
+      <div className="h-min bg-neutral-900 flex flex-row items-center justify-center relative w-full">
+        <CardSpotlight className="h-96 w-96 m-24">
+          <p className="text-xl font-bold relative z-20 mt-2 text-white">
+            Find New Connections
+          </p>
+          <p className="text-neutral-300 mt-4 relative z-20 text-sm">
+            Ensuring your account is properly secured helps protect your personal
+            information and data.
+          </p>
+        </CardSpotlight>
+        <CardSpotlight className="h-96 w-96 m-24">
+          <p className="text-xl font-bold relative z-20 mt-2 text-white">
+            Find New Connections
+          </p>
+          <p className="text-neutral-300 mt-4 relative z-20 text-sm">
+            Ensuring your account is properly secured helps protect your personal
+            information and data.
+          </p>
+        </CardSpotlight>
+        <CardSpotlight className="h-96 w-96 m-24">
+          <p className="text-xl font-bold relative z-20 mt-2 text-white">
+            Find New Connections
+          </p>
+          <p className="text-neutral-300 mt-4 relative z-20 text-sm">
+            Ensuring your account is properly secured helps protect your personal
+            information and data.
+          </p>
+        </CardSpotlight>
+      </div>
+
+      <div className="w-full bg-neutral-900 flex items-center justify-center pt-12">
+        <h1 className="text-5xl font-extrabold text-white tracking-tight">THE SOLUTION</h1>
+      </div>
+      <div className="h-min bg-neutral-900">
+        <StickyScroll content={content} />
+      </div>
+    </div>
+  );
+}
