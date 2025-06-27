@@ -1,9 +1,6 @@
 import OpenAI from 'openai';
 
 // Singleton OpenAI client
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
 
 export interface ClaudeCallOptions {
   tools?: any[]; // Currently ignored for OpenAI calls, kept for API-compatibility

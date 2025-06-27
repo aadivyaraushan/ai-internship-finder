@@ -55,8 +55,6 @@ const ResumeSchema = z.object({
   per_web: z.string().nullable().describe('Personal website URL'),
 });
 
-type Resume = z.infer<typeof ResumeSchema>;
-
 export async function POST(req: NextRequest) {
   try {
     const formData = await req.formData();

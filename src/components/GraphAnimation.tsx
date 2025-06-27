@@ -2,7 +2,6 @@
 
 import React, { useRef, useEffect, useMemo, useState } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
-import { OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
 import { EffectComposer, ShaderPass, RenderPass } from 'three-stdlib';
 
@@ -211,11 +210,10 @@ function GraphNodes({
           [start, end]
         );
         return (
-          <line
+          <primitive
             key={i}
+            object={new THREE.Line(geometry, edgeMaterial)}
             ref={(el: THREE.Line | null) => (edgeRefs.current[i] = el)}
-            geometry={geometry}
-            material={edgeMaterial}
           />
         );
       })}

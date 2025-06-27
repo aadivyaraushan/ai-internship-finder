@@ -1,5 +1,5 @@
 import { onAuthStateChanged } from 'firebase/auth';
-import { doc, setDoc, updateDoc, getDoc, arrayUnion } from 'firebase/firestore';
+import { doc, setDoc, updateDoc, getDoc } from 'firebase/firestore';
 import { db, auth } from './firebase';
 
 export interface Connection {
@@ -64,26 +64,18 @@ export async function createOrUpdateUser(userId: string, data: any) {
 }
 
 export async function updateUserGoals(userId: string, goals: any) {
-  const userRef = doc(db, 'users', userId);
-  await updateDoc(userRef, { goals });
+  await setDoc(doc(db, 'users', userId), { goals }, { merge: true });
 }
 
 export async function updateUserRoles(userId: string, roles: any[]) {
-  const userRef = doc(db, 'users', userId);
-  await updateDoc(userRef, { roles });
-}
-
-export async function updateUserNiche(userId: string, niche: any) {
-  const userRef = doc(db, 'users', userId);
-  await updateDoc(userRef, { niche });
+  await setDoc(doc(db, 'users', userId), { roles }, { merge: true });
 }
 
 export async function updateUserConnections(
   userId: string,
-  connections: Connection[]
+  connections: any[]
 ) {
-  const userRef = doc(db, 'users', userId);
-  await updateDoc(userRef, { connections });
+  await setDoc(doc(db, 'users', userId), { connections }, { merge: true });
 }
 
 export async function addUserConnection(
@@ -149,44 +141,6 @@ export async function updateConnectionStatus(
     status,
     lastUpdated: new Date().toISOString(),
     ...(notes && { notes }),
-  };
-
-  await updateDoc(userRef, { connections });
-}
-
-export async function addEmailToConnection(
-  userId: string,
-  connectionId: string,
-  type: 'sent' | 'received',
-  content: string
-) {
-  const userRef = doc(db, 'users', userId);
-  const userData = await getDoc(userRef);
-
-  if (!userData.exists()) {
-    throw new Error('User not found');
-  }
-
-  const connections = userData.data().connections || [];
-  const connectionIndex = connections.findIndex(
-    (c: Connection) => c.id === connectionId
-  );
-
-  if (connectionIndex === -1) {
-    throw new Error('Connection not found');
-  }
-
-  const emailHistory = connections[connectionIndex].emailHistory || [];
-  emailHistory.push({
-    date: new Date().toISOString(),
-    type,
-    content,
-  });
-
-  connections[connectionIndex] = {
-    ...connections[connectionIndex],
-    emailHistory,
-    lastUpdated: new Date().toISOString(),
   };
 
   await updateDoc(userRef, { connections });
