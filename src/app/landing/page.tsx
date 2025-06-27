@@ -6,6 +6,10 @@ import { TextHoverEffect } from '@/components/ui/TextHover';
 import { CardSpotlight } from '@/components/ui/CardSpotlight';
 import { StickyScroll } from '@/components/ui/StickyScrollReveal';
 import { InfiniteMovingCards } from '@/components/ui/InfiniteMovingCards';
+import { BackgroundGradient } from '@/components/ui/BackgroundGradient';
+import { Vortex } from '@/components/ui/Vortex';
+import { StatefulButton } from '@/components/ui/StatefulButton';
+import { useRouter } from 'next/navigation';
 
 export default function ShootingStarsAndStarsBackgroundDemo() {
   const content = [
@@ -140,6 +144,89 @@ export default function ShootingStarsAndStarsBackgroundDemo() {
             speed='normal'
           />
         </div>
+      </section>
+
+      {/* About Us Section */}
+      <section className='w-full bg-slate-950 py-16'>
+        <h2 className='text-4xl font-bold text-center text-white mb-16'>
+          Meet Our Team
+        </h2>
+        <div className='container mx-auto px-4'>
+          <div className='flex flex-wrap justify-center gap-8'>
+            <BackgroundGradient className='w-[300px] p-8 rounded-3xl bg-neutral-900'>
+              <div className='flex flex-col items-center text-center'>
+                <div className='w-24 h-24 rounded-full bg-gradient-to-br from-violet-500 to-indigo-500 mb-4'></div>
+                <h3 className='text-xl font-bold text-white mb-2'>
+                  Sarah Chen
+                </h3>
+                <p className='text-neutral-300 mb-4'>Founder & CEO</p>
+                <p className='text-sm text-neutral-400'>
+                  Passionate about creating tools that empower teams to work
+                  better together.
+                </p>
+              </div>
+            </BackgroundGradient>
+
+            <BackgroundGradient className='w-[300px] p-8 rounded-3xl bg-neutral-900'>
+              <div className='flex flex-col items-center text-center'>
+                <div className='w-24 h-24 rounded-full bg-gradient-to-br from-emerald-500 to-teal-500 mb-4'></div>
+                <h3 className='text-xl font-bold text-white mb-2'>
+                  Marcus Rodriguez
+                </h3>
+                <p className='text-neutral-300 mb-4'>CTO</p>
+                <p className='text-sm text-neutral-400'>
+                  Tech visionary with 10+ years of experience in building
+                  scalable solutions.
+                </p>
+              </div>
+            </BackgroundGradient>
+
+            <BackgroundGradient className='w-[300px] p-8 rounded-3xl bg-neutral-900'>
+              <div className='flex flex-col items-center text-center'>
+                <div className='w-24 h-24 rounded-full bg-gradient-to-br from-amber-500 to-orange-500 mb-4'></div>
+                <h3 className='text-xl font-bold text-white mb-2'>
+                  Aisha Patel
+                </h3>
+                <p className='text-neutral-300 mb-4'>Head of Design</p>
+                <p className='text-sm text-neutral-400'>
+                  Design leader focused on creating beautiful and intuitive user
+                  experiences.
+                </p>
+              </div>
+            </BackgroundGradient>
+          </div>
+        </div>
+      </section>
+
+      {/* Get Started Section */}
+      <section className='w-full h-[50vh] relative overflow-hidden'>
+        <Vortex
+          baseHue={200}
+          baseSpeed={0.5}
+          rangeSpeed={2}
+          particleCount={500}
+          className='h-full'
+        >
+          <div className='absolute inset-0 flex flex-col items-center justify-center text-center'>
+            <h2 className='text-5xl font-bold text-white mb-8'>
+              Ready to Transform Your Career?
+            </h2>
+            <p className='text-xl text-neutral-200 mb-12 max-w-2xl'>
+              Join thousands of students who have already found their dream
+              internships through our platform.
+            </p>
+            <StatefulButton
+              onClick={async () => {
+                // Simulate loading
+                await new Promise((resolve) => setTimeout(resolve, 1000));
+                window.location.href = '/signup';
+              }}
+              className='text-lg'
+            >
+              Get Started Now
+            </StatefulButton>
+          </div>
+        </Vortex>
       </section>
     </div>
   );
