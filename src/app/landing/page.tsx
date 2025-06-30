@@ -1,5 +1,5 @@
 'use client';
-import React from 'react';
+import React, { useState } from 'react';
 import { ShootingStars } from '@/components/ui/ShootingStars';
 import { StarsBackground } from '@/components/ui/StarsBackground';
 import { TextHoverEffect } from '@/components/ui/TextHover';
@@ -9,6 +9,7 @@ import { BackgroundGradient } from '@/components/ui/BackgroundGradient';
 import { Vortex } from '@/components/ui/Vortex';
 import { StatefulButton } from '@/components/ui/StatefulButton';
 import { useRouter } from 'next/navigation';
+import { CardSpotlight } from '@/components/ui/CardSpotlight';
 
 export default function ShootingStarsAndStarsBackgroundDemo() {
   const content = [
@@ -49,11 +50,12 @@ export default function ShootingStarsAndStarsBackgroundDemo() {
       ),
     },
   ];
+  const [solutionBgColor, setSolutionBgColor] = useState('#171717');
 
   return (
-    <div className='bg-slate-950'>
+    <div className="bg-slate-950 h-screen overflow-y-auto snap-y snap-mandatory">
       {/* Hero Section - Slate */}
-      <div className='h-screen bg-neutral-900 flex flex-col items-center justify-center relative w-full'>
+      <div id="hero" className="h-screen bg-neutral-900 flex flex-col items-center justify-center relative w-full snap-start">
         <h2 className='relative flex-col md:flex-row z-10 text-3xl md:text-5xl md:leading-tight max-w-5xl mx-auto text-center tracking-tight font-medium bg-clip-text text-transparent text-white bg-white flex items-center gap-2 md:gap-8'>
           <span>Welcome to</span>
         </h2>
@@ -66,34 +68,34 @@ export default function ShootingStarsAndStarsBackgroundDemo() {
       </div>
 
       {/* Problem Section - Gray */}
-      <section className='w-full bg-gray-900 py-16'>
-        <h1 className='text-5xl font-extrabold text-white tracking-tight text-center mb-16'>
+      <section id="problem" className="h-screen w-full bg-neutral-800 snap-start flex flex-col justify-center">
+        <h1 className="text-5xl font-extrabold text-white tracking-tight text-center mb-16">
           The Problem
         </h1>
-        <div className='flex flex-row items-center justify-center relative w-full'>
-          <CardSpotlight className='h-96 w-96 m-24'>
-            <p className='text-xl font-bold relative z-20 mt-2 text-white'>
+        <div className="flex flex-row items-center justify-center relative w-full">
+          <CardSpotlight className="h-96 w-96 m-24">
+            <p className="text-xl font-bold relative z-20 mt-2 text-white">
               Find New Connections
             </p>
-            <p className='text-neutral-300 mt-4 relative z-20 text-sm'>
+            <p className="text-neutral-300 mt-4 relative z-20 text-sm">
               Ensuring your account is properly secured helps protect your
               personal information and data.
             </p>
           </CardSpotlight>
-          <CardSpotlight className='h-96 w-96 m-24'>
-            <p className='text-xl font-bold relative z-20 mt-2 text-white'>
+          <CardSpotlight className="h-96 w-96 m-24">
+            <p className="text-xl font-bold relative z-20 mt-2 text-white">
               Find New Connections
             </p>
-            <p className='text-neutral-300 mt-4 relative z-20 text-sm'>
+            <p className="text-neutral-300 mt-4 relative z-20 text-sm">
               Ensuring your account is properly secured helps protect your
               personal information and data.
             </p>
           </CardSpotlight>
-          <CardSpotlight className='h-96 w-96 m-24'>
-            <p className='text-xl font-bold relative z-20 mt-2 text-white'>
+          <CardSpotlight className="h-96 w-96 m-24">
+            <p className="text-xl font-bold relative z-20 mt-2 text-white">
               Find New Connections
             </p>
-            <p className='text-neutral-300 mt-4 relative z-20 text-sm'>
+            <p className="text-neutral-300 mt-4 relative z-20 text-sm">
               Ensuring your account is properly secured helps protect your
               personal information and data.
             </p>
@@ -102,15 +104,15 @@ export default function ShootingStarsAndStarsBackgroundDemo() {
       </section>
 
       {/* Solution Section - Neutral */}
-      <section className='w-full bg-neutral-900 py-16'>
-        <h1 className='text-5xl font-extrabold text-white tracking-tight text-center mb-16'>
+      <section id="solution" className="h-screen w-full snap-start flex flex-col justify-center" style={{ backgroundColor: solutionBgColor }}>
+        <h1 className="text-5xl font-extrabold text-white tracking-tight text-center mb-16">
           The Solution
         </h1>
-        <StickyScroll content={content} contentClassName='no-scrollbar' />
+        <StickyScroll content={content} contentClassName='no-scrollbar' setSectionBgColor={setSolutionBgColor} />
       </section>
 
       {/* Social Proof Section - Zinc */}
-      <section className='w-full bg-zinc-900 py-16'>
+      <section id="social-proof" className="h-screen w-full bg-neutral-800 snap-start flex flex-col justify-center">
         <h2 className='text-4xl font-bold text-center text-white mb-16'>
           What People Are Saying
         </h2>
@@ -150,7 +152,7 @@ export default function ShootingStarsAndStarsBackgroundDemo() {
       </section>
 
       {/* About Us Section */}
-      <section className='w-full bg-slate-950 py-16'>
+      <section id="about" className="h-screen w-full bg-neutral-900 snap-start flex flex-col justify-center">
         <h2 className='text-4xl font-bold text-center text-white mb-16'>
           Meet Our Team
         </h2>
@@ -202,7 +204,7 @@ export default function ShootingStarsAndStarsBackgroundDemo() {
       </section>
 
       {/* Get Started Section */}
-      <section className='w-full h-[50vh] relative overflow-hidden'>
+      <section id="get-started" className="h-screen w-full relative overflow-hidden snap-start flex flex-col justify-center">
         <Vortex
           baseHue={200}
           baseSpeed={0.5}
