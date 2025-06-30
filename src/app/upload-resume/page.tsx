@@ -1,7 +1,6 @@
 'use client';
 
 import { useState } from 'react';
-import { useDropzone } from 'react-dropzone';
 import { useRouter } from 'next/navigation';
 import { checkAuth, auth } from '@/lib/firebase';
 import {
@@ -9,7 +8,15 @@ import {
   createOrUpdateUser,
 } from '@/lib/firestoreHelpers';
 import { useEffect } from 'react';
-import StatusUpdate, { ProcessingStep } from '@/components/StatusUpdate';
+import { MultiStepLoader } from '@/components/ui/MultiStepLoader';
+import { FileUpload } from '@/components/ui/FileUpload';
+import BorderMagicButton from '@/components/ui/BorderMagicButton';
+
+interface ProcessingStep {
+  id: string;
+  label: string;
+  status: 'pending' | 'in_progress' | 'completed' | 'error';
+}
 
 export default function UploadResume() {
   const [file, setFile] = useState<File | null>(null);
@@ -33,20 +40,6 @@ export default function UploadResume() {
       router.push('/signup');
     }
   }, [router]);
-
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({
-    accept: {
-      'application/pdf': ['.pdf'],
-      'application/msword': ['.doc'],
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
-        ['.docx'],
-    },
-    maxSize: 5 * 1024 * 1024, // 5MB
-    onDrop: (acceptedFiles: File[]) => {
-      setFile(acceptedFiles[0]);
-      setError(''); // Clear any previous errors
-    },
-  });
 
   const updateStep = (stepId: string, status: ProcessingStep['status']) => {
     setSteps(
@@ -192,41 +185,23 @@ export default function UploadResume() {
         )}
 
         {(loading || steps.some((step) => step.status === 'completed')) && (
-          <StatusUpdate steps={steps} currentStatus={currentStatus} />
+          <MultiStepLoader
+            loadingStates={steps.map((s) => ({ text: s.label }))}
+            loading={loading}
+          />
         )}
 
-        <div
-          {...getRootProps()}
-          className={`border-2 border-dashed border-gray-600 rounded-lg p-8 mb-6 text-center cursor-pointer
-            ${
-              isDragActive
-                ? 'border-blue-500 bg-blue-500/10'
-                : 'hover:border-gray-500 hover:bg-gray-800/30'
-            }`}
-        >
-          <input {...getInputProps()} />
-          <div className='flex flex-col items-center gap-2'>
-            <svg
-              className='w-8 h-8 text-gray-400'
-              fill='none'
-              stroke='currentColor'
-              viewBox='0 0 24 24'
-              xmlns='http://www.w3.org/2000/svg'
-            >
-              <path
-                strokeLinecap='round'
-                strokeLinejoin='round'
-                strokeWidth={2}
-                d='M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12'
-              />
-            </svg>
-            <div className='text-gray-300'>
-              {file ? file.name : 'Drag your resume here or click to upload'}
-            </div>
-            <div className='text-gray-500 text-sm'>
-              Acceptable file types: PDF, DOCX (5MB max)
-            </div>
-          </div>
+        <div className='mb-6'>
+          <FileUpload
+            onChange={(files) => {
+              if (files && files.length) {
+                setFile(files[0]);
+                setError('');
+              }
+            }}
+            title='Upload your resume (PDF)'
+            description="Drop your resume here or click to browse. We'll analyze it to find the best internship connections for you."
+          />
         </div>
 
         <div className='mb-6'>
@@ -243,20 +218,16 @@ export default function UploadResume() {
         </div>
 
         <div className='flex justify-between gap-4'>
-          <button
-            className='px-4 py-2 bg-[#2a2a2a] text-white rounded-lg hover:bg-[#3a3a3a] transition-colors disabled:opacity-50 disabled:cursor-not-allowed'
+          <BorderMagicButton
             onClick={() => console.log('Save as draft')}
             disabled={loading}
+            className='!bg-[#2a2a2a] hover:!bg-[#3a3a3a] !border-[#2a2a2a] before:!hidden [&>span:first-child]:!hidden'
           >
             Save as Draft
-          </button>
-          <button
-            className='px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed'
-            onClick={handleSubmit}
-            disabled={loading}
-          >
+          </BorderMagicButton>
+          <BorderMagicButton onClick={handleSubmit} disabled={loading}>
             {loading ? 'Processing...' : 'Submit'}
-          </button>
+          </BorderMagicButton>
         </div>
       </div>
     </div>

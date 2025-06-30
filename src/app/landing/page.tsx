@@ -3,7 +3,6 @@ import React from 'react';
 import { ShootingStars } from '@/components/ui/ShootingStars';
 import { StarsBackground } from '@/components/ui/StarsBackground';
 import { TextHoverEffect } from '@/components/ui/TextHover';
-import { CardSpotlight } from '@/components/ui/CardSpotlight';
 import { StickyScroll } from '@/components/ui/StickyScrollReveal';
 import { InfiniteMovingCards } from '@/components/ui/InfiniteMovingCards';
 import { BackgroundGradient } from '@/components/ui/BackgroundGradient';

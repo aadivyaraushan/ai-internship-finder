@@ -106,15 +106,16 @@ button:disabled:hover {
 
 .dropdown-input {
   width: 100%;
-  padding: 10px;
+  padding: 10px 20px;
   border: none;
   border-bottom: 1px solid #333;
-  background-color: transparent;
+  background-color: #232323;
   color: #9ca3af;
-  cursor: pointer;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
+  border-radius: 16px;
+  transition: border-bottom 0.2s, background 0.2s;
+  font-size: 16px;
+  outline: none;
+  box-sizing: border-box;
 }
 
 .dropdown-input.active,
@@ -122,12 +123,23 @@ button:disabled:hover {
   color: white;
 }
 
-.dropdown-input:focus {
-  outline: none;
+.dropdown-input.active,
+.dropdown-input.filled {
+  color: white;
 }
 
 .caret {
-  font-size: 10px;
+  position: absolute;
+  right: 20px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  pointer-events: none;
+}
+
+.dropdown-input {
+  position: relative;
 }
 
 .dropdown-menu {

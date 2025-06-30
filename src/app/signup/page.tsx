@@ -1,4 +1,6 @@
 'use client';
+import { BackgroundGradient } from '@/components/ui/BackgroundGradient';
+import { StatefulButton } from '@/components/ui/StatefulButton';
 import '../signup.css';
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
@@ -27,6 +29,7 @@ export default function Signup() {
   ];
 
   const [races, setRaces] = useState<string[]>([]);
+  const [countryOpen, setCountryOpen] = useState(false);
 
   // Multiselect dropdown handler
   const [raceOpen, setRaceOpen] = useState(false);
@@ -297,9 +300,16 @@ export default function Signup() {
   };
 
   return (
-    <div className='signup-container'>
-      <h1 className='heading'>Sign up</h1>
-      {error && <div className='error-message'>{error}</div>}
+    <div className='flex flex-col min-h-screen flex items-center justify-center bg-neutral-950 p-4'>
+      {/* <BackgroundGradient className='w-full max-w-lg bg-neutral-900 p-8 rounded-3xl'> */}
+      <h1 className='heading text-white text-2xl font-bold text-center mb-6'>
+        Sign Up
+      </h1>
+      {error && (
+        <div className='mb-4 p-3 bg-red-500/10 border border-red-500 rounded-lg text-red-500 text-sm'>
+          {error}
+        </div>
+      )}
       <form onSubmit={handleSubmit}>
         <input
           type='email'
@@ -307,6 +317,7 @@ export default function Signup() {
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           required
+          className='w-full px-4 py-2 mb-4 rounded-lg bg-neutral-800 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500'
         />
         <input
           type='password'
@@ -314,12 +325,17 @@ export default function Signup() {
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           required
+          className='w-full px-4 py-2 mb-4 rounded-lg bg-neutral-800 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500'
         />
         <div className='relative w-full'>
           <div className='dropdown-input' onClick={toggleRace}>
-            {raceDisplay}
-            <span className='caret'>▼</span>
-          </div>
+  <span>{raceDisplay}</span>
+  <span className='caret' aria-hidden='true'>
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M6 8L10 12L14 8" stroke="#9ca3af" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  </span>
+</div>
           {raceOpen && (
             <div className='dropdown-menu'>
               {raceOptions.map((opt) => (
@@ -336,28 +352,53 @@ export default function Signup() {
             </div>
           )}
         </div>
-        <select
-          value={country}
-          onChange={(e) => setCountry(e.target.value)}
-          required
-          style={{ color: country ? 'white' : '#9ca3af' }}
-        >
-          <option value='' disabled>
-            Select Country
-          </option>
-          {countryList.map((c) => (
-            <option key={c} value={c}>
-              {c}
-            </option>
-          ))}
-        </select>
-        <button type='submit' disabled={loading}>
-          {loading ? 'Signing up...' : 'Sign up'}
-        </button>
+        <div className='relative w-full mt-2'>
+          <div
+            className={`dropdown-input${country ? ' filled' : ''}`}
+            onClick={() => setCountryOpen((open) => !open)}
+            tabIndex={0}
+            role='button'
+            aria-haspopup='listbox'
+            aria-expanded={countryOpen}
+          >
+            <span>{country || <span style={{color:'#9ca3af'}}>Select Country</span>}</span>
+            <span className='caret' aria-hidden='true'>
+              <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M6 8L10 12L14 8" stroke="#9ca3af" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            </span>
+          </div>
+          {countryOpen && (
+            <div className='dropdown-menu' role='listbox'>
+              {countryList.map((c) => (
+                <div
+                  key={c}
+                  className='dropdown-item'
+                  role='option'
+                  aria-selected={country === c}
+                  onClick={() => {
+                    setCountry(c);
+                    setCountryOpen(false);
+                  }}
+                  style={{cursor:'pointer'}}
+                >
+                  {c}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        <StatefulButton type='submit' className='w-full mt-2'>
+          Sign Up
+        </StatefulButton>
       </form>
-      <p>
-        Already have an account? <Link href='/login'>Login</Link>
+      <p className='text-gray-400 text-sm mt-4 text-center'>
+        Already have an account?{' '}
+        <Link href='/login' className='text-blue-500 underline'>
+          Log in
+        </Link>
       </p>
+      {/* </BackgroundGradient> */}
     </div>
   );
 }

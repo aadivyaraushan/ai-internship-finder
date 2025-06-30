@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useDropzone } from 'react-dropzone';
 import { auth, db } from '@/lib/firebase';
 import {
   updateConnectionStatus,
@@ -13,7 +12,11 @@ import {
 } from '@/lib/firestoreHelpers';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { onAuthStateChanged, User } from 'firebase/auth';
-import StatusUpdate, { ProcessingStep } from '@/components/StatusUpdate';
+import { MultiStepLoader } from '@/components/ui/MultiStepLoader';
+import { AnimatedTabs } from '@/components/ui/AnimatedTabs';
+import { StatefulButton } from '@/components/ui/StatefulButton';
+import BorderMagicButton from '@/components/ui/BorderMagicButton';
+import { FileUpload } from '@/components/ui/FileUpload';
 
 interface Connection {
   id: string;
@@ -44,6 +47,12 @@ interface Connection {
 interface Goal {
   title: string;
   description?: string;
+}
+
+interface ProcessingStep {
+  id: string;
+  label: string;
+  status: 'pending' | 'in_progress' | 'completed' | 'error';
 }
 
 function getBackgroundColor(name: string): string {
@@ -204,19 +213,6 @@ export default function Dashboard() {
       setSaving(false);
     }
   };
-
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({
-    accept: {
-      'application/pdf': ['.pdf'],
-      'application/msword': ['.doc'],
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
-        ['.docx'],
-    },
-    maxSize: 5 * 1024 * 1024, // 5MB
-    onDrop: (acceptedFiles) => {
-      setFile(acceptedFiles[0]);
-    },
-  });
 
   // Handler to update a connection's status
   const handleStatusChange = async (
@@ -485,376 +481,293 @@ export default function Dashboard() {
       ) : (
         <div className='flex gap-6'>
           {/* Main Content */}
-          <div className='flex-1'>
-            <div className='bg-[#1a1a1a] p-6 rounded-2xl mb-6'>
-              {/* View Selector */}
-              <div className='flex gap-4 mb-6'>
-                <button
-                  onClick={() => setSelectedView('goal')}
-                  className={`px-4 py-2 rounded-lg transition-colors ${
-                    selectedView === 'goal'
-                      ? 'bg-blue-500 text-white'
-                      : 'bg-[#2a2a2a] text-gray-300 hover:bg-[#3a3a3a]'
-                  }`}
-                >
-                  Current Goal
-                </button>
-                <button
-                  onClick={() => setSelectedView('people')}
-                  className={`px-4 py-2 rounded-lg transition-colors ${
-                    selectedView === 'people'
-                      ? 'bg-blue-500 text-white'
-                      : 'bg-[#2a2a2a] text-gray-300 hover:bg-[#3a3a3a]'
-                  }`}
-                >
-                  Programs/Connections
-                </button>
-              </div>
-
-              {/* Content Sections */}
-              {selectedView === 'goal' && (
-                <div className='space-y-4'>
-                  <div className='bg-[#2a2a2a] p-4 rounded-lg'>
-                    <h3 className='text-white font-medium mb-2'>
-                      Current Goal
-                    </h3>
-                    <textarea
-                      className='w-full h-24 px-3 py-2 text-gray-300 bg-[#1a1a1a] rounded-lg focus:outline-none'
-                      value={typeof goals === 'string' ? goals : ''}
-                      onChange={(e) => setGoals(e.target.value)}
-                      placeholder='Describe your current career goal...'
-                    />
-                    <button
-                      onClick={saveGoal}
-                      disabled={saving}
-                      className='mt-2 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors disabled:opacity-50'
-                    >
-                      {saving ? 'Saving...' : 'Save Goal'}
-                    </button>
-                  </div>
+          <div className='flex-1 m-'>
+              <div className='bg-[#1a1a1a] p-6 rounded-2xl'>
+                {/* View Selector */}
+                <div className='mb-6'>
+                  <AnimatedTabs
+                    tabs={[
+                      { title: 'Current Goal', value: 'goal' },
+                      { title: 'Programs / Connections', value: 'people' },
+                    ]}
+                    containerClassName=''
+                    activeTabClassName='bg-accent/20'
+                    onChange={(id) => setSelectedView(id as 'goal' | 'people')}
+                  />
                 </div>
-              )}
 
-              {selectedView === 'people' && (
-                <div className='space-y-4'>
-                  <div className='bg-[#2a2a2a] p-4 rounded-lg'>
-                    {connections && connections.length > 0 ? (
-                      <div className='space-y-3'>
-                        {connections.map((connection) => {
-                          console.log('Connection data:', {
-                            id: connection.id,
-                            name: connection.name,
-                            description: connection.description,
-                            type: connection.type,
-                            matchPercentage: connection.matchPercentage,
-                          });
-                          return (
-                            <div
-                              key={connection.id}
-                              className='bg-[#1a1a1a] p-4 rounded-lg flex items-start gap-4'
-                            >
-                              <div className='relative'>
+                {/* Content Sections */}
+                {selectedView === 'goal' && (
+                  <div className='space-y-4'>
+                    <div className='bg-[#2a2a2a] p-4 rounded-lg'>
+                      <h3 className='text-white font-medium mb-2'>
+                        Current Goal
+                      </h3>
+                      <textarea
+                        className='w-full h-24 px-3 py-2 text-gray-300 bg-[#1a1a1a] rounded-lg focus:outline-none'
+                        value={typeof goals === 'string' ? goals : ''}
+                        onChange={(e) => setGoals(e.target.value)}
+                        placeholder='Describe your current career goal...'
+                      />
+                      <BorderMagicButton
+                        onClick={saveGoal}
+                        disabled={saving}
+                        className='mt-2'
+                      >
+                        {saving ? 'Saving...' : 'Save Goal'}
+                      </BorderMagicButton>
+                    </div>
+                  </div>
+                )}
+
+                {selectedView === 'people' && (
+                  <div className='space-y-4'>
+                    <div className='bg-[#2a2a2a] p-4 rounded-lg'>
+                      {connections && connections.length > 0 ? (
+                        <>
+                          <div className='grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4'>
+                            {connections.map((connection) => {
+                              console.log('Connection data:', {
+                                id: connection.id,
+                                name: connection.name,
+                                description: connection.description,
+                                type: connection.type,
+                                matchPercentage: connection.matchPercentage,
+                              });
+                              return (
                                 <div
-                                  className={`w-12 h-12 rounded-full flex items-center justify-center text-white font-medium ${getBackgroundColor(
-                                    connection.name
-                                  )}`}
+                                  key={connection.id}
+                                  className='bg-[#1a1a1a] p-5 rounded-2xl flex items-start gap-4 h-full min-w-0'
                                 >
-                                  {getInitials(connection.name)}
-                                </div>
-                              </div>
-                              <div className='flex-1'>
-                                {/* Header: name + status badge + LinkedIn */}
-                                <div className='flex flex-wrap items-center justify-between gap-2 mb-1'>
-                                  <div className='flex items-center gap-2 min-w-0'>
-                                    <h3 className='text-white font-medium truncate'>
-                                      {connection.name}
-                                    </h3>
-                                    {/* Status badge */}
-                                    {(() => {
-                                      const { label, colorClass } =
-                                        getStatusInfo(connection.status);
-                                      return (
-                                        <span
-                                          className={`text-xs font-medium px-2 py-0.5 rounded ${colorClass}`}
-                                        >
-                                          {label}
-                                        </span>
-                                      );
-                                    })()}
+                                  <div className='relative'>
+                                    <div
+                                      className={`w-12 h-12 rounded-full flex items-center justify-center text-white font-medium ${getBackgroundColor(
+                                        connection.name
+                                      )}`}
+                                    >
+                                      {getInitials(connection.name)}
+                                    </div>
                                   </div>
-                                  {/* External links */}
-                                  <div className='flex items-center gap-2 flex-shrink-0'>
-                                    {/* Program website link */}
-                                    {connection.type === 'program' && (
-                                      <>
-                                        {(connection.website_url ||
-                                          (connection as any).url) && (
-                                          <a
-                                            href={
-                                              connection.website_url ||
-                                              (connection as any).url
-                                            }
-                                            target='_blank'
-                                            rel='noopener noreferrer'
-                                            className='text-blue-500 font-medium text-sm underline'
-                                          >
-                                            Website
-                                          </a>
+                                  <div className='flex-1 overflow-auto'>
+                                    {/* Header: name + status badge + LinkedIn */}
+                                    <div className='flex flex-wrap items-center justify-between gap-2 mb-1'>
+                                      <div className='flex items-center gap-2 min-w-0'>
+                                        <h3 className='text-white font-medium truncate'>
+                                          {connection.name}
+                                        </h3>
+                                        {/* Status badge */}
+                                        {(() => {
+                                          const { label, colorClass } =
+                                            getStatusInfo(connection.status);
+                                          return (
+                                            <span
+                                              className={`text-xs font-medium px-2 py-0.5 rounded ${colorClass}`}
+                                            >
+                                              {label}
+                                            </span>
+                                          );
+                                        })()}
+                                      </div>
+                                      {/* External links */}
+                                      <div className='flex items-center gap-2 flex-shrink-0'>
+                                        {/* Program website link */}
+                                        {connection.type === 'program' && (
+                                          <>
+                                            {(connection.website_url ||
+                                              (connection as any).url) && (
+                                              <a
+                                                href={
+                                                  connection.website_url ||
+                                                  (connection as any).url
+                                                }
+                                                target='_blank'
+                                                rel='noopener noreferrer'
+                                                className='text-blue-500 font-medium text-sm underline'
+                                              >
+                                                Website
+                                              </a>
+                                            )}
+                                          </>
                                         )}
-                                      </>
+
+                                        {/* LinkedIn link for person connections */}
+                                        {connection.type === 'person' &&
+                                          connection.linkedin_url && (
+                                            <a
+                                              href={connection.linkedin_url}
+                                              target='_blank'
+                                              rel='noopener noreferrer'
+                                              className='text-blue-500 font-medium text-sm underline'
+                                            >
+                                              Connect
+                                            </a>
+                                          )}
+                                      </div>
+                                    </div>
+
+                                    {/* Secondary info */}
+                                    <p className='text-gray-400 text-sm mb-1'>
+                                      {connection.type === 'program' ? (
+                                        <>
+                                          {connection.program_type && (
+                                            <span className='capitalize'>
+                                              {connection.program_type}
+                                            </span>
+                                          )}
+                                          {connection.organization && (
+                                            <>
+                                              {connection.program_type && ' • '}
+                                              <span>
+                                                {connection.organization}
+                                              </span>
+                                            </>
+                                          )}
+                                        </>
+                                      ) : (
+                                        <>
+                                          {connection.current_role && (
+                                            <span>
+                                              {connection.current_role}
+                                            </span>
+                                          )}
+                                          {connection.company && (
+                                            <>
+                                              {connection.current_role &&
+                                                ' at '}
+                                              <span>{connection.company}</span>
+                                            </>
+                                          )}
+                                        </>
+                                      )}
+                                    </p>
+
+                                    {/* Description - with debug comment */}
+                                    {connection.description ? (
+                                      <p className='text-gray-400 text-xs mt-2 mb-2 border-t border-gray-700 pt-2 break-words max-h-32 pr-1 overflow-y-auto'>
+                                        {connection.description}
+                                      </p>
+                                    ) : (
+                                      <p className='text-gray-500 text-xs mt-2 mb-2 border-t border-gray-700 pt-2'>
+                                        {/* Debug info */}
+                                        No description available for{' '}
+                                        {connection.name}
+                                      </p>
                                     )}
 
-                                    {/* LinkedIn link for person connections */}
-                                    {connection.type === 'person' &&
-                                      connection.linkedin_url && (
-                                        <a
-                                          href={connection.linkedin_url}
-                                          target='_blank'
-                                          rel='noopener noreferrer'
-                                          className='text-blue-500 font-medium text-sm underline'
-                                        >
-                                          Connect
-                                        </a>
-                                      )}
+                                    {/* Status selector */}
+                                    <div className='mt-2'>
+                                      <select
+                                        value={
+                                          connection.status || 'not_contacted'
+                                        }
+                                        onChange={(e) =>
+                                          handleStatusChange(
+                                            connection.id,
+                                            e.target
+                                              .value as Connection['status']
+                                          )
+                                        }
+                                        className='bg-[#2a2a2a] text-gray-300 text-xs px-2 py-1 rounded focus:outline-none'
+                                      >
+                                        <option value='not_contacted'>
+                                          Not Contacted
+                                        </option>
+                                        <option value='email_sent'>
+                                          Email/Message Sent / Waiting for
+                                          Response
+                                        </option>
+                                        <option value='response_received'>
+                                          Responded
+                                        </option>
+                                        <option value='internship_acquired'>
+                                          Internship Acquired
+                                        </option>
+                                        <option value='ghosted'>
+                                          No Response
+                                        </option>
+                                        <option value='rejected'>
+                                          Rejected
+                                        </option>
+                                      </select>
+                                    </div>
                                   </div>
                                 </div>
-
-                                {/* Secondary info */}
-                                <p className='text-gray-400 text-sm mb-1'>
-                                  {connection.type === 'program' ? (
-                                    <>
-                                      {connection.program_type && (
-                                        <span className='capitalize'>
-                                          {connection.program_type}
-                                        </span>
-                                      )}
-                                      {connection.organization && (
-                                        <>
-                                          {connection.program_type && ' • '}
-                                          <span>{connection.organization}</span>
-                                        </>
-                                      )}
-                                    </>
-                                  ) : (
-                                    <>
-                                      {connection.current_role && (
-                                        <span>{connection.current_role}</span>
-                                      )}
-                                      {connection.company && (
-                                        <>
-                                          {connection.current_role && ' at '}
-                                          <span>{connection.company}</span>
-                                        </>
-                                      )}
-                                    </>
-                                  )}
-                                </p>
-
-                                {/* Description - with debug comment */}
-                                {connection.description ? (
-                                  <p className='text-gray-400 text-sm mt-2 mb-2 border-t border-gray-700 pt-2'>
-                                    {connection.description}
-                                  </p>
-                                ) : (
-                                  <p className='text-gray-500 text-xs mt-2 mb-2 border-t border-gray-700 pt-2'>
-                                    {/* Debug info */}
-                                    No description available for{' '}
-                                    {connection.name}
-                                  </p>
-                                )}
-
-                                {/* Status selector */}
-                                <div className='mt-2'>
-                                  <select
-                                    value={connection.status || 'not_contacted'}
-                                    onChange={(e) =>
-                                      handleStatusChange(
-                                        connection.id,
-                                        e.target.value as Connection['status']
-                                      )
-                                    }
-                                    className='bg-[#2a2a2a] text-gray-300 text-xs px-2 py-1 rounded focus:outline-none'
-                                  >
-                                    <option value='not_contacted'>
-                                      Not Contacted
-                                    </option>
-                                    <option value='email_sent'>
-                                      Email/Message Sent / Waiting for Response
-                                    </option>
-                                    <option value='response_received'>
-                                      Responded
-                                    </option>
-                                    <option value='internship_acquired'>
-                                      Internship Acquired
-                                    </option>
-                                    <option value='ghosted'>No Response</option>
-                                    <option value='rejected'>Rejected</option>
-                                  </select>
-                                </div>
-                              </div>
-                            </div>
-                          );
-                        })}
-                        {/* Find more connections button */}
-                        <div className='pt-2 flex justify-center'>
-                          <button
-                            onClick={fetchMoreConnections}
-                            disabled={findingMore}
-                            className={`mt-2 px-4 py-2 rounded-lg bg-blue-500 text-white hover:bg-blue-600 transition-colors ${
-                              findingMore ? 'opacity-50 cursor-not-allowed' : ''
-                            }`}
-                          >
-                            {findingMore
-                              ? 'Finding more...'
-                              : 'Find more connections'}
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      <p className='text-gray-400 text-sm'>
-                        Coming soon: AI-powered connection suggestions based on
-                        your profile and goals.
-                        <br />
-                        <button
-                          onClick={fetchMoreConnections}
-                          disabled={findingMore}
-                          className={`mt-3 px-4 py-2 rounded-lg bg-blue-500 text-white hover:bg-blue-600 transition-colors ${
-                            findingMore ? 'opacity-50 cursor-not-allowed' : ''
-                          }`}
-                        >
-                          {findingMore
-                            ? 'Finding more...'
-                            : 'Find more connections'}
-                        </button>
-                      </p>
-                    )}
+                              );
+                            })}
+                          </div>
+                          <div className='pt-4 flex justify-center'>
+                            <StatefulButton
+                              disabled={findingMore}
+                              onClick={() => fetchMoreConnections()}
+                              className='w-full md:w-auto'
+                            >
+                              Find more connections
+                            </StatefulButton>
+                          </div>
+                        </>
+                      ) : (
+                        <p className='text-gray-400 text-sm'>
+                          Coming soon: AI-powered connection suggestions based
+                          on your profile and goals.
+                          <br />
+                          <div className='flex justify-center mt-3'>
+                            <StatefulButton
+                              disabled={findingMore}
+                              onClick={() => fetchMoreConnections()}
+                              className='w-full md:w-auto'
+                            >
+                              Find more connections
+                            </StatefulButton>
+                          </div>
+                        </p>
+                      )}
+                    </div>
                   </div>
-                </div>
-              )}
-            </div>
+                )}
+              </div>
+            
 
             {/* Resume Upload Section */}
-            <div className='bg-[#1a1a1a] p-6 rounded-2xl'>
-              <div
-                {...getRootProps()}
-                className={`flex flex-col items-center justify-center text-center cursor-pointer border-2 border-dashed border-gray-600 hover:border-gray-500 rounded-lg p-8 ${
-                  isDragActive ? 'border-blue-500' : ''
-                }`}
-              >
-                <input {...getInputProps()} />
-                <svg
-                  className='w-8 h-8 text-gray-400 mb-2'
-                  fill='none'
-                  stroke='currentColor'
-                  viewBox='0 0 24 24'
-                >
-                  <path
-                    strokeLinecap='round'
-                    strokeLinejoin='round'
-                    strokeWidth={2}
-                    d='M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12'
-                  />
-                </svg>
-                <p className='text-gray-300 mb-1'>
-                  {file
-                    ? file.name
-                    : 'Drag a new resume here or click to update your resume'}
-                </p>
-                <p className='text-gray-500 text-sm'>
-                  Acceptable file types: PDF, DOCX (5MB max)
-                </p>
-                <p className='text-blue-400 text-xs mt-2'>
-                  Uploading a new file will <b>replace</b> your current resume.
-                </p>
-              </div>
-              {/* Upload button and feedback */}
-              <div className='mt-4 flex flex-col items-center'>
-                {(uploading ||
-                  steps.some((step) => step.status === 'completed')) && (
-                  <StatusUpdate steps={steps} currentStatus={currentStatus} />
-                )}
-                <button
-                  onClick={handleResumeUpload}
-                  disabled={uploading || !file}
-                  className='px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors disabled:opacity-50 mt-2'
-                >
-                  {uploading ? 'Updating...' : 'Update Resume'}
-                </button>
-                {uploadError && (
-                  <div className='mt-2 text-red-500 text-sm'>{uploadError}</div>
-                )}
-                {uploadSuccess && (
-                  <div className='mt-2 text-green-500 text-sm'>
-                    Resume updated and analyzed successfully!
-                  </div>
-                )}
+            <div className='mt-3'>
+              <div className='bg-[#1a1a1a] p-6 rounded-2xl'>
+                <FileUpload
+                  onChange={(files) => {
+                    if (files && files.length) {
+                      setFile(files[0]);
+                      setUploadError('');
+                    }
+                  }}
+                  title='Update Resume'
+                  description='Update your resume to tailor your connection finding algorithm to your latest experience and skills'
+                />
+                {/* Upload button and feedback */}
+                <div className='mt-4 flex flex-col items-center'>
+                  {(uploading ||
+                    steps.some((step) => step.status === 'completed')) && (
+                    <MultiStepLoader
+                      loadingStates={steps.map((s) => ({ text: s.label }))}
+                      loading={uploading}
+                    />
+                  )}
+                  <BorderMagicButton
+                    onClick={handleResumeUpload}
+                    disabled={uploading || !file}
+                    className='mt-2'
+                  >
+                    {uploading ? 'Updating...' : 'Update Resume'}
+                  </BorderMagicButton>
+                  {uploadError && (
+                    <div className='mt-2 text-red-500 text-sm'>{uploadError}</div>
+                  )}
+                  {uploadSuccess && (
+                    <div className='mt-2 text-green-500 text-sm'>
+                      Resume updated and analyzed successfully!
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
-          </div>
 
-          {/* Right Sidebar */}
-          <div className='w-80'>
-            <div className='bg-[#1a1a1a] p-6 rounded-2xl'>
-              <h2 className='text-white text-sm font-medium text-center mb-4'>
-                Your Profile
-              </h2>
-              <div className='space-y-4'>
-                <div className='bg-[#2a2a2a] p-4 rounded-lg'>
-                  <h3 className='text-white text-sm font-medium mb-2'>
-                    Current Status
-                  </h3>
-                  <ul className='text-gray-400 text-sm space-y-2'>
-                    <li className='flex items-center'>
-                      {userData && userData.resume_id ? (
-                        <span className='text-green-400 mr-2'>✔</span>
-                      ) : (
-                        <span className='text-gray-500 mr-2'>○</span>
-                      )}
-                      Resume uploaded
-                    </li>
-                    <li className='flex items-center'>
-                      {userData &&
-                      ((Array.isArray(userData.goals) &&
-                        userData.goals.length > 0) ||
-                        (typeof userData.goals === 'string' &&
-                          userData.goals.trim() !== '')) ? (
-                        <span className='text-green-400 mr-2'>✔</span>
-                      ) : (
-                        <span className='text-gray-500 mr-2'>○</span>
-                      )}
-                      Goals set
-                    </li>
-                  </ul>
-                </div>
-                <div className='bg-[#2a2a2a] p-4 rounded-lg'>
-                  <h3 className='text-white text-sm font-medium mb-2'>
-                    Next Steps
-                  </h3>
-                  <ul className='text-gray-400 text-sm space-y-2'>
-                    {userData && !userData.resume_id && (
-                      <li>• Upload your resume</li>
-                    )}
-                    {userData &&
-                      !(
-                        (Array.isArray(userData.goals) &&
-                          userData.goals.length > 0) ||
-                        (typeof userData.goals === 'string' &&
-                          userData.goals.trim() !== '')
-                      ) && <li>• Set your career goals</li>}
-                    {userData &&
-                      userData.resume_id &&
-                      ((Array.isArray(userData.goals) &&
-                        userData.goals.length > 0) ||
-                        (typeof userData.goals === 'string' &&
-                          userData.goals.trim() !== '')) && (
-                        <li className='text-green-400'>
-                          All steps complete! 🎉
-                        </li>
-                      )}
-                  </ul>
-                </div>
-              </div>
-            </div>
           </div>
         </div>
       )}

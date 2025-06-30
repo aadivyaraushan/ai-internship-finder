@@ -7,56 +7,6 @@ interface Goal {
   description?: string;
 }
 
-// Add interface at the top of the file after imports
-interface PersonConnection {
-  name: string;
-  type?: 'person';
-  current_role: string;
-  company: string;
-  linkedin_url?: string;
-  hiring_power: {
-    role_type: string;
-    can_hire_interns: boolean;
-    department: string;
-  };
-  exact_matches: {
-    education: {
-      university: string;
-      graduation_year: string;
-      degree: string;
-    };
-    shared_activities: Array<{
-      name: string;
-      year: string;
-      type: string;
-    }>;
-  };
-  match_details: {
-    total_percentage: number;
-    hiring_power_score: number;
-    background_match_score: number;
-    career_path_score: number;
-    scoring_explanation: string;
-  };
-}
-
-interface ProgramConnection {
-  type: 'program';
-  name: string;
-  organization: string;
-  program_type: string; // internship, fellowship, bootcamp, etc
-  program_description: string;
-  url?: string;
-  enrollment_info?: string;
-  how_this_helps?: string;
-  match_details: {
-    total_percentage: number;
-    relevance_score: number;
-    opportunity_quality_score: number;
-    scoring_explanation: string;
-  };
-}
-
 function buildResumeAspectAnalyzerPrompt(resumeContext: string) {
   return `<system>You are an agent specialized in analyzing resumes and career goals to find key aspects for networking connections. You MUST return ONLY valid JSON matching the schema below EXACTLY. Do not include any other text or explanation.</system>
 <input>
@@ -83,6 +33,12 @@ ${resumeContext}
    - Skills mentioned in goals that relate to resume experience
    - Industries/sectors from goals that match resume background
    - Career transitions indicated by goals vs current experience
+6. For education level:
+   - Determine based on current or most recent education
+   - "high_school" if in or recently completed high school
+   - "undergraduate" if in or recently completed bachelor's degree
+   - "graduate" if in or completed master's/PhD
+   - If unclear, infer from context (age, work experience, etc.)
 </rules>
 <schema>
 {
@@ -90,7 +46,8 @@ ${resumeContext}
     "education": {
       "institutions": ["string"],
       "graduation_years": ["string"],
-      "fields_of_study": ["string"]
+      "fields_of_study": ["string"],
+      "current_level": "high_school" | "undergraduate" | "graduate"
     },
     "work_experience": {
       "companies": ["string"],
@@ -121,7 +78,44 @@ ${resumeContext}
 </schema>`;
 }
 
-function buildBackgroundInfoString(connectionAspects: any) {
+interface IndustryTransition {
+  transition_context: string;
+}
+
+interface WorkExperience {
+  companies: string[];
+  startup_experience: string[];
+  industry_transitions?: IndustryTransition;
+}
+
+interface Education {
+  institutions: string[];
+  current_level?: string;
+}
+
+interface Activities {
+  organizations: string[];
+}
+
+interface Achievements {
+  certifications: string[];
+}
+
+interface GrowthAreas {
+  learning_journey?: string;
+}
+
+interface ConnectionAspects {
+  education: Education;
+  work_experience: WorkExperience;
+  activities?: Activities;
+  achievements?: Achievements;
+  growth_areas?: GrowthAreas;
+}
+
+function buildBackgroundInfoString(
+  connectionAspects: ConnectionAspects
+): string {
   console.log('Building background info from aspects:', connectionAspects);
 
   const sections = [];
@@ -158,7 +152,7 @@ function buildBackgroundInfoString(connectionAspects: any) {
     );
   }
 
-  if (connectionAspects.activities?.organizations?.length > 0) {
+  if (connectionAspects.activities?.organizations?.length) {
     sections.push(
       `Organizations & activities: ${connectionAspects.activities.organizations.join(
         ', '
@@ -166,7 +160,7 @@ function buildBackgroundInfoString(connectionAspects: any) {
     );
   }
 
-  if (connectionAspects.achievements?.certifications?.length > 0) {
+  if (connectionAspects.achievements?.certifications?.length) {
     sections.push(
       `Certifications & achievements: ${connectionAspects.achievements.certifications.join(
         ', '
@@ -196,10 +190,10 @@ function buildConnectionFinderPrompt({
 }: {
   roleTitle: string;
   goalTitles?: string[];
-  connectionAspects: any;
+  connectionAspects: ConnectionAspects;
   race?: string;
   location?: string;
-}) {
+}): string {
   const backgroundInfo = buildBackgroundInfoString(connectionAspects);
   console.log('Background info for connection finder:', backgroundInfo);
 
@@ -208,6 +202,7 @@ function buildConnectionFinderPrompt({
 Target role: ${roleTitle}
 Background information for matching:
     ${backgroundInfo}
+Education level: ${connectionAspects.education?.current_level || 'unknown'}
 ${race ? `\nCandidate race/ethnicity: ${race}` : ''}
 ${location ? `\nCandidate location: ${location}` : ''}
 ${
@@ -232,6 +227,11 @@ ${
 7. If a program has explicit race/ethnicity eligibility requirements, ONLY include if they match the candidate race. Otherwise, exclude.
 8. If a program requires on-site presence or is limited to a specific geographic location, ONLY include if it matches the candidate location.
 9. REJECT any potential match missing either direct matches or goal alignment.
+10. Match opportunities to education level:
+    - High school: Focus on early internships and pre-college programs
+    - Undergraduate: Focus on internships, co-ops, and entry-level roles
+    - Graduate: Focus on research, specialized roles, and advanced programs
+11. ALWAYS verify program eligibility matches candidate's education level
 </rules>
 <schema>
 {
@@ -263,10 +263,10 @@ ${
 }
 
 function buildMatchScorerPrompt(
-  connection: any,
-  connectionAspects: any,
+  connection: Connection,
+  connectionAspects: ConnectionAspects,
   goals: string[]
-) {
+): string {
   const backgroundInfo = buildBackgroundInfoString(connectionAspects);
   console.log('Background info for match scorer:', backgroundInfo);
 
@@ -317,7 +317,7 @@ function buildStrategyGeneratorPrompt(
   connection: any,
   matchDetails: any,
   connectionAspects: any
-) {
+): string {
   const backgroundInfo = buildBackgroundInfoString(connectionAspects);
   console.log('Background info for strategy generator:', backgroundInfo);
 
@@ -555,11 +555,37 @@ function cleanAndParseJSON(raw: string) {
   }
 }
 
+interface MatchDetails {
+  total_percentage: number;
+  scoring_explanation: string;
+  background_match_score: number;
+  goal_alignment_score: number;
+  direct_match_score?: number;
+  additional_factors_score?: number;
+  direct_matches_found?: string[];
+  goal_alignment_details?: string;
+}
+
+interface OutreachStrategy {
+  shared_background_points: string[];
+  suggested_approach: string;
+  key_talking_points: string[];
+  goal_alignment_points?: string[];
+}
+
+interface ProcessedConnection {
+  id?: string;
+  name: string;
+  [key: string]: any; // For other properties that might be on the connection object
+  match_details: MatchDetails;
+  outreach_strategy: OutreachStrategy;
+}
+
 async function processConnectionWithAgents(
-  connection: any,
+  connection: { name: string; [key: string]: any },
   goals: string[],
-  connectionAspects: any
-): Promise<any> {
+  connectionAspects: ConnectionAspects
+): Promise<ProcessedConnection> {
   console.log('\n🔄 Processing connection:', connection.name);
 
   try {
@@ -653,12 +679,16 @@ async function processConnectionWithAgents(
 }
 
 // Add new scraping utilities
-async function scrapeLinkedInProfile(url: string): Promise<{
+interface LinkedInProfileData {
   name?: string;
   currentRole?: string;
   company?: string;
   error?: string;
-}> {
+}
+
+async function scrapeLinkedInProfile(
+  url: string
+): Promise<LinkedInProfileData> {
   try {
     // First try to get public data from LinkedIn
     const response = await axios.get(url, {
@@ -682,7 +712,11 @@ async function scrapeLinkedInProfile(url: string): Promise<{
       .text()
       .trim();
 
-    return { name, currentRole, company };
+    return {
+      name: name || undefined,
+      currentRole: currentRole || undefined,
+      company: company || undefined,
+    };
   } catch (error) {
     // Log the technical error
     console.error('❌ Technical error - LinkedIn scraping failed:', {
@@ -714,14 +748,20 @@ async function scrapeLinkedInProfile(url: string): Promise<{
         .text()
         .trim();
 
-      return { name, currentRole, company };
+      return {
+        name: name || undefined,
+        currentRole: currentRole || undefined,
+        company: company || undefined,
+      };
     } catch (cacheError) {
       console.error('❌ Technical error - Cache scraping failed:', {
         url,
         error:
           cacheError instanceof Error ? cacheError.message : String(cacheError),
       });
-      return { error: 'We were unable to verify this profile at the moment.' };
+      return {
+        error: 'We were unable to verify this profile at the moment.',
+      } as const;
     }
   }
 }

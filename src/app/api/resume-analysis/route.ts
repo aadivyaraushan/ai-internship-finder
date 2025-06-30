@@ -44,6 +44,33 @@ const WorkExperienceSchema = z.object({
 });
 
 // Define the main resume schema
+type ResumeAnalysisResponse = {
+  education: Array<{
+    school_name: string;
+    clubs: string[];
+    awards: string[];
+    gpa: string | null;
+    notable_coursework: string[];
+  }>;
+  skills: string[];
+  personal_projects: Array<{
+    project_name: string;
+    description: string;
+    responsibilities: string[];
+    recognition: string | null;
+    skills: string[];
+  }>;
+  workex: Array<{
+    workplace: string;
+    notable_projects: string[];
+    role: string;
+    reference_email: string | null;
+    is_alumni: boolean;
+  }>;
+  linkedin: string | null;
+  per_web: string | null;
+};
+
 const ResumeSchema = z.object({
   education: z.array(EducationSchema).describe('Educational background'),
   skills: z.array(z.string()).describe('Technical and non-technical skills'),
@@ -147,7 +174,8 @@ export async function POST(req: NextRequest) {
         // Log the cleaned response
         console.log('Cleaned Response:', cleanedResponse);
 
-        const parsedResponse = JSON.parse(cleanedResponse);
+        const parsedResponse: ResumeAnalysisResponse =
+          JSON.parse(cleanedResponse);
 
         // Validate the parsed data against our schema
         const validationResult = ResumeSchema.safeParse(parsedResponse);
