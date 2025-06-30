@@ -6,6 +6,32 @@ import { writeFile, unlink } from 'fs/promises';
 import { join } from 'path';
 import { tmpdir } from 'os';
 
+
+
+type School = {
+  school_name: string;
+  clubs: string[];
+  awards: string[];
+  gpa: string | null;
+  notable_coursework: string[];
+};
+
+type Project = {
+  project_name: string;
+  description: string;
+  responsibilities: string[];
+  recognition: string | null;
+  skills: string[];
+}
+
+type WorkExperience = {
+  workplace: string;
+  notable_projects: string[];
+  role: string;
+  reference_email: string | null;
+  is_alumni: boolean;
+}
+
 // Define Zod schemas for each section
 const EducationSchema = z.object({
   school_name: z.string().describe('Name of the educational institution'),
@@ -186,18 +212,18 @@ export async function POST(req: NextRequest) {
           // Try to salvage what we can from the response
           structuredData = {
             education: Array.isArray(parsedResponse.education)
-              ? parsedResponse.education.filter((e: any) => e.school_name)
+              ? parsedResponse.education.filter((e: School) => e.school_name)
               : [],
             skills: Array.isArray(parsedResponse.skills)
               ? parsedResponse.skills
               : [],
             personal_projects: Array.isArray(parsedResponse.personal_projects)
               ? parsedResponse.personal_projects.filter(
-                  (p: any) => p.project_name
+                  (p: Project) => p.project_name
                 )
               : [],
             workex: Array.isArray(parsedResponse.workex)
-              ? parsedResponse.workex.filter((w: any) => w.workplace && w.role)
+              ? parsedResponse.workex.filter((w: WorkExperience) => w.workplace && w.role)
               : [],
             linkedin:
               typeof parsedResponse.linkedin === 'string'
