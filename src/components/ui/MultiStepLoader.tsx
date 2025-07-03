@@ -89,21 +89,32 @@ const LoaderCore = ({
 export const MultiStepLoader = ({
   loadingStates,
   loading,
+  progressIndex,
   duration = 2000,
   loop = true,
 }: {
   loadingStates: LoadingState[];
   loading?: boolean;
+  /** If provided, the loader will highlight this step index instead of using an internal timer */
+  progressIndex?: number;
   duration?: number;
   loop?: boolean;
 }) => {
-  const [currentState, setCurrentState] = useState(0);
+  const [currentState, setCurrentState] = useState(progressIndex ?? 0);
 
   useEffect(() => {
     if (!loading) {
       setCurrentState(0);
       return;
     }
+
+    // If external progress is provided, sync with it and skip internal timer
+    if (progressIndex !== undefined) {
+      setCurrentState(Math.min(progressIndex, loadingStates.length - 1));
+      return;
+    }
+
+    // Fallback to timed progression
     const timeout = setTimeout(() => {
       setCurrentState((prevState) =>
         loop
@@ -115,7 +126,7 @@ export const MultiStepLoader = ({
     }, duration);
 
     return () => clearTimeout(timeout);
-  }, [currentState, loading, loop, loadingStates.length, duration]);
+  }, [currentState, loading, loop, loadingStates.length, duration, progressIndex]);
   return (
     <AnimatePresence mode='wait'>
       {loading && (

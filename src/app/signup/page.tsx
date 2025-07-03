@@ -8,6 +8,8 @@ import { createUserWithEmailAndPassword } from 'firebase/auth';
 import { auth, checkAuth } from '@/lib/firebase';
 import { createOrUpdateUser } from '@/lib/firestoreHelpers';
 import { useRouter } from 'next/navigation';
+import { ShootingStars } from '@/components/ui/ShootingStars';
+import { StarsBackground } from '@/components/ui/StarsBackground';
 
 export default function Signup() {
   const [email, setEmail] = useState('');
@@ -29,6 +31,18 @@ export default function Signup() {
   ];
 
   const [races, setRaces] = useState<string[]>([]);
+  // Gender state and options
+  const genderOptions = [
+    'Male',
+    'Female',
+    'Non-binary',
+    'Prefer not to say',
+    'Other',
+  ];
+  const [gender, setGender] = useState('');
+  const [genderOpen, setGenderOpen] = useState(false);
+  const toggleGender = () => setGenderOpen(!genderOpen);
+  const genderDisplay = gender || 'Select Gender';
   const [countryOpen, setCountryOpen] = useState(false);
 
   // Multiselect dropdown handler
@@ -283,6 +297,7 @@ export default function Signup() {
         email: email,
         race: races,
         location: country,
+        gender: gender,
         createdAt: new Date().toISOString(),
         lastLoginAt: new Date().toISOString(),
         hasResume: false,
@@ -329,25 +344,79 @@ export default function Signup() {
         />
         <div className='relative w-full'>
           <div className='dropdown-input' onClick={toggleRace}>
-  <span>{raceDisplay}</span>
-  <span className='caret' aria-hidden='true'>
-    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path d="M6 8L10 12L14 8" stroke="#9ca3af" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-    </svg>
-  </span>
-</div>
+            <span>{raceDisplay}</span>
+            <span className='caret' aria-hidden='true'>
+              <svg
+                width='20'
+                height='20'
+                viewBox='0 0 20 20'
+                fill='none'
+                xmlns='http://www.w3.org/2000/svg'
+              >
+                <path
+                  d='M6 8L10 12L14 8'
+                  stroke='#9ca3af'
+                  strokeWidth='2'
+                  strokeLinecap='round'
+                  strokeLinejoin='round'
+                />
+              </svg>
+            </span>
+          </div>
           {raceOpen && (
             <div className='dropdown-menu'>
               {raceOptions.map((opt) => (
-                <label key={opt} className='dropdown-item'>
-                  <input
-                    type='checkbox'
-                    checked={races.includes(opt)}
-                    onChange={() => handleRaceSelect(opt)}
-                    className='mr-2'
-                  />
+                <>
+                  <label key={opt} className='dropdown-item'>
+                    <input
+                      type='checkbox'
+                      checked={races.includes(opt)}
+                      onChange={() => handleRaceSelect(opt)}
+                      className='mr-2'
+                    />
+                    {opt}
+                  </label>
+                </>
+              ))}
+            </div>
+          )}
+        </div>
+        {/* Gender dropdown */}
+        <div className='relative w-full mt-2'>
+          <div className='dropdown-input' onClick={toggleGender}>
+            <span>{genderDisplay}</span>
+            <span className='caret' aria-hidden='true'>
+              <svg
+                width='20'
+                height='20'
+                viewBox='0 0 20 20'
+                fill='none'
+                xmlns='http://www.w3.org/2000/svg'
+              >
+                <path
+                  d='M6 8L10 12L14 8'
+                  stroke='#9ca3af'
+                  strokeWidth='2'
+                  strokeLinecap='round'
+                  strokeLinejoin='round'
+                />
+              </svg>
+            </span>
+          </div>
+          {genderOpen && (
+            <div className='dropdown-menu'>
+              {genderOptions.map((opt) => (
+                <div
+                  key={opt}
+                  className='dropdown-item'
+                  onClick={() => {
+                    setGender(opt);
+                    setGenderOpen(false);
+                  }}
+                  style={{ cursor: 'pointer' }}
+                >
                   {opt}
-                </label>
+                </div>
               ))}
             </div>
           )}
@@ -361,10 +430,26 @@ export default function Signup() {
             aria-haspopup='listbox'
             aria-expanded={countryOpen}
           >
-            <span>{country || <span style={{color:'#9ca3af'}}>Select Country</span>}</span>
+            <span>
+              {country || (
+                <span style={{ color: '#9ca3af' }}>Select Country</span>
+              )}
+            </span>
             <span className='caret' aria-hidden='true'>
-              <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M6 8L10 12L14 8" stroke="#9ca3af" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+              <svg
+                width='20'
+                height='20'
+                viewBox='0 0 20 20'
+                fill='none'
+                xmlns='http://www.w3.org/2000/svg'
+              >
+                <path
+                  d='M6 8L10 12L14 8'
+                  stroke='#9ca3af'
+                  strokeWidth='2'
+                  strokeLinecap='round'
+                  strokeLinejoin='round'
+                />
               </svg>
             </span>
           </div>
@@ -380,7 +465,7 @@ export default function Signup() {
                     setCountry(c);
                     setCountryOpen(false);
                   }}
-                  style={{cursor:'pointer'}}
+                  style={{ cursor: 'pointer' }}
                 >
                   {c}
                 </div>
@@ -388,6 +473,10 @@ export default function Signup() {
             </div>
           )}
         </div>
+        <span className='text-xs text-gray-400'>
+          We ask for this information becuase it helps us filter out
+          opportunities that might be restricted to certain backgrounds.
+        </span>
         <StatefulButton type='submit' className='w-full mt-2'>
           Sign Up
         </StatefulButton>
@@ -398,7 +487,6 @@ export default function Signup() {
           Log in
         </Link>
       </p>
-      {/* </BackgroundGradient> */}
     </div>
   );
 }

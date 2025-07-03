@@ -1,0 +1,65 @@
+// components/PersonConnectionCard.tsx
+import { getBackgroundColor, getInitials } from '@/lib/utils';
+import { Connection } from '@/lib/firestoreHelpers';
+
+export function PersonConnectionCard({
+  connection,
+  onStatusChange,
+}: {
+  connection: Connection;
+  onStatusChange: (id: string, status: Connection['status']) => void;
+}) {
+  return (
+    <div className='bg-[#1a1a1a] p-5 rounded-2xl flex items-start gap-4 h-full min-w-0'>
+      <div className='relative'>
+        <div
+          className={`w-12 h-12 rounded-full flex items-center justify-center text-white font-medium ${getBackgroundColor(
+            connection.name
+          )}`}
+        >
+          {getInitials(connection.name)}
+        </div>
+      </div>
+      <div className='flex-1 overflow-auto'>
+        <div className='flex items-center justify-between gap-2 mb-1'>
+          <h3 className='text-white font-medium text-sm'>{connection.name}</h3>
+          {(connection.email || connection.linkedin_url) && (
+            <a
+              href={
+                connection.email
+                  ? `mailto:${connection.email}`
+                  : connection.linkedin_url
+              }
+              target='_blank'
+              rel='noopener noreferrer'
+              className='text-blue-500 text-xs'
+            >
+              {connection.email ? 'Email' : 'LinkedIn'}
+            </a>
+          )}
+        </div>
+        <p className='text-gray-400 text-xs'>
+          {connection.current_role}
+          {connection.company && ` at ${connection.company}`}
+        </p>
+        {connection.description && (
+          <p className='text-gray-500 text-xs mt-2 line-clamp-2'>
+            {connection.description}
+          </p>
+        )}
+        <div className='mt-3'>
+          <select
+            value={connection.status || 'not_contacted'}
+            onChange={(e) => onStatusChange(connection.id, e.target.value)}
+            className='w-full bg-[#3a3a3a] text-gray-200 text-xs px-2 py-1 rounded border border-gray-600'
+          >
+            <option value='not_contacted'>Not Contacted</option>
+            <option value='email_sent'>Email/Message Sent</option>
+            <option value='response_received'>Responded</option>
+            <option value='internship_acquired'>Archive</option>
+          </select>
+        </div>
+      </div>
+    </div>
+  );
+}

@@ -11,6 +11,8 @@ import { useEffect } from 'react';
 import { MultiStepLoader } from '@/components/ui/MultiStepLoader';
 import { FileUpload } from '@/components/ui/FileUpload';
 import BorderMagicButton from '@/components/ui/BorderMagicButton';
+import { ShootingStars } from '@/components/ui/ShootingStars';
+import { StarsBackground } from '@/components/ui/StarsBackground';
 
 interface ProcessingStep {
   id: string;
@@ -22,6 +24,16 @@ export default function UploadResume() {
   const [file, setFile] = useState<File | null>(null);
   const [goals, setGoals] = useState('');
   const [loading, setLoading] = useState(false);
+  const [includePeople, setIncludePeople] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return true;
+    const stored = localStorage.getItem('connectionPreferences');
+    return stored ? JSON.parse(stored).connections ?? true : true;
+  });
+  const [includePrograms, setIncludePrograms] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return true;
+    const stored = localStorage.getItem('connectionPreferences');
+    return stored ? JSON.parse(stored).programs ?? true : true;
+  });
   const [error, setError] = useState('');
   const [currentStatus, setCurrentStatus] = useState<string>('');
   const [steps, setSteps] = useState<ProcessingStep[]>([
@@ -152,6 +164,15 @@ export default function UploadResume() {
       }
 
       // Final delay before redirect
+      // Persist preferences for next page
+      localStorage.setItem(
+        'connectionPreferences',
+        JSON.stringify({
+          programs: includePrograms,
+          connections: includePeople,
+        })
+      );
+
       await new Promise((resolve) => setTimeout(resolve, 1500));
       // Directly move to connection-finding, passing no intermediate goal-analysis step
       router.push('/top-connections');
@@ -167,6 +188,15 @@ export default function UploadResume() {
       setLoading(false);
     }
   };
+
+  // Determine which step is currently active for loader highlighting
+  const inProgressIndex = steps.findIndex(
+    (step) => step.status === 'in_progress'
+  );
+  const progressIndex =
+    inProgressIndex !== -1
+      ? inProgressIndex
+      : Math.max(0, steps.filter((s) => s.status === 'completed').length - 1);
 
   return (
     <div className='min-h-screen flex items-center justify-center bg-[#0a0a0a] p-4'>
@@ -188,6 +218,8 @@ export default function UploadResume() {
           <MultiStepLoader
             loadingStates={steps.map((s) => ({ text: s.label }))}
             loading={loading}
+            progressIndex={progressIndex}
+            loop={false}
           />
         )}
 
@@ -230,6 +262,8 @@ export default function UploadResume() {
           </BorderMagicButton>
         </div>
       </div>
+      <ShootingStars />
+      <StarsBackground />
     </div>
   );
 }

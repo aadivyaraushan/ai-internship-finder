@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { auth, db } from '@/lib/firebase';
 import {
   updateConnectionStatus,
@@ -14,35 +14,14 @@ import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import { MultiStepLoader } from '@/components/ui/MultiStepLoader';
 import { AnimatedTabs } from '@/components/ui/AnimatedTabs';
-import { StatefulButton } from '@/components/ui/StatefulButton';
 import BorderMagicButton from '@/components/ui/BorderMagicButton';
 import { FileUpload } from '@/components/ui/FileUpload';
-
-interface Connection {
-  id: string;
-  name: string;
-  imageUrl?: string;
-  matchPercentage?: number;
-  linkedin_url?: string;
-  type?: 'person' | 'program';
-  program_description?: string;
-  program_type?: string;
-  organization?: string;
-  website_url?: string;
-  enrollment_info?: string;
-  how_this_helps?: string;
-  description?: string;
-  status?:
-    | 'not_contacted'
-    | 'email_sent'
-    | 'response_received'
-    | 'meeting_scheduled'
-    | 'rejected'
-    | 'ghosted'
-    | 'internship_acquired';
-  current_role?: string;
-  company?: string;
-}
+import { ProgramConnectionCard } from '@/components/dashboard/ProgramConnectionCard';
+import { PersonConnectionCard } from '@/components/dashboard/PersonConnectionCard';
+import { getBackgroundColor } from '@/lib/utils';
+import { getInitials } from '@/lib/utils';
+import { Connection } from '@/lib/firestoreHelpers';
+import { ConnectionFilters } from '@/components/dashboard/ConnectionFilters';
 
 interface Goal {
   title: string;
@@ -55,72 +34,12 @@ interface ProcessingStep {
   status: 'pending' | 'in_progress' | 'completed' | 'error';
 }
 
-function getBackgroundColor(name: string): string {
-  const colors = [
-    'bg-blue-500',
-    'bg-green-500',
-    'bg-yellow-500',
-    'bg-red-500',
-    'bg-purple-500',
-    'bg-pink-500',
-    'bg-indigo-500',
-  ];
-  const index = name
-    .split('')
-    .reduce((acc, char) => acc + char.charCodeAt(0), 0);
-  return colors[index % colors.length];
-}
-
-function getInitials(name: string): string {
-  return name
-    .split(' ')
-    .map((part) => part[0])
-    .join('')
-    .toUpperCase()
-    .slice(0, 2);
-}
-
-// Map status to label and color classes for badge UI
-function getStatusInfo(status: Connection['status'] | undefined): {
-  label: string;
-  colorClass: string;
-} {
-  switch (status) {
-    case 'email_sent':
-      return {
-        label: 'Email Sent',
-        colorClass: 'bg-blue-600/20 text-blue-400',
-      };
-    case 'response_received':
-      return {
-        label: 'Responded',
-        colorClass: 'bg-cyan-600/20 text-cyan-400',
-      };
-    case 'internship_acquired':
-      return {
-        label: 'Internship Acquired',
-        colorClass: 'bg-green-600/20 text-green-400',
-      };
-    case 'rejected':
-      return { label: 'Rejected', colorClass: 'bg-red-600/20 text-red-400' };
-    case 'ghosted':
-      return {
-        label: 'No Response',
-        colorClass: 'bg-yellow-600/20 text-yellow-400',
-      };
-    case 'not_contacted':
-    default:
-      return {
-        label: 'Not Contacted',
-        colorClass: 'bg-gray-600/20 text-gray-400',
-      };
-  }
-}
-
 export default function Dashboard() {
   const [file, setFile] = useState<File | null>(null);
   const [goals, setGoals] = useState<string | Goal[]>('');
-  const [selectedView, setSelectedView] = useState<'goal' | 'people'>('goal');
+  const [selectedView, setSelectedView] = useState<
+    'goal' | 'programs' | 'connections'
+  >('goal');
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -131,6 +50,7 @@ export default function Dashboard() {
   const [uploadError, setUploadError] = useState('');
   const [uploadSuccess, setUploadSuccess] = useState(false);
   const [currentStatus, setCurrentStatus] = useState<string>('');
+  const [showArchive, setShowArchive] = useState(false);
   const [steps, setSteps] = useState<ProcessingStep[]>([
     { id: 'prepare', label: 'Preparing upload', status: 'pending' },
     { id: 'upload', label: 'Uploading file', status: 'pending' },
@@ -138,6 +58,105 @@ export default function Dashboard() {
     { id: 'analyze', label: 'AI analysis', status: 'pending' },
     { id: 'store', label: 'Processing results', status: 'pending' },
   ]);
+
+  // State for filters for main connections and archived connections
+  const [filters, setFilters] = useState<{
+    type: string;
+    company: string;
+    education: string;
+    search: string;
+  }>({
+    type: '',
+    company: '',
+    education: '',
+    search: '',
+  });
+
+  const [archiveFilters, setArchiveFilters] = useState<{
+    type: string;
+    company: string;
+    education: string;
+    search: string;
+  }>({
+    type: '',
+    company: '',
+    education: '',
+    search: '',
+  });
+
+  // Handle filter changes
+  const handleFilterChange = (newFilters: any, isArchive: boolean) => {
+    if (isArchive) {
+      setArchiveFilters(newFilters);
+    } else {
+      setFilters(newFilters);
+    }
+  };
+
+  // Apply filters to connections
+  const filteredConnections = useMemo(() => {
+    let result = [...connections];
+    const activeFilters = showArchive ? archiveFilters : filters;
+
+    // Apply status filter (archived/active)
+    if (showArchive) {
+      result = result.filter((c: Connection) => c.status === 'internship_acquired');
+    } else {
+      result = result.filter((c: Connection) => c.status !== 'internship_acquired');
+    }
+
+    // Apply search filter
+    if (activeFilters.search) {
+      const searchTerm = activeFilters.search.toLowerCase();
+      result = result.filter(
+        (c: Connection) =>
+          c.name?.toLowerCase().includes(searchTerm) ||
+          c.company?.toLowerCase().includes(searchTerm) ||
+          c.current_role?.toLowerCase().includes(searchTerm) ||
+          c.description?.toLowerCase().includes(searchTerm)
+      );
+    }
+
+    // Apply company filter
+    if (activeFilters.company) {
+      result = result.filter((c: Connection) => c.company === activeFilters.company);
+    }
+
+    // Apply type filter (academia/industry)
+    if (activeFilters.type) {
+      result = result.filter((c: Connection) => {
+        const companyName = c.company?.toLowerCase() || '';
+        if (activeFilters.type === 'academia') {
+          return companyName.includes('university') || 
+                 companyName.includes('college') ||
+                 c.type === 'program';
+        } else {
+          return !companyName.includes('university') && 
+                 !companyName.includes('college') &&
+                 c.type !== 'program';
+        }
+      });
+    }
+
+    // Apply education level filter
+    if (activeFilters.education) {
+      result = result.filter((c: Connection) => {
+        const role = c.current_role?.toLowerCase() || '';
+        switch (activeFilters.education) {
+          case 'undergraduate':
+            return role.includes('undergrad') || role.includes('bachelor');
+          case 'graduate':
+            return role.includes('grad') || role.includes('master');
+          case 'postgraduate':
+            return role.includes('phd') || role.includes('postdoc') || role.includes('post-doc');
+          default:
+            return true;
+        }
+      });
+    }
+
+    return result;
+  }, [connections, showArchive, filters, archiveFilters]);
 
   // Listen for Firebase Auth state changes
   useEffect(() => {
@@ -218,7 +237,7 @@ export default function Dashboard() {
   const handleStatusChange = async (
     connectionId: string,
     newStatus: Connection['status']
-  ) => {
+  ): Promise<void> => {
     if (!currentUser) return;
     try {
       // Optimistic UI update
@@ -251,6 +270,24 @@ export default function Dashboard() {
   };
 
   // Fetch additional connections from the backend and merge with existing list
+  // Preferences state for what types of connections to search for using reusable component
+  const [preferences, setPreferences] = useState(() => {
+    if (typeof window === 'undefined')
+      return { connections: true, programs: true };
+    const stored = localStorage.getItem('connectionPreferences');
+    return stored ? JSON.parse(stored) : { connections: true, programs: true };
+  });
+
+  // Persist prefs
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(
+        'connectionPreferences',
+        JSON.stringify(preferences)
+      );
+    }
+  }, [preferences]);
+
   const fetchMoreConnections = async () => {
     if (!currentUser) return;
 
@@ -293,6 +330,10 @@ export default function Dashboard() {
         body: JSON.stringify({
           goals: goalsPayload,
           resumeContext: resumeData?.text || '',
+          preferences: {
+            programs: preferences.programs,
+            connections: preferences.connections,
+          },
           race: userData?.race || '',
           location: userData?.location || '',
         }),
@@ -482,250 +523,110 @@ export default function Dashboard() {
         <div className='flex gap-6'>
           {/* Main Content */}
           <div className='flex-1 m-'>
-              <div className='bg-[#1a1a1a] p-6 rounded-2xl'>
-                {/* View Selector */}
-                <div className='mb-6'>
-                  <AnimatedTabs
-                    tabs={[
-                      { title: 'Current Goal', value: 'goal' },
-                      { title: 'Programs / Connections', value: 'people' },
-                    ]}
-                    containerClassName=''
-                    activeTabClassName='bg-accent/20'
-                    onChange={(id) => setSelectedView(id as 'goal' | 'people')}
-                  />
-                </div>
+            <div className='bg-[#1a1a1a] p-6 rounded-2xl'>
+              {/* View Selector */}
+              <div className='mb-6'>
+                <AnimatedTabs
+                  tabs={[
+                    { title: 'Current Goal', value: 'goal' },
+                    { title: 'Programs', value: 'programs' },
+                    {
+                      title: 'Connections (For Cold Outreach)',
+                      value: 'connections',
+                    },
+                  ]}
+                  containerClassName=''
+                  activeTabClassName='bg-accent/20'
+                  onChange={(id) =>
+                    setSelectedView(id as 'goal' | 'programs' | 'connections')
+                  }
+                />
+              </div>
 
-                {/* Content Sections */}
-                {selectedView === 'goal' && (
-                  <div className='space-y-4'>
-                    <div className='bg-[#2a2a2a] p-4 rounded-lg'>
-                      <h3 className='text-white font-medium mb-2'>
-                        Current Goal
-                      </h3>
-                      <textarea
-                        className='w-full h-24 px-3 py-2 text-gray-300 bg-[#1a1a1a] rounded-lg focus:outline-none'
-                        value={typeof goals === 'string' ? goals : ''}
-                        onChange={(e) => setGoals(e.target.value)}
-                        placeholder='Describe your current career goal...'
-                      />
-                      <BorderMagicButton
-                        onClick={saveGoal}
-                        disabled={saving}
-                        className='mt-2'
-                      >
-                        {saving ? 'Saving...' : 'Save Goal'}
-                      </BorderMagicButton>
-                    </div>
+              {/* Content Sections */}
+              {selectedView === 'goal' && (
+                <div className='space-y-4'>
+                  <div className='bg-[#2a2a2a] p-4 rounded-lg'>
+                    <h3 className='text-white font-medium mb-2'>
+                      Current Goal (What do you want to do? Be as specific as
+                      possible)
+                    </h3>
+                    <textarea
+                      className='w-full h-24 px-3 py-2 text-gray-300 bg-[#1a1a1a] rounded-lg focus:outline-none'
+                      value={typeof goals === 'string' ? goals : ''}
+                      onChange={(e) => setGoals(e.target.value)}
+                      placeholder='Describe your current career goal...'
+                    />
+                    <BorderMagicButton
+                      onClick={saveGoal}
+                      disabled={saving}
+                      className='mt-2'
+                    >
+                      {saving ? 'Saving...' : 'Save Goal'}
+                    </BorderMagicButton>
                   </div>
-                )}
+                </div>
+              )}
 
-                {selectedView === 'people' && (
-                  <div className='space-y-4'>
-                    <div className='bg-[#2a2a2a] p-4 rounded-lg'>
-                      {connections && connections.length > 0 ? (
-                        <>
-                          <div className='grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4'>
-                            {connections.map((connection) => {
-                              console.log('Connection data:', {
-                                id: connection.id,
-                                name: connection.name,
-                                description: connection.description,
-                                type: connection.type,
-                                matchPercentage: connection.matchPercentage,
-                              });
-                              return (
-                                <div
-                                  key={connection.id}
-                                  className='bg-[#1a1a1a] p-5 rounded-2xl flex items-start gap-4 h-full min-w-0'
-                                >
-                                  <div className='relative'>
-                                    <div
-                                      className={`w-12 h-12 rounded-full flex items-center justify-center text-white font-medium ${getBackgroundColor(
-                                        connection.name
-                                      )}`}
-                                    >
-                                      {getInitials(connection.name)}
-                                    </div>
-                                  </div>
-                                  <div className='flex-1 overflow-auto'>
-                                    {/* Header: name + status badge + LinkedIn */}
-                                    <div className='flex flex-wrap items-center justify-between gap-2 mb-1'>
-                                      <div className='flex items-center gap-2 min-w-0'>
-                                        <h3 className='text-white font-medium truncate'>
-                                          {connection.name}
-                                        </h3>
-                                        {/* Status badge */}
-                                        {(() => {
-                                          const { label, colorClass } =
-                                            getStatusInfo(connection.status);
-                                          return (
-                                            <span
-                                              className={`text-xs font-medium px-2 py-0.5 rounded ${colorClass}`}
-                                            >
-                                              {label}
-                                            </span>
-                                          );
-                                        })()}
-                                      </div>
-                                      {/* External links */}
-                                      <div className='flex items-center gap-2 flex-shrink-0'>
-                                        {/* Program website link */}
-                                        {connection.type === 'program' && (
-                                          <>
-                                            {(connection.website_url ||
-                                              (connection as any).url) && (
-                                              <a
-                                                href={
-                                                  connection.website_url ||
-                                                  (connection as any).url
-                                                }
-                                                target='_blank'
-                                                rel='noopener noreferrer'
-                                                className='text-blue-500 font-medium text-sm underline'
-                                              >
-                                                Website
-                                              </a>
-                                            )}
-                                          </>
-                                        )}
-
-                                        {/* LinkedIn link for person connections */}
-                                        {connection.type === 'person' &&
-                                          connection.linkedin_url && (
-                                            <a
-                                              href={connection.linkedin_url}
-                                              target='_blank'
-                                              rel='noopener noreferrer'
-                                              className='text-blue-500 font-medium text-sm underline'
-                                            >
-                                              Connect
-                                            </a>
-                                          )}
-                                      </div>
-                                    </div>
-
-                                    {/* Secondary info */}
-                                    <p className='text-gray-400 text-sm mb-1'>
-                                      {connection.type === 'program' ? (
-                                        <>
-                                          {connection.program_type && (
-                                            <span className='capitalize'>
-                                              {connection.program_type}
-                                            </span>
-                                          )}
-                                          {connection.organization && (
-                                            <>
-                                              {connection.program_type && ' • '}
-                                              <span>
-                                                {connection.organization}
-                                              </span>
-                                            </>
-                                          )}
-                                        </>
-                                      ) : (
-                                        <>
-                                          {connection.current_role && (
-                                            <span>
-                                              {connection.current_role}
-                                            </span>
-                                          )}
-                                          {connection.company && (
-                                            <>
-                                              {connection.current_role &&
-                                                ' at '}
-                                              <span>{connection.company}</span>
-                                            </>
-                                          )}
-                                        </>
-                                      )}
-                                    </p>
-
-                                    {/* Description - with debug comment */}
-                                    {connection.description ? (
-                                      <p className='text-gray-400 text-xs mt-2 mb-2 border-t border-gray-700 pt-2 break-words max-h-32 pr-1 overflow-y-auto'>
-                                        {connection.description}
-                                      </p>
-                                    ) : (
-                                      <p className='text-gray-500 text-xs mt-2 mb-2 border-t border-gray-700 pt-2'>
-                                        {/* Debug info */}
-                                        No description available for{' '}
-                                        {connection.name}
-                                      </p>
-                                    )}
-
-                                    {/* Status selector */}
-                                    <div className='mt-2'>
-                                      <select
-                                        value={
-                                          connection.status || 'not_contacted'
-                                        }
-                                        onChange={(e) =>
-                                          handleStatusChange(
-                                            connection.id,
-                                            e.target
-                                              .value as Connection['status']
-                                          )
-                                        }
-                                        className='bg-[#2a2a2a] text-gray-300 text-xs px-2 py-1 rounded focus:outline-none'
-                                      >
-                                        <option value='not_contacted'>
-                                          Not Contacted
-                                        </option>
-                                        <option value='email_sent'>
-                                          Email/Message Sent / Waiting for
-                                          Response
-                                        </option>
-                                        <option value='response_received'>
-                                          Responded
-                                        </option>
-                                        <option value='internship_acquired'>
-                                          Internship Acquired
-                                        </option>
-                                        <option value='ghosted'>
-                                          No Response
-                                        </option>
-                                        <option value='rejected'>
-                                          Rejected
-                                        </option>
-                                      </select>
-                                    </div>
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                          <div className='pt-4 flex justify-center'>
-                            <StatefulButton
-                              disabled={findingMore}
-                              onClick={() => fetchMoreConnections()}
-                              className='w-full md:w-auto'
-                            >
-                              Find more connections
-                            </StatefulButton>
-                          </div>
-                        </>
+              {selectedView === 'programs' && (
+                <div className='space-y-4'>
+                  <div className='bg-[#2a2a2a] p-4 rounded-lg'>
+                    <ConnectionFilters 
+                      connections={connections}
+                      isArchive={showArchive}
+                      onFilterChange={handleFilterChange}
+                      initialFilters={showArchive ? archiveFilters : filters}
+                    />
+                    <div className='grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4'>
+                      {filteredConnections.filter((c: Connection) => c.type === 'program').length > 0 ? (
+                        filteredConnections
+                          .filter((c: Connection) => c.type === 'program')
+                          .map((connection: Connection) => (
+                            <ProgramConnectionCard
+                              key={connection.id}
+                              connection={connection}
+                              onStatusChange={handleStatusChange}
+                            />
+                          ))
                       ) : (
-                        <p className='text-gray-400 text-sm'>
-                          Coming soon: AI-powered connection suggestions based
-                          on your profile and goals.
-                          <br />
-                          <div className='flex justify-center mt-3'>
-                            <StatefulButton
-                              disabled={findingMore}
-                              onClick={() => fetchMoreConnections()}
-                              className='w-full md:w-auto'
-                            >
-                              Find more connections
-                            </StatefulButton>
-                          </div>
-                        </p>
+                        <div className='col-span-full text-center py-10 text-gray-400'>
+                          No programs match your current filters.
+                        </div>
                       )}
                     </div>
                   </div>
-                )}
-              </div>
-            
+                </div>
+              )}
+              {selectedView === 'connections' && (
+                <div className='space-y-4'>
+                  <div className='bg-[#2a2a2a] p-4 rounded-lg'>
+                    <ConnectionFilters 
+                      connections={connections}
+                      isArchive={showArchive}
+                      onFilterChange={handleFilterChange}
+                      initialFilters={showArchive ? archiveFilters : filters}
+                    />
+                    <div className='grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4'>
+                      {filteredConnections.filter((c: Connection) => c.type === 'person').length > 0 ? (
+                        filteredConnections
+                          .filter((c: Connection) => c.type === 'person')
+                          .map((connection: Connection) => (
+                            <PersonConnectionCard
+                              key={connection.id}
+                              connection={connection}
+                              onStatusChange={handleStatusChange}
+                            />
+                          ))
+                      ) : (
+                        <div className='col-span-full text-center py-10 text-gray-400'>
+                          {showArchive ? 'No archived connections match your filters.' : 'No connections match your current filters.'}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
 
             {/* Resume Upload Section */}
             <div className='mt-3'>
@@ -743,12 +644,28 @@ export default function Dashboard() {
                 {/* Upload button and feedback */}
                 <div className='mt-4 flex flex-col items-center'>
                   {(uploading ||
-                    steps.some((step) => step.status === 'completed')) && (
-                    <MultiStepLoader
-                      loadingStates={steps.map((s) => ({ text: s.label }))}
-                      loading={uploading}
-                    />
-                  )}
+                    steps.some((step) => step.status === 'completed')) &&
+                    (() => {
+                      const inProgressIndex = steps.findIndex(
+                        (step) => step.status === 'in_progress'
+                      );
+                      const progressIndex =
+                        inProgressIndex !== -1
+                          ? inProgressIndex
+                          : Math.max(
+                              0,
+                              steps.filter((s) => s.status === 'completed')
+                                .length - 1
+                            );
+                      return (
+                        <MultiStepLoader
+                          loadingStates={steps.map((s) => ({ text: s.label }))}
+                          loading={uploading}
+                          progressIndex={progressIndex}
+                          loop={false}
+                        />
+                      );
+                    })()}
                   <BorderMagicButton
                     onClick={handleResumeUpload}
                     disabled={uploading || !file}
@@ -757,7 +674,9 @@ export default function Dashboard() {
                     {uploading ? 'Updating...' : 'Update Resume'}
                   </BorderMagicButton>
                   {uploadError && (
-                    <div className='mt-2 text-red-500 text-sm'>{uploadError}</div>
+                    <div className='mt-2 text-red-500 text-sm'>
+                      {uploadError}
+                    </div>
                   )}
                   {uploadSuccess && (
                     <div className='mt-2 text-green-500 text-sm'>
@@ -766,8 +685,138 @@ export default function Dashboard() {
                   )}
                 </div>
               </div>
+
+              {/* Archive side panel */}
+              <div className='w-64 lg:w-72 bg-[#1a1a1a] p-4 rounded-2xl h-fit mt-4'>
+                <h3 className='text-white font-medium mb-2'>Archive</h3>
+                {connections.filter((c: Connection) => c.status === 'internship_acquired').length > 0 ? (
+                  <ul className='space-y-2 max-h-64 overflow-y-auto'>
+                    {connections
+                      .filter((c: Connection) => c.status === 'internship_acquired')
+                      .map((connection: Connection) => (
+                        <li
+                          key={connection.id}
+                          className='text-gray-300 text-sm truncate'
+                        >
+                          {connection.name}
+                        </li>
+                      ))}
+                  </ul>
+                ) : (
+                  <p className='text-gray-400 text-sm'>
+                    No archived connections.
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+          <div className='space-y-4'>
+            {/* Outreach strategy side panel */}
+            <div className='w-64 lg:w-72 bg-[#1a1a1a] p-4 rounded-2xl h-fit'>
+              <h3 className='text-white font-medium mb-2'>Outreach strategy</h3>
+              <p className='text-gray-400 text-sm mb-2'>
+                In the messages (emails, LinkedIn messages, etc) you send to
+                these people, use the following strategy:
+              </p>
+              <ol className='list-decimal list-inside space-y-1 text-gray-400 text-sm'>
+                <li>Introduce yourself with your and explain your goals</li>
+                <li>
+                  Connect with the other person based on how their work
+                  resonates with / links to yours (shared background)
+                </li>
+                <li>Share your request for an internship</li>
+              </ol>
             </div>
 
+            {/* Archive side panel */}
+            <div className='w-64 lg:w-72 bg-[#1a1a1a] p-4 rounded-2xl h-fit'>
+              <div className='flex justify-between items-center mb-2'>
+                <h3 className='text-white font-medium'>Archive</h3>
+                <button
+                  onClick={() => setShowArchive(!showArchive)}
+                  className='text-gray-400 hover:text-white text-sm focus:outline-none'
+                >
+                  {showArchive
+                    ? 'Hide'
+                    : `Show (${connections.filter((c: Connection) => c.status === 'internship_acquired').length})`}
+                </button>
+              </div>
+
+              {showArchive && (
+                <div className='mt-2'>
+                  {connections.filter((c: Connection) => c.status === 'internship_acquired').length > 0 ? (
+                    <div className='grid grid-cols-1 gap-4 max-h-96 overflow-y-auto pr-2'>
+                      {connections
+                        .filter((c: Connection) => c.status === 'internship_acquired')
+                        .map((connection: Connection) => (
+                        <div
+                          key={connection.id}
+                          className='bg-[#2a2a2a] p-4 rounded-xl flex items-start gap-3 h-full min-w-0'
+                        >
+                          <div className='relative'>
+                            <div
+                              className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-medium ${getBackgroundColor(
+                                connection.name
+                              )}`}
+                            >
+                              {getInitials(connection.name)}
+                            </div>
+                          </div>
+                          <div className='flex-1 overflow-auto'>
+                            <div className='flex flex-wrap items-center justify-between gap-2 mb-1'>
+                              <h4 className='text-white font-medium text-sm truncate'>
+                                {connection.name}
+                              </h4>
+                            </div>
+                            <p className='text-gray-400 text-xs'>
+                              {connection.current_role}
+                              {connection.company &&
+                                ` at ${connection.company}`}
+                            </p>
+                            {connection.description && (
+                              <p className='text-gray-500 text-xs mt-1 line-clamp-2'>
+                                {connection.description}
+                              </p>
+                            )}
+                            <div className='mt-2 flex justify-end'>
+                              <select
+                                value={
+                                  connection.status || 'internship_acquired'
+                                }
+                                onChange={(e) =>
+                                  handleStatusChange(
+                                    connection.id,
+                                    e.target.value as Connection['status']
+                                  )
+                                }
+                                className='bg-[#3a3a3a] text-gray-200 text-xs px-2 py-1 rounded-md focus:outline-none border border-gray-600'
+                              >
+                                <option value='internship_acquired'>
+                                  Archived
+                                </option>
+                                <option value='not_contacted'>
+                                  Not Contacted
+                                </option>
+                                <option value='email_sent'>
+                                  Email/Message Sent
+                                </option>
+                                <option value='response_received'>
+                                  Responded
+                                </option>
+                              </select>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className='text-gray-400 text-sm'>
+                      No archived connections.
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}

@@ -39,7 +39,11 @@ function buildMessages(
  */
 export async function callClaude(
   prompt: string,
-  { tools = [], maxTokens = 1024, model = 'gpt-4.1' }: ClaudeCallOptions = {}
+  {
+    tools = [],
+    maxTokens = 1024,
+    model = 'gpt-4.1-mini',
+  }: ClaudeCallOptions = {}
 ): Promise<string> {
   const client = new OpenAI();
   const messages = buildMessages(prompt);

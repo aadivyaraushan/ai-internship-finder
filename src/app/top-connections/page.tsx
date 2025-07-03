@@ -11,7 +11,6 @@ import {
   updateUserConnections,
 } from '@/lib/firestoreHelpers';
 import BorderMagicButton from '@/components/ui/BorderMagicButton';
-import { BackgroundGradient } from '@/components/ui/BackgroundGradient';
 
 interface Connection {
   id: string;
@@ -19,6 +18,7 @@ interface Connection {
   imageUrl: string;
   matchPercentage?: number;
   linkedin_url?: string;
+  email?: string;
   type?: 'person' | 'program';
   program_description?: string;
   program_type?: string;
@@ -52,10 +52,8 @@ interface Connection {
       type: string;
     }>;
   };
-  outreach_strategy?: {
-    shared_background_points: string[];
-    suggested_approach: string;
-  };
+  shared_background_points?: string[];
+  suggested_approach?: string;
 }
 
 function getInitials(name: string): string {
@@ -84,8 +82,7 @@ function getRandomColor(name: string): string {
 
 function generateMatchExplanation(connection: Connection): React.ReactNode {
   const sharedBackgroundPoints: string[] =
-    connection.outreach_strategy?.shared_background_points || [];
-  const matchDetails: string[] = [];
+    connection.shared_background_points || [];
 
   const sanitize = (text: string | undefined): string =>
     text ? text.replace(/<cite[^>]*>|<\/cite>/g, '') : '';
@@ -114,24 +111,6 @@ function generateMatchExplanation(connection: Connection): React.ReactNode {
     );
   }
 
-  // Add education matches
-  if (connection.exact_matches?.education) {
-    const edu = connection.exact_matches.education;
-    matchDetails.push(`Same university: ${sanitize(edu.university)}`);
-    if (edu.degree) matchDetails.push(`Same degree: ${sanitize(edu.degree)}`);
-    if (edu.graduation_year)
-      matchDetails.push(`Graduation year: ${sanitize(edu.graduation_year)}`);
-  }
-
-  // Add shared activities
-  connection.exact_matches?.shared_activities?.forEach((activity) => {
-    matchDetails.push(
-      `${sanitize(activity.type)}: ${sanitize(activity.name)} (${sanitize(
-        activity.year
-      )})`
-    );
-  });
-
   return (
     <div className='space-y-2'>
       <p className='text-gray-300 font-medium'>
@@ -153,19 +132,10 @@ function generateMatchExplanation(connection: Connection): React.ReactNode {
           We think this person is a great match because:
         </p>
         <ul className='list-disc list-inside space-y-1 text-gray-400 text-sm'>
-          {matchDetails.map((detail, index) => (
-            <li key={index}>{sanitize(detail)}</li>
-          ))}
           {sharedBackgroundPoints.map((point, index) => (
             <li key={`bp-${index}`}>{sanitize(point)}</li>
           ))}
         </ul>
-        {connection.outreach_strategy?.suggested_approach && (
-          <p className='text-gray-400 text-sm mt-2'>
-            <span className='text-blue-400'>Suggested approach:</span>{' '}
-            {sanitize(connection.outreach_strategy.suggested_approach)}
-          </p>
-        )}
       </div>
     </div>
   );
@@ -198,6 +168,13 @@ export default function TopConnections() {
   };
 
   useEffect(() => {
+    const storedPrefs =
+      typeof window !== 'undefined'
+        ? localStorage.getItem('connectionPreferences')
+        : null;
+    const parsedPrefs: { programs: boolean; connections: boolean } = storedPrefs
+      ? JSON.parse(storedPrefs)
+      : { programs: true, connections: true };
     if (!checkAuth()) {
       router.push('/signup');
       return;
@@ -246,6 +223,7 @@ export default function TopConnections() {
             resumeContext: resumeData?.text || '',
             race: userData.race || '',
             location: userData.location || '',
+            preferences: parsedPrefs,
           }),
         });
 
@@ -296,133 +274,152 @@ export default function TopConnections() {
   return (
     <div className='min-h-screen flex items-center justify-center bg-[#0a0a0a] p-4'>
       {/* <BackgroundGradient className='rounded-3xl w-full max-w-7xl'> */}
-        <div className='bg-[#1a1a1a] p-8 rounded-2xl w-full'>
-          <h1 className='text-2xl font-semibold text-white text-center mb-1'>
-            {inProgress
-              ? `Finding Your Top Connections${
-                  connections.length > 0 ? ` (${connections.length} found)` : ''
-                }`
-              : `Your Top Connections (${connections.length})`}
-          </h1>
-          <p className='text-gray-400 text-sm text-center mb-8'>
-            {inProgress
-              ? 'Please wait while we analyze your profile and identify the best matches for you'
-              : 'Based on your goals and resume'}
-          </p>
+      <div className='bg-[#1a1a1a] p-8 rounded-2xl w-full'>
+        <h1 className='text-2xl font-semibold text-white text-center mb-1'>
+          {inProgress
+            ? `Finding Your Top Connections${
+                connections.length > 0 ? ` (${connections.length} found)` : ''
+              }`
+            : `Your Top Connections (${connections.length})`}
+        </h1>
+        <p className='text-gray-400 text-sm text-center mb-8'>
+          {inProgress
+            ? 'Please wait while we analyze your profile and identify the best matches for you'
+            : 'Based on your goals and resume'}
+        </p>
 
-          {error && (
-            <div className='mb-4 p-3 bg-red-500/10 border border-red-500 rounded-lg text-red-500 text-sm'>
-              {error}
-            </div>
-          )}
+        {error && (
+          <div className='mb-4 p-3 bg-red-500/10 border border-red-500 rounded-lg text-red-500 text-sm'>
+            {error}
+          </div>
+        )}
 
-          {(loading || steps.some((step) => step.status === 'completed')) && (
-            <MultiStepLoader
-              loadingStates={steps.map((s) => ({ text: s.label }))}
-              loading={loading}
-            />
-          )}
+        {(loading || steps.some((step) => step.status === 'completed')) &&
+          (() => {
+            const inProgressIndex = steps.findIndex(
+              (step) => step.status === 'in_progress'
+            );
+            const progressIndex =
+              inProgressIndex !== -1
+                ? inProgressIndex
+                : Math.max(
+                    0,
+                    steps.filter((s) => s.status === 'completed').length - 1
+                  );
+            return (
+              <MultiStepLoader
+                loadingStates={steps.map((s) => ({ text: s.label }))}
+                loading={loading}
+                progressIndex={progressIndex}
+                loop={false}
+              />
+            );
+          })()}
 
-          {!inProgress && connections.length === 0 && (
-            <div className='text-center'>
-              <p className='text-gray-400 mb-6'>
-                We couldn't find any relevant connections. Please try updating
-                your goals and resume.
-              </p>
-              <button
-                onClick={() => router.push('/upload-resume')}
-                className='px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors'
+        {!inProgress && connections.length === 0 && (
+          <div className='text-center'>
+            <p className='text-gray-400 mb-6'>
+              We couldn't find any relevant connections. Please try updating
+              your goals and resume.
+            </p>
+            <button
+              onClick={() => router.push('/upload-resume')}
+              className='px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors'
+            >
+              Update Goals
+            </button>
+          </div>
+        )}
+
+        {!inProgress && connections.length > 0 && (
+          <div className='grid grid-cols-1 md:grid-cols-2 gap-6'>
+            {connections.map((connection, index) => (
+              <div
+                key={index}
+                className='bg-[#2a2a2a] p-6 rounded-lg flex items-start gap-4 h-full'
               >
-                Update Goals
-              </button>
-            </div>
-          )}
-
-          {!inProgress && connections.length > 0 && (
-            <div className='grid grid-cols-1 md:grid-cols-2 gap-6'>
-              {connections.map((connection, index) => (
-                <div
-                  key={index}
-                  className='bg-[#2a2a2a] p-6 rounded-lg flex items-start gap-4 h-full'
-                >
-                  <div className='relative'>
-                    <div
-                      className={`w-12 h-12 rounded-full flex items-center justify-center text-white font-medium ${getRandomColor(
-                        connection.name
-                      )}`}
-                    >
-                      {getInitials(connection.name)}
-                    </div>
-                  </div>
-                  <div className='flex-1 min-w-0'>
-                    <div className='flex items-center justify-between mb-4'>
-                      <div className='min-w-0'>
-                        <h3 className='text-white font-medium text-lg truncate'>
-                          {connection.name}
-                          {connection.type === 'program' && (
-                            <span className='ml-2 px-2 py-0.5 rounded bg-indigo-600 text-xs text-white'>
-                              PROGRAM
-                            </span>
-                          )}
-                        </h3>
-                        {connection.type === 'person' &&
-                          connection.current_role && (
-                            <p className='text-gray-400 truncate'>
-                              {connection.current_role} at {connection.company}
-                            </p>
-                          )}
-                        {connection.type === 'program' &&
-                          connection.organization && (
-                            <p className='text-gray-400 truncate'>
-                              {connection.organization}
-                            </p>
-                          )}
-                      </div>
-                      {/* External links for this connection */}
-                      <div className='flex items-center flex-shrink-0 ml-2 space-x-2'>
-                        {/* Show program website link */}
-                        {connection.type === 'program' &&
-                          connection.website_url && (
-                            <a
-                              href={connection.website_url}
-                              target='_blank'
-                              rel='noopener noreferrer'
-                              className='text-blue-500 font-medium text-sm underline'
-                            >
-                              Website
-                            </a>
-                          )}
-
-                        {/* Show LinkedIn link only for person connections */}
-                        {connection.type === 'person' &&
-                          connection.linkedin_url && (
-                            <a
-                              href={connection.linkedin_url}
-                              target='_blank'
-                              rel='noopener noreferrer'
-                              className='text-blue-500 font-medium text-sm underline'
-                            >
-                              Connect
-                            </a>
-                          )}
-                      </div>
-                    </div>
-                    {generateMatchExplanation(connection)}
+                <div className='relative'>
+                  <div
+                    className={`w-12 h-12 rounded-full flex items-center justify-center text-white font-medium ${getRandomColor(
+                      connection.name
+                    )}`}
+                  >
+                    {getInitials(connection.name)}
                   </div>
                 </div>
-              ))}
-            </div>
-          )}
+                <div className='flex-1 min-w-0'>
+                  <div className='flex items-center justify-between mb-4'>
+                    <div className='min-w-0'>
+                      <h3 className='text-white font-medium text-lg truncate'>
+                        {connection.name}
+                        {connection.type === 'program' && (
+                          <span className='ml-2 px-2 py-0.5 rounded bg-indigo-600 text-xs text-white'>
+                            PROGRAM
+                          </span>
+                        )}
+                      </h3>
+                      {connection.type === 'person' &&
+                        connection.current_role && (
+                          <p className='text-gray-400 truncate'>
+                            {connection.current_role} at {connection.company}
+                          </p>
+                        )}
+                      {connection.type === 'program' &&
+                        connection.organization && (
+                          <p className='text-gray-400 truncate'>
+                            {connection.organization}
+                          </p>
+                        )}
+                    </div>
+                    {/* External links for this connection */}
+                    <div className='flex items-center flex-shrink-0 ml-2 space-x-2'>
+                      {/* Show program website link */}
+                      {connection.type === 'program' &&
+                        connection.website_url && (
+                          <a
+                            href={connection.website_url}
+                            target='_blank'
+                            rel='noopener noreferrer'
+                            className='text-blue-500 font-medium text-sm underline'
+                          >
+                            Website
+                          </a>
+                        )}
 
-          {/* Go to Dashboard button now at bottom */}
-          {!inProgress && (
-            <div className='flex justify-center mt-8'>
-              <BorderMagicButton onClick={() => router.push('/dashboard')}>
-                Go to Dashboard
-              </BorderMagicButton>
-            </div>
-          )}
-        </div>
+                      {/* Show contact link for person connections */}
+                      {connection.type === 'person' &&
+                        (connection.email || connection.linkedin_url) && (
+                          <a
+                            href={
+                              connection.email
+                                ? `mailto:${connection.email}`
+                                : connection.linkedin_url
+                            }
+                            target='_blank'
+                            rel='noopener noreferrer'
+                            className='text-blue-500 font-medium text-sm underline'
+                          >
+                            Connect
+                          </a>
+                        )}
+                    </div>
+                  </div>
+                  {generateMatchExplanation(connection)}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Go to Dashboard button now at bottom */}
+        {!inProgress && (
+          <div className='flex justify-center mt-8'>
+            <BorderMagicButton onClick={() => router.push('/dashboard')}>
+              Go to Dashboard
+            </BorderMagicButton>
+          </div>
+        )}
+      </div>
       {/* </BackgroundGradient> */}
     </div>
   );

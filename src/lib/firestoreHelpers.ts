@@ -5,56 +5,29 @@ import { db, auth } from './firebase';
 export interface Connection {
   id: string;
   name: string;
-  current_role: string;
-  company: string;
-  hiring_power: {
-    role_type: 'hiring_manager' | 'team_lead' | 'senior_with_referral';
-    can_hire_interns: boolean;
-    department: string;
-  };
-  exact_matches: {
-    education: {
-      university: string;
-      graduation_year: string;
-      degree: string;
-    };
-    shared_activities: Array<{
-      name: string;
-      year: string;
-      type: 'club' | 'competition' | 'workplace' | 'certification';
-    }>;
-  };
-  career_path: {
-    starting_point: string;
-    key_transition: string;
-    time_in_industry: string;
-  };
-  outreach_strategy: {
-    shared_background_points: string[];
-    unique_connection_angle: string;
-    suggested_approach: string;
-  };
-  contact_info: {
-    public_profile: string;
-    work_email: string | null;
-    contact_source: string;
-  };
-  match_details: {
-    total_percentage: number;
-    hiring_power_score: number;
-    background_match_score: number;
-    career_path_score: number;
-    scoring_explanation: string;
-  };
-  status:
+  imageUrl?: string;
+  matchPercentage?: number;
+  linkedin_url?: string;
+  email?: string;
+  type?: 'person' | 'program';
+  program_description?: string;
+  program_type?: string;
+  organization?: string;
+  website_url?: string;
+  enrollment_info?: string;
+  how_this_helps?: string;
+  description?: string;
+  status?:
     | 'not_contacted'
     | 'email_sent'
     | 'response_received'
     | 'meeting_scheduled'
     | 'rejected'
-    | 'ghosted';
-  lastUpdated: string;
-  notes?: string;
+    | 'ghosted'
+    | 'internship_acquired';
+  current_role?: string;
+  company?: string;
+  shared_background_points?: string[];
 }
 
 // USERS

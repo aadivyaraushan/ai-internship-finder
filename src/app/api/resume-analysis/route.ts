@@ -6,8 +6,6 @@ import { writeFile, unlink } from 'fs/promises';
 import { join } from 'path';
 import { tmpdir } from 'os';
 
-
-
 type School = {
   school_name: string;
   clubs: string[];
@@ -22,7 +20,7 @@ type Project = {
   responsibilities: string[];
   recognition: string | null;
   skills: string[];
-}
+};
 
 type WorkExperience = {
   workplace: string;
@@ -30,7 +28,7 @@ type WorkExperience = {
   role: string;
   reference_email: string | null;
   is_alumni: boolean;
-}
+};
 
 // Define Zod schemas for each section
 const EducationSchema = z.object({
@@ -175,6 +173,7 @@ export async function POST(req: NextRequest) {
 
       const analysisResponse = await callClaude(analysisPrompt, {
         maxTokens: 1000,
+        model: 'gpt-4.1-nano',
       });
 
       // Log the raw response for debugging
@@ -223,7 +222,9 @@ export async function POST(req: NextRequest) {
                 )
               : [],
             workex: Array.isArray(parsedResponse.workex)
-              ? parsedResponse.workex.filter((w: WorkExperience) => w.workplace && w.role)
+              ? parsedResponse.workex.filter(
+                  (w: WorkExperience) => w.workplace && w.role
+                )
               : [],
             linkedin:
               typeof parsedResponse.linkedin === 'string'
