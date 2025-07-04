@@ -3,10 +3,9 @@ import { Connection } from '@/lib/firestoreHelpers';
 import { buildResumeAspectAnalyzerPrompt } from './utils/buildResumeAnalyzer';
 import { buildConnectionFinderPrompt } from './utils/connectionFinding/buildConnectionFinder';
 import { cleanAndParseJSON } from './utils/cleanAndParseJson';
-import { Role } from './utils/types';
-import { Goal } from './utils/types';
+import { Role, Goal } from './utils/utils';
 import { findAndVerifyLinkedInUrl } from './utils/urlFinding/findAndVerifyLinkedinUrl';
-import { verifyProgramWebsite } from './utils/urlFinding/verfiyProgramWebsite';
+import { verifyProgramWebsite, findAndVerifyProgramWebsite } from './utils/urlFinding/findAndVerifyProgramWebsite';
 import { findEmailWithHunter } from './utils/emailFinding/findEmailHunter';
 
 interface SharedActivity {
@@ -317,28 +316,45 @@ export async function POST(req: Request) {
                       error instanceof Error ? error.message : String(error),
                   });
                 }
-              } else if (conn.type === 'program' && conn.website_url) {
+              } else if (conn.type === 'program') {
                 try {
-                  const verificationResult = await verifyProgramWebsite(conn);
-                  if (!verificationResult.isValid) {
-                    console.warn(
-                      '⚠️ Invalid program website:',
-                      conn.website_url,
-                      verificationResult.explanation || ''
-                    );
-                    conn.website_url = null;
+                  // If we have a URL, verify it first
+                  if (conn.website_url) {
+                    const verificationResult = await verifyProgramWebsite(conn);
+                    if (!verificationResult.isValid) {
+                      console.warn(
+                        '⚠️ Invalid program website:',
+                        conn.website_url,
+                        verificationResult.explanation || ''
+                      );
+                      conn.website_url = undefined; // Clear invalid URL
+                    } else {
+                      console.log(
+                        `✅ Verified program website for: ${conn.name}`,
+                        verificationResult.matches
+                      );
+                      continue; // Skip to next connection if URL is valid
+                    }
+                  }
+                  
+                  // If we get here, either there was no URL or it was invalid
+                  // Try to find and verify a new URL
+                  console.log(`🔍 Attempting to find program website for: ${conn.name}`);
+                  const result = await findAndVerifyProgramWebsite(
+                    conn.name,
+                    conn.organization || ''
+                  );
+                  
+                  if (result.url) {
+                    conn.website_url = result.url;
+                    console.log(`✅ Found and verified program website: ${result.url}`);
                   } else {
-                    console.log(
-                      `✅ Verified program website for: ${conn.name}`,
-                      verificationResult.matches
-                    );
+                    console.warn('⚠️ Could not find a valid program website');
                   }
                 } catch (error) {
                   console.warn('❌ Program verification failed:', {
                     program: conn.name,
-                    website: conn.website_url,
-                    error:
-                      error instanceof Error ? error.message : String(error),
+                    error: error instanceof Error ? error.message : String(error),
                   });
                 }
               }
@@ -395,6 +411,7 @@ export async function POST(req: Request) {
             continue; // Skip invalid connections
           }
           try {
+            // education_level is now supplied directly by the LLM; no heuristic needed
             connections.push(connection);
             console.log('✅ Successfully added connection:', connection.name);
           } catch (error) {
@@ -427,7 +444,7 @@ export async function POST(req: Request) {
       if (
         !unique.has(key) ||
         (conn.match_details?.total_percentage || 0) >
-          (unique.get(key).match_details?.total_percentage || 0)
+          (unique.get(key)?.match_details?.total_percentage || 0)
       ) {
         unique.set(key, conn);
       }
@@ -493,9 +510,9 @@ export async function POST(req: Request) {
               `Attended ${conn.exact_matches.education.university}`
             );
           }
-          if (conn.exact_matches.shared_activities?.length > 0) {
+          if (conn.exact_matches?.shared_activities && conn.exact_matches.shared_activities.length > 0) {
             const activities = conn.exact_matches.shared_activities
-              .map((act: SharedActivity) => `${act.name} (${act.year})`)
+              .map((act) => `${act.name} (${act.year ?? ''})`)
               .join(', ');
             matchPoints.push(`Shared activities: ${activities}`);
           }
@@ -565,8 +582,9 @@ export async function POST(req: Request) {
         exact_matches: conn.exact_matches,
         shared_background_points:
           conn.shared_background_points ??
-          conn.outreach_strategy?.shared_background_points ??
-          [],
+          (typeof conn.outreach_strategy === 'object' && (conn.outreach_strategy as any)?.shared_background_points
+            ? (conn.outreach_strategy as any).shared_background_points
+            : []),
         description: description || 'No additional details available',
       };
     });

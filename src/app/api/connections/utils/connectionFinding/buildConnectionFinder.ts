@@ -1,4 +1,4 @@
-import { ConnectionAspects } from '../types';
+import { Role, Goal, ConnectionAspects } from '../utils';
 import { buildBackgroundInfoString } from './buildBackgroundInfoString';
 
 export function buildConnectionFinderPrompt({
@@ -67,8 +67,9 @@ ${ruleOne}
     - Undergraduate: Focus on internships, co-ops, and entry-level roles
     - Graduate: Focus on research, specialized roles, and advanced programs
 11. ALWAYS verify program eligibility matches candidate's education level
-12. Avoid celebrities or people who are unlikely to be accessible (e.g., very popular public figures or extremely senior C-suite executives); suggestions should focus on contacts the candidate can realistically reach.
-13. If it is unlikely to find enough connections satisfying rule 2a given the candidate's background, you may relax rule 2a. In that case, prioritize accessible connections that still align with the candidate's career goals and clearly note the lack of direct background matches.
+12. For every *person* connection include an "education_level" field set to one of: undergraduate, graduate, postgraduate
+13. Avoid celebrities or people who are unlikely to be accessible (e.g., very popular public figures or extremely senior C-suite executives); suggestions should focus on contacts the candidate can realistically reach.
+14. If it is COMPLETELY IMPOSSIBLE to find enough connections satisfying rule 2a given the candidate's background, you may relax rule 2a. In that case, prioritize accessible connections that still align with the candidate's career goals and clearly note the lack of direct background matches.
 </rules>
 <schema>
 {
@@ -79,6 +80,7 @@ ${ruleOne}
       "current_role": "string",
       "company": "string",
       "linkedin_url": "string",
+      "education_level": "undergraduate" | "graduate" | "postgraduate",
       "direct_matches": ["string"],
       "goal_alignment": "string",
       "shared_background_points": ["string"],

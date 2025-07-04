@@ -77,6 +77,7 @@ export function ConnectionFilters({
     }
   }, [isArchive]);
 
+  const hasPersonConnections = connections.some((c) => c.type !== 'program');
   // Count active filters
   const activeFilterCount = Object.values(filters).filter(Boolean).length;
 
@@ -148,26 +149,28 @@ export function ConnectionFilters({
             </div>
 
             {/* Education Level Filter */}
-            <div className="flex gap-2">
-              <select
-                value={filters.education}
-                onChange={(e) => handleFilterChange('education', e.target.value)}
-                className="flex-1 bg-zinc-800 border border-zinc-700 text-white rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"
-              >
-                <option value="">All Education Levels</option>
-                <option value="undergraduate">Undergraduate</option>
-                <option value="graduate">Graduate</option>
-                <option value="postgraduate">Postgraduate</option>
-              </select>
-              <button
-                type="button"
-                onClick={clearFilters}
-                className="px-3 py-2 text-sm text-zinc-300 hover:text-white"
-                title="Clear all filters"
-              >
-                <FiX className="h-4 w-4" />
-              </button>
-            </div>
+            {hasPersonConnections && (
+              <div className="flex gap-2">
+                <select
+                  value={filters.education}
+                  onChange={(e) => handleFilterChange('education', e.target.value)}
+                  className="flex-1 bg-zinc-800 border border-zinc-700 text-white rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"
+                >
+                  <option value="">All Education Levels</option>
+                  <option value="undergraduate">Undergraduate</option>
+                  <option value="graduate">Graduate</option>
+                  <option value="postgraduate">Postgraduate</option>
+                </select>
+                <button
+                  type="button"
+                  onClick={clearFilters}
+                  className="px-3 py-2 text-sm text-zinc-300 hover:text-white"
+                  title="Clear all filters"
+                >
+                  <FiX className="h-4 w-4" />
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}

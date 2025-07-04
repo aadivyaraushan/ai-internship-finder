@@ -1,4 +1,6 @@
 // components/ProgramConnectionCard.tsx
+import { useState } from 'react';
+import { ChevronDown, ChevronUp, CheckCircle } from 'lucide-react';
 import { getBackgroundColor, getInitials } from '@/lib/utils';
 import { Connection } from '@/lib/firestoreHelpers';
 
@@ -9,6 +11,7 @@ export function ProgramConnectionCard({
   connection: Connection;
   onStatusChange: (id: string, status: Connection['status']) => void;
 }) {
+  const [showBackground, setShowBackground] = useState(false);
   return (
     <div className='bg-[#1a1a1a] p-5 rounded-2xl flex items-start gap-4 h-full min-w-0'>
       <div className='relative'>
@@ -49,6 +52,31 @@ export function ProgramConnectionCard({
           <p className='text-gray-500 text-xs mt-2 line-clamp-2'>
             {connection.description}
           </p>
+        )}
+        {connection.shared_background_points && connection.shared_background_points.length > 0 && (
+          <div className='mt-2'>
+            <button
+              onClick={() => setShowBackground(!showBackground)}
+              className='flex items-center text-xs text-blue-400 hover:text-blue-300 transition-colors'
+            >
+              {showBackground ? (
+                <ChevronUp className='w-3 h-3 mr-1' />
+              ) : (
+                <ChevronDown className='w-3 h-3 mr-1' />
+              )}
+              {showBackground ? 'Hide' : 'Show'} why this program matches
+            </button>
+            {showBackground && (
+              <div className='mt-2 space-y-1.5'>
+                {connection.shared_background_points?.map((point, index) => (
+                  <div key={index} className='flex items-start gap-1.5'>
+                    <CheckCircle className='h-3 w-3 text-green-500 mt-0.5 flex-shrink-0' />
+                    <p className='text-xs text-gray-400'>{point}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         )}
         <div className='mt-3'>
           <select

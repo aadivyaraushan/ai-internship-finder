@@ -2,7 +2,16 @@ import { Connection } from '@/lib/firestoreHelpers';
 import axios from 'axios';
 import * as cheerio from 'cheerio';
 import { scrapeLinkedInProfile } from './scrapeLinkedinProfile';
-import { ProfileData } from '../types';
+import { ProfileData } from '../utils';
+
+// Add random delay between requests (0.75 - 2.5 seconds)
+const delay = () => {
+  const min = 750; // 0.75 seconds
+  const max = 2500; // 2.5 seconds
+  const ms = Math.floor(Math.random() * (max - min + 1)) + min;
+  console.log(`⏳ Adding search delay of ${ms}ms`);
+  return new Promise(resolve => setTimeout(resolve, ms));
+};
 
 /**
  * Utility: compute a simple token-overlap similarity (Jaccard-like) between two strings.
@@ -46,6 +55,9 @@ export async function findAndVerifyLinkedInUrl(
   ];
 
   while (!isVerifiedUrl) {
+    // Add delay before each search attempt
+    await delay();
+    
     // Build different search queries for each attempt
     let searchQuery: string;
 
@@ -95,13 +107,23 @@ export async function findAndVerifyLinkedInUrl(
     let parsedUrl: {
       potential_urls: { url: string; source_type: string }[];
     } | null = null;
+    
     try {
+      console.log(`🔍 Search attempt ${attempts + 1} for: ${name}`);
+      await delay(); // Additional delay before API request
       const serpResp = await fetch(serpUrl);
+      
       if (!serpResp.ok) {
-        throw new Error(`SerpAPI request failed: ${serpResp.status}`);
+        console.error('SERP API error:', await serpResp.text());
+        attempts++;
+        if (attempts >= 3) break;
+        continue;
       }
-      const serpJson: any = await serpResp.json();
-      const organic: any[] = serpJson.organic_results || [];
+      
+      const data = await serpResp.json();
+      
+      // Process the search results...
+      const organic: any[] = data.organic_results || [];
 
       const potential_urls = organic
         .map((r) => r.link as string)
@@ -117,12 +139,14 @@ export async function findAndVerifyLinkedInUrl(
         });
 
       parsedUrl = { potential_urls };
-    } catch (err) {
-      console.error('SerpAPI fetch error:', err);
-      parsedUrl = { potential_urls: [] };
+    } catch (error) {
+      console.error('Error during search:', error);
+      attempts++;
+      if (attempts >= 3) break;
+      await delay(); // Additional delay on error before retry
     }
 
-    if (parsedUrl?.potential_urls?.length > 0) {
+    if (parsedUrl?.potential_urls && parsedUrl.potential_urls.length > 0) {
       // Try each URL until we find a match
       for (const urlData of parsedUrl.potential_urls) {
         const url = typeof urlData === 'string' ? urlData : urlData.url;
@@ -145,10 +169,12 @@ export async function findAndVerifyLinkedInUrl(
         try {
           let profileData: ProfileData;
           if (sourceType === 'linkedin') {
+            await delay(); // Additional delay before API request
             profileData = await scrapeLinkedInProfile(url);
           } else {
             // For non-LinkedIn URLs, use a general scraping approach
             console.log(`🔍 Scraping non-LinkedIn URL: ${url}`);
+            await delay(); // Additional delay before API request
             const response = await axios.get(url, {
               headers: {
                 'User-Agent':

@@ -26,7 +26,68 @@ export interface Connection {
     | 'ghosted'
     | 'internship_acquired';
   current_role?: string;
+  /**
+   * Simplified education level for people connections. One of:
+   * 'undergraduate' | 'graduate' | 'postgraduate'
+   */
+  education_level?: 'undergraduate' | 'graduate' | 'postgraduate';
   company?: string;
+  /**
+   * Original source of the profile data (e.g. linkedin, website scrape)
+   */
+  profile_source?: string;
+
+  /**
+   * Match confidence scores returned by our matcher.
+   */
+  match_confidence?: {
+    name?: number;
+    role?: number;
+    company?: number;
+    overall?: number;
+  };
+
+  /**
+   * Detailed explanation of why this connection was matched.
+   */
+  match_details?: {
+    scoring_explanation?: string;
+    [key: string]: any;
+  };
+
+  /**
+   * Exact matches such as education and shared activities.
+   */
+  exact_matches?: {
+    education?: {
+      university?: string;
+      graduation_year?: string;
+      degree?: string;
+    };
+    shared_activities?: Array<{
+      name: string;
+      year?: string;
+      type?: string;
+    }>;
+  };
+
+  /** Additional matching dimensions */
+  direct_matches?: any;
+  goal_alignment?: string;
+
+  /** Hiring-power metadata for person connections */
+  hiring_power?: {
+    role_type: string;
+    can_hire_interns: boolean;
+    department: string;
+  };
+
+  /** Original URL (for programs) */
+  url?: string;
+
+  /** Outreach strategy suggestion */
+  outreach_strategy?: string;
+
   shared_background_points?: string[];
 }
 

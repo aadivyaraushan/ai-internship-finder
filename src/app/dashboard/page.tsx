@@ -11,7 +11,7 @@ import {
   createOrUpdateUser,
 } from '@/lib/firestoreHelpers';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
-import { onAuthStateChanged, User } from 'firebase/auth';
+import { onAuthStateChanged, User, signOut } from 'firebase/auth';
 import { MultiStepLoader } from '@/components/ui/MultiStepLoader';
 import { AnimatedTabs } from '@/components/ui/AnimatedTabs';
 import BorderMagicButton from '@/components/ui/BorderMagicButton';
@@ -22,6 +22,8 @@ import { getBackgroundColor } from '@/lib/utils';
 import { getInitials } from '@/lib/utils';
 import { Connection } from '@/lib/firestoreHelpers';
 import { ConnectionFilters } from '@/components/dashboard/ConnectionFilters';
+import { ArchiveConnectionFilters } from '@/components/dashboard/ArchiveConnectionFilters';
+import { useRouter } from 'next/navigation';
 
 interface Goal {
   title: string;
@@ -84,6 +86,17 @@ export default function Dashboard() {
     search: '',
   });
 
+  const router = useRouter();
+
+  const handleSignOut = async () => {
+    try {
+      await signOut(auth);
+      router.push('/login');
+    } catch (error) {
+      console.error('Error signing out:', error);
+    }
+  };
+
   // Handle filter changes
   const handleFilterChange = (newFilters: any, isArchive: boolean) => {
     if (isArchive) {
@@ -93,17 +106,13 @@ export default function Dashboard() {
     }
   };
 
-  // Apply filters to connections
-  const filteredConnections = useMemo(() => {
+  // ===== Filtered connection lists =====
+  const activeFilteredConnections = useMemo(() => {
     let result = [...connections];
-    const activeFilters = showArchive ? archiveFilters : filters;
+    const activeFilters = filters;
 
-    // Apply status filter (archived/active)
-    if (showArchive) {
-      result = result.filter((c: Connection) => c.status === 'internship_acquired');
-    } else {
-      result = result.filter((c: Connection) => c.status !== 'internship_acquired');
-    }
+    // Always exclude archived connections from active list
+    result = result.filter((c: Connection) => c.status !== 'internship_acquired');
 
     // Apply search filter
     if (activeFilters.search) {
@@ -141,14 +150,15 @@ export default function Dashboard() {
     // Apply education level filter
     if (activeFilters.education) {
       result = result.filter((c: Connection) => {
+        const eduLevel = (c.education_level ?? '').toLowerCase();
         const role = c.current_role?.toLowerCase() || '';
         switch (activeFilters.education) {
           case 'undergraduate':
-            return role.includes('undergrad') || role.includes('bachelor');
+            return eduLevel === 'undergraduate' || role.includes('undergrad') || role.includes('bachelor');
           case 'graduate':
-            return role.includes('grad') || role.includes('master');
+            return eduLevel === 'graduate' || role.includes('grad') || role.includes('master');
           case 'postgraduate':
-            return role.includes('phd') || role.includes('postdoc') || role.includes('post-doc');
+            return eduLevel === 'postgraduate' || role.includes('phd') || role.includes('postdoc') || role.includes('post-doc');
           default:
             return true;
         }
@@ -156,7 +166,69 @@ export default function Dashboard() {
     }
 
     return result;
-  }, [connections, showArchive, filters, archiveFilters]);
+  }, [connections, filters]);
+
+  const archivedFilteredConnections = useMemo(() => {
+    let result: Connection[] = connections.filter((c: Connection) => c.status === 'internship_acquired');
+    const activeFilters = archiveFilters;
+
+    // Apply search filter
+    if (activeFilters.search) {
+      const searchTerm = activeFilters.search.toLowerCase();
+      result = result.filter(
+        (c: Connection) =>
+          c.name?.toLowerCase().includes(searchTerm) ||
+          c.company?.toLowerCase().includes(searchTerm) ||
+          c.current_role?.toLowerCase().includes(searchTerm) ||
+          c.description?.toLowerCase().includes(searchTerm)
+      );
+    }
+
+    // Apply company filter
+    if (activeFilters.company) {
+      result = result.filter((c: Connection) => c.company === activeFilters.company);
+    }
+
+    // Apply type filter (academia/industry)
+    if (activeFilters.type) {
+      result = result.filter((c: Connection) => {
+        const companyName = c.company?.toLowerCase() || '';
+        if (activeFilters.type === 'academia') {
+          return (
+            companyName.includes('university') ||
+            companyName.includes('college') ||
+            c.type === 'program'
+          );
+        } else {
+          return (
+            !companyName.includes('university') &&
+            !companyName.includes('college') &&
+            c.type !== 'program'
+          );
+        }
+      });
+    }
+
+    // Apply education level filter
+    if (activeFilters.education) {
+      result = result.filter((c: Connection) => {
+        const eduLevel = (c.education_level ?? '').toLowerCase();
+        const role = c.current_role?.toLowerCase() || '';
+        switch (activeFilters.education) {
+          case 'undergraduate':
+            return eduLevel === 'undergraduate' || role.includes('undergrad') || role.includes('bachelor');
+          case 'graduate':
+            return eduLevel === 'graduate' || role.includes('grad') || role.includes('master');
+          case 'postgraduate':
+            return eduLevel === 'postgraduate' || role.includes('phd') || role.includes('postdoc') || role.includes('post-doc') || role.includes('postgraduate');
+          default:
+            return true;
+        }
+      });
+    }
+
+    return result;
+  }, [connections, archiveFilters]);
 
   // Listen for Firebase Auth state changes
   useEffect(() => {
@@ -270,6 +342,20 @@ export default function Dashboard() {
   };
 
   // Fetch additional connections from the backend and merge with existing list
+  // State for connection type preferences
+  const [connectionTypePrefs, setConnectionTypePrefs] = useState({
+    connections: true,
+    programs: true,
+  });
+
+  // Toggle preference for connection types
+  const toggleConnectionType = (type: 'connections' | 'programs') => {
+    setConnectionTypePrefs(prev => ({
+      ...prev,
+      [type]: !prev[type],
+    }));
+  };
+
   // Preferences state for what types of connections to search for using reusable component
   const [preferences, setPreferences] = useState(() => {
     if (typeof window === 'undefined')
@@ -289,10 +375,16 @@ export default function Dashboard() {
   }, [preferences]);
 
   const fetchMoreConnections = async () => {
-    if (!currentUser) return;
+    if (!currentUser || (!connectionTypePrefs.connections && !connectionTypePrefs.programs)) return;
 
     try {
       setFindingMore(true);
+
+      // Update preferences based on current checkbox state
+      setPreferences({
+        connections: connectionTypePrefs.connections,
+        programs: connectionTypePrefs.programs,
+      });
 
       // Refresh user + resume data to build the payload
       const userData: any = await getUser(currentUser.uid);
@@ -510,11 +602,17 @@ export default function Dashboard() {
 
   return (
     <div className='min-h-screen bg-[#0a0a0a] p-4'>
-      {/* Logo */}
-      <div className='mb-8'>
+      {/* Header */}
+      <div className='flex justify-between items-center mb-8'>
         <div className='bg-[#2a2a2a] inline-block p-4 rounded-xl'>
           <h1 className='text-white text-2xl font-mono'>Refr ☕️</h1>
         </div>
+        <button
+          onClick={handleSignOut}
+          className='bg-[#2a2a2a] text-gray-300 hover:text-white px-4 py-2 rounded-lg text-sm'
+        >
+          Sign Out
+        </button>
       </div>
 
       {loading ? (
@@ -529,11 +627,11 @@ export default function Dashboard() {
                 <AnimatedTabs
                   tabs={[
                     { title: 'Current Goal', value: 'goal' },
-                    { title: 'Programs', value: 'programs' },
                     {
                       title: 'Connections (For Cold Outreach)',
                       value: 'connections',
                     },
+                    { title: 'Programs', value: 'programs' },
                   ]}
                   containerClassName=''
                   activeTabClassName='bg-accent/20'
@@ -572,14 +670,14 @@ export default function Dashboard() {
                 <div className='space-y-4'>
                   <div className='bg-[#2a2a2a] p-4 rounded-lg'>
                     <ConnectionFilters 
-                      connections={connections}
-                      isArchive={showArchive}
+                      connections={selectedView === 'programs' ? connections.filter((c: Connection) => c.type === 'program') : connections.filter((c: Connection) => c.type === 'person')}
+                      isArchive={false}
                       onFilterChange={handleFilterChange}
-                      initialFilters={showArchive ? archiveFilters : filters}
+                      initialFilters={filters}
                     />
                     <div className='grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4'>
-                      {filteredConnections.filter((c: Connection) => c.type === 'program').length > 0 ? (
-                        filteredConnections
+                      {activeFilteredConnections.filter((c: Connection) => c.type === 'program').length > 0 ? (
+                        activeFilteredConnections
                           .filter((c: Connection) => c.type === 'program')
                           .map((connection: Connection) => (
                             <ProgramConnectionCard
@@ -594,6 +692,35 @@ export default function Dashboard() {
                         </div>
                       )}
                     </div>
+                    <div className='pt-4 flex flex-col items-center space-y-3'>
+                      <div className='flex justify-center space-x-6'>
+                        <label className='flex items-center space-x-2 cursor-pointer'>
+                          <input
+                            type='checkbox'
+                            checked={connectionTypePrefs.connections}
+                            onChange={() => toggleConnectionType('connections')}
+                            className='form-checkbox h-4 w-4 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500'
+                          />
+                          <span className='text-gray-300'>Connections</span>
+                        </label>
+                        <label className='flex items-center space-x-2 cursor-pointer'>
+                          <input
+                            type='checkbox'
+                            checked={connectionTypePrefs.programs}
+                            onChange={() => toggleConnectionType('programs')}
+                            className='form-checkbox h-4 w-4 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500'
+                          />
+                          <span className='text-gray-300'>Programs</span>
+                        </label>
+                      </div>
+                      <BorderMagicButton
+                        disabled={findingMore || (!connectionTypePrefs.connections && !connectionTypePrefs.programs)}
+                        onClick={() => fetchMoreConnections()}
+                        className='w-full md:w-auto'
+                      >
+                        Find more connections
+                      </BorderMagicButton>
+                    </div>
                   </div>
                 </div>
               )}
@@ -601,14 +728,14 @@ export default function Dashboard() {
                 <div className='space-y-4'>
                   <div className='bg-[#2a2a2a] p-4 rounded-lg'>
                     <ConnectionFilters 
-                      connections={connections}
-                      isArchive={showArchive}
+                      connections={selectedView === 'programs' ? connections.filter((c: Connection) => c.type === 'program') : connections.filter((c: Connection) => c.type === 'person')}
+                      isArchive={false}
                       onFilterChange={handleFilterChange}
-                      initialFilters={showArchive ? archiveFilters : filters}
+                      initialFilters={filters}
                     />
                     <div className='grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4'>
-                      {filteredConnections.filter((c: Connection) => c.type === 'person').length > 0 ? (
-                        filteredConnections
+                      {activeFilteredConnections.filter((c: Connection) => c.type === 'person').length > 0 ? (
+                        activeFilteredConnections
                           .filter((c: Connection) => c.type === 'person')
                           .map((connection: Connection) => (
                             <PersonConnectionCard
@@ -619,9 +746,38 @@ export default function Dashboard() {
                           ))
                       ) : (
                         <div className='col-span-full text-center py-10 text-gray-400'>
-                          {showArchive ? 'No archived connections match your filters.' : 'No connections match your current filters.'}
+                          'No connections match your current filters.'
                         </div>
                       )}
+                    </div>
+                    <div className='pt-4 flex flex-col items-center space-y-3'>
+                      <div className='flex justify-center space-x-6'>
+                        <label className='flex items-center space-x-2 cursor-pointer'>
+                          <input
+                            type='checkbox'
+                            checked={connectionTypePrefs.connections}
+                            onChange={() => toggleConnectionType('connections')}
+                            className='form-checkbox h-4 w-4 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500'
+                          />
+                          <span className='text-gray-300'>Connections</span>
+                        </label>
+                        <label className='flex items-center space-x-2 cursor-pointer'>
+                          <input
+                            type='checkbox'
+                            checked={connectionTypePrefs.programs}
+                            onChange={() => toggleConnectionType('programs')}
+                            className='form-checkbox h-4 w-4 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500'
+                          />
+                          <span className='text-gray-300'>Programs</span>
+                        </label>
+                      </div>
+                      <BorderMagicButton
+                        disabled={findingMore || (!connectionTypePrefs.connections && !connectionTypePrefs.programs)}
+                        onClick={() => fetchMoreConnections()}
+                        className='w-full md:w-auto'
+                      >
+                        Find more connections
+                      </BorderMagicButton>
                     </div>
                   </div>
                 </div>
@@ -686,28 +842,6 @@ export default function Dashboard() {
                 </div>
               </div>
 
-              {/* Archive side panel */}
-              <div className='w-64 lg:w-72 bg-[#1a1a1a] p-4 rounded-2xl h-fit mt-4'>
-                <h3 className='text-white font-medium mb-2'>Archive</h3>
-                {connections.filter((c: Connection) => c.status === 'internship_acquired').length > 0 ? (
-                  <ul className='space-y-2 max-h-64 overflow-y-auto'>
-                    {connections
-                      .filter((c: Connection) => c.status === 'internship_acquired')
-                      .map((connection: Connection) => (
-                        <li
-                          key={connection.id}
-                          className='text-gray-300 text-sm truncate'
-                        >
-                          {connection.name}
-                        </li>
-                      ))}
-                  </ul>
-                ) : (
-                  <p className='text-gray-400 text-sm'>
-                    No archived connections.
-                  </p>
-                )}
-              </div>
             </div>
           </div>
           <div className='space-y-4'>
@@ -738,16 +872,20 @@ export default function Dashboard() {
                 >
                   {showArchive
                     ? 'Hide'
-                    : `Show (${connections.filter((c: Connection) => c.status === 'internship_acquired').length})`}
+                    : `Show (${archivedFilteredConnections.length})`}
                 </button>
               </div>
 
               {showArchive && (
                 <div className='mt-2'>
-                  {connections.filter((c: Connection) => c.status === 'internship_acquired').length > 0 ? (
+                  <ArchiveConnectionFilters
+                    connections={selectedView === 'programs' ? connections.filter((c: Connection) => c.type === 'program') : connections.filter((c: Connection) => c.type === 'person')}
+                    onFilterChange={(filters) => handleFilterChange(filters, true)}
+                    initialFilters={archiveFilters}
+                  />
+                  {archivedFilteredConnections.length > 0 ? (
                     <div className='grid grid-cols-1 gap-4 max-h-96 overflow-y-auto pr-2'>
-                      {connections
-                        .filter((c: Connection) => c.status === 'internship_acquired')
+                      {archivedFilteredConnections
                         .map((connection: Connection) => (
                         <div
                           key={connection.id}

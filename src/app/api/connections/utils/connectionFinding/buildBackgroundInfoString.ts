@@ -1,4 +1,4 @@
-import { ConnectionAspects } from './../types';
+import { ConnectionAspects } from '../utils';
 
 export function buildBackgroundInfoString(
   connectionAspects: ConnectionAspects
