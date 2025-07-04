@@ -299,7 +299,10 @@ export async function POST(req: Request) {
                     conn.linkedin_url = undefined;
                   }
 
-                  // 📧 Attempt to discover email regardless of LinkedIn success
+                  // Store the verified LinkedIn URL before email lookup
+                  const verifiedLinkedInUrl = conn.linkedin_url;
+                  
+                  // 📧 Attempt to discover email
                   if (!conn.email) {
                     const email = await findEmailWithHunter(conn as any);
                     if (email) {
@@ -307,6 +310,11 @@ export async function POST(req: Request) {
                       console.log(`✅ Found email for ${conn.name}: ${email}`);
                     } else {
                       console.log(`ℹ️  No email found for ${conn.name}`);
+                      // If email lookup failed but we have a verified LinkedIn URL, keep it
+                      if (verifiedLinkedInUrl) {
+                        console.log(`🔗 Using verified LinkedIn URL as fallback: ${verifiedLinkedInUrl}`);
+                        conn.linkedin_url = verifiedLinkedInUrl;
+                      }
                     }
                   }
                 } catch (error) {

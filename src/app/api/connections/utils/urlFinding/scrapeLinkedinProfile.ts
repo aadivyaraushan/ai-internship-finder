@@ -1,21 +1,65 @@
-import { LinkedInProfileData } from '../utils';
 import axios from 'axios';
 import * as cheerio from 'cheerio';
+import { delay } from '../utils';
 
-// Add random delay between requests (0.75 - 2.5 seconds)
-const delay = () => {
-  const min = 750; // 0.75 seconds
-  const max = 2500; // 2.5 seconds
-  const ms = Math.floor(Math.random() * (max - min + 1)) + min;
-  console.log(`⏳ Adding delay of ${ms}ms`);
-  return new Promise(resolve => setTimeout(resolve, ms));
-};
+interface LinkedInExperience {
+  title: string;
+  company: string;
+  duration: string;
+  isCurrent: boolean;
+}
+
+interface LinkedInEducation {
+  school: string;
+  degree: string;
+  field: string;
+  duration: string;
+}
+
+export interface LinkedInProfileData {
+  name: string;
+  currentRole: string;
+  company?: string;
+  about?: string;
+  location?: string;
+  experience?: LinkedInExperience[];
+  education?: LinkedInEducation[];
+  skills?: string[];
+  profileUrl?: string;
+  profilePictureUrl?: string;
+  error?: string;
+}
+
+interface RapidApiResponse {
+  profile: {
+    name: string;
+    headline: string;
+    location?: string;
+    about?: string;
+    profile_picture_url?: string;
+    profile_url?: string;
+    current_company?: string;
+  };
+  experience?: Array<{
+    title: string;
+    company: string;
+    duration: string;
+    is_current: boolean;
+  }>;
+  education?: Array<{
+    school: string;
+    degree: string;
+    field_of_study: string;
+    duration: string;
+  }>;
+  skills?: string[];
+}
 
 // Common headers to mimic a real browser
 const DEFAULT_HEADERS = {
   'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-  'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-  'Accept-Language': 'en-US,en;q=0.5',
+  'Accept-Language': 'en-US,en;q=0.9',
+  'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
   'Accept-Encoding': 'gzip, deflate, br',
   'Connection': 'keep-alive',
   'Upgrade-Insecure-Requests': '1',
@@ -26,152 +70,146 @@ const DEFAULT_HEADERS = {
   'Cache-Control': 'max-age=0',
 };
 
-// Helper function to clean and normalize text
-const cleanText = (text: string | undefined): string | undefined => {
-  if (!text) return undefined;
-  return text.replace(/\s+/g, ' ').trim();
-};
+/**
+ * Extracts username from a LinkedIn profile URL
+ */
+function extractUsername(profileUrl: string): string | null {
+  const patterns = [
+    /linkedin\.com\/in\/([^\/?#]+)/i,  // Standard LinkedIn URL
+    /linkedin\.com\/pub\/[^\/]+\/([^\/?#]+)/i,  // Old LinkedIn URL format
+    /linkedin\.com\/company\/([^\/?#]+)/i  // Company profile
+  ];
 
-export async function scrapeLinkedInProfile(
-  url: string
-): Promise<LinkedInProfileData> {
-  // Validate URL
-  if (!url || !url.includes('linkedin.com')) {
-    console.error('❌ Invalid LinkedIn URL:', url);
-    return { error: 'Invalid LinkedIn URL' };
+  for (const pattern of patterns) {
+    const match = profileUrl.match(pattern);
+    if (match && match[1]) {
+      return match[1];
+    }
+  }
+  return null;
+}
+
+/**
+ * Fetches LinkedIn profile data using RapidAPI
+ */
+async function fetchFromRapidAPI(username: string): Promise<LinkedInProfileData> {
+  if (!process.env.RAPID_API_KEY) {
+    throw new Error('RAPID_API_KEY is not configured');
   }
 
-  // Ensure URL uses HTTPS
-  const profileUrl = url.startsWith('http') ? url : `https://${url}`;
+  await delay(); // Add delay between requests
+  const url = `https://linkedin-data-scraper-api1.p.rapidapi.com/profile/detail?username=${encodeURIComponent(username)}`;
   
+  const response = await axios.get<RapidApiResponse>(url, {
+    headers: {
+      'x-rapidapi-host': 'linkedin-data-scraper-api1.p.rapidapi.com',
+      'x-rapidapi-key': process.env.RAPID_API_KEY,
+    },
+    timeout: 10000, // 10 second timeout
+  });
+
+  if (response.status !== 200) {
+    throw new Error(`API request failed with status ${response.status}`);
+  }
+
+  const data = response.data;
+  const profile = data.profile;
+  const currentExperience = data.experience?.[0];
+  
+  return {
+    name: profile.name || '',
+    currentRole: profile.headline || '',
+    company: currentExperience?.company || profile.current_company,
+    about: profile.about,
+    location: profile.location,
+    profileUrl: profile.profile_url,
+    profilePictureUrl: profile.profile_picture_url,
+    experience: data.experience?.map(exp => ({
+      title: exp.title,
+      company: exp.company,
+      duration: exp.duration,
+      isCurrent: exp.is_current,
+    })),
+    education: data.education?.map(edu => ({
+      school: edu.school,
+      degree: edu.degree,
+      field: edu.field_of_study,
+      duration: edu.duration,
+    })),
+    skills: data.skills,
+  };
+}
+
+/**
+ * Fallback method using direct scraping when API fails
+ */
+async function fallbackScrape(profileUrl: string): Promise<LinkedInProfileData> {
   try {
-    // Add random delay to avoid rate limiting
     await delay();
-    
-    console.log(`🔍 Attempting to scrape LinkedIn profile: ${profileUrl}`);
-    
+    console.log('🔍 Falling back to direct scraping for:', profileUrl);
+
     const response = await axios.get(profileUrl, {
       headers: DEFAULT_HEADERS,
-      timeout: 10000, // 10 second timeout
-      maxRedirects: 5,
-      validateStatus: (status) => status >= 200 && status < 400, // Accept all 2xx and 3xx responses
+      timeout: 10000,
     });
 
+    if (response.status !== 200) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
     const $ = cheerio.load(response.data);
+    const name = $('h1.text-heading-xlarge').text().trim() || 'Unknown';
+    const currentRole = $('div.text-body-medium.break-words').first().text().trim() || '';
     
-    // Multiple selector patterns for each field to handle different LinkedIn layouts
-    const nameSelectors = [
-      'h1.text-heading-xlarge',
-      'h1.text-4xl',
-      'h1.top-card-layout__title',
-      'h1.pv-top-card--name',
-      'h1.pv-text-details__left-panel h1',
-      'h1',
-    ];
-    
-    const roleSelectors = [
-      'div.text-body-medium.break-words',
-      'h2.mt1.t-18.t-black.t-normal',
-      'div.text-body-medium',
-      'h2.pv-text-details__left-panel h2',
-      'h2',
-    ];
-    
-    const companySelectors = [
-      'div.inline-show-more-text.inline-show-more-text--is-collapsed',
-      'div.inline-show-more-text',
-      'div.pv-text-details__right-panel',
-      'div.experience-item__subtitle',
-      'div.pv-text-details__right-panel-item',
-    ];
-
-    // Find name using multiple selectors
-    let name: string | undefined;
-    for (const selector of nameSelectors) {
-      const el = $(selector).first();
-      if (el.length) {
-        name = cleanText(el.text());
-        if (name) break;
-      }
+    if (name === 'Unknown') {
+      throw new Error('Could not extract profile information - LinkedIn may have detected scraping');
     }
-
-    // Find current role using multiple selectors
-    let currentRole: string | undefined;
-    for (const selector of roleSelectors) {
-      const el = $(selector).first();
-      if (el.length) {
-        currentRole = cleanText(el.text());
-        if (currentRole) break;
-      }
-    }
-
-    // Find company using multiple selectors
-    let company: string | undefined;
-    for (const selector of companySelectors) {
-      const el = $(selector).first();
-      if (el.length) {
-        company = cleanText(el.text());
-        if (company) break;
-      }
-    }
-
-    // Log what we found
-    console.log('✅ Scraped LinkedIn profile:', { name, currentRole, company });
 
     return {
       name,
       currentRole,
-      company,
+      company: $('div.pv-entity__company-summary-info h3').first().text().trim() || undefined,
     };
-  } catch (error: any) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    console.error('❌ LinkedIn scraping failed:', {
-      url: profileUrl,
-      error: errorMessage,
-      status: error?.response?.status,
-      headers: error?.response?.headers,
-    });
+  } catch (error) {
+    console.error('Error in fallback scrape:', error);
+    throw new Error('Failed to scrape LinkedIn profile directly');
+  }
+}
+
+export async function scrapeLinkedInProfile(profileUrl: string): Promise<LinkedInProfileData> {
+  try {
+    console.log(`🔍 Attempting to scrape LinkedIn profile: ${profileUrl}`);
     
-    // Try fallback to Google cache if direct scraping fails
-    try {
-      console.log('🔄 Attempting to fetch from Google cache...');
-      const cachedUrl = `https://webcache.googleusercontent.com/search?q=cache:${encodeURIComponent(profileUrl)}`;
-      
-      await delay(); // Random delay before Google cache request
-      
-      const response = await axios.get(cachedUrl, {
-        headers: DEFAULT_HEADERS,
-        timeout: 10000,
-      });
-
-      const $ = cheerio.load(response.data);
-      
-      // Try to extract from common cache formats
-      const name = cleanText($('h1').first().text()) || 
-                  cleanText($('.top-card-layout__title').first().text());
-                  
-      const currentRole = cleanText($('.text-body-medium').first().text()) ||
-                         cleanText($('.top-card__headline').first().text());
-                         
-      const company = cleanText($('.experience-item__subtitle').first().text()) ||
-                     cleanText($('.top-card__org-name-link').first().text());
-
-      if (name || currentRole || company) {
-        console.log('✅ Retrieved partial data from Google cache:', { name, currentRole, company });
-        return { name, currentRole, company };
-      }
-      
-      throw new Error('No valid data found in cache');
-    } catch (cacheError) {
-      console.error('❌ Cache scraping failed:', {
-        url: profileUrl,
-        error: cacheError instanceof Error ? cacheError.message : String(cacheError),
-      });
-      
-      return {
-        error: 'Unable to verify profile. LinkedIn may be blocking automated access.',
-        technicalDetails: errorMessage,
-      };
+    // Extract username from profile URL
+    const username = extractUsername(profileUrl);
+    if (!username) {
+      throw new Error('Invalid LinkedIn profile URL');
     }
+
+    try {
+      // First try the RapidAPI method
+      const profileData = await fetchFromRapidAPI(username);
+      console.log('✅ Successfully fetched profile via RapidAPI');
+      return profileData;
+    } catch (apiError) {
+      console.warn('RapidAPI fetch failed, falling back to direct scraping:', apiError);
+      // If API fails, fall back to direct scraping
+      return await fallbackScrape(profileUrl);
+    }
+  } catch (error) {
+    console.error('❌ Error scraping LinkedIn profile:', error);
+    
+    let errorMessage = 'Failed to scrape LinkedIn profile';
+    if (error instanceof Error) {
+      errorMessage += `: ${error.message}`;
+    } else if (typeof error === 'string') {
+      errorMessage += `: ${error}`;
+    }
+    
+    return {
+      name: '',
+      currentRole: '',
+      error: errorMessage,
+    };
   }
 }

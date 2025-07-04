@@ -29,10 +29,12 @@ function textSimilarity(a: string = '', b: string = ''): number {
 }
 
 export async function findAndVerifyLinkedInUrl(
-  connection: Connection
+  connection: Connection,
+  existingUrl?: string
 ): Promise<{
   url: string | null;
   profile_source?: string;
+  profile_data?: any; // Add profile data to return
   match_confidence?: {
     name: number;
     role: number;
@@ -42,6 +44,30 @@ export async function findAndVerifyLinkedInUrl(
 }> {
   let isVerifiedUrl = false; // flag indicating if a verified URL has been found
   let attempts = 0;
+  
+  // If we already have a verified URL, try to use it first
+  if (existingUrl && existingUrl.includes('linkedin.com')) {
+    console.log(`🔍 Attempting to verify existing LinkedIn URL: ${existingUrl}`);
+    try {
+      const profileData = await scrapeLinkedInProfile(existingUrl);
+      if (profileData && !profileData.error) {
+        console.log(`✅ Successfully verified existing LinkedIn URL: ${existingUrl}`);
+        return {
+          url: existingUrl,
+          profile_source: 'existing_url',
+          profile_data: profileData,
+          match_confidence: {
+            name: 1,
+            role: 1,
+            company: 1,
+            overall: 1
+          }
+        };
+      }
+    } catch (error) {
+      console.warn('Failed to verify existing LinkedIn URL, will try other methods:', error);
+    }
+  }
 
   // Pre-compute reusable constants
   const name = connection.name;
