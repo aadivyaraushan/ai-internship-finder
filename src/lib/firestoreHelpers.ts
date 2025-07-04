@@ -3,20 +3,20 @@ import { doc, setDoc, updateDoc, getDoc } from 'firebase/firestore';
 import { db, auth } from './firebase';
 
 export interface Connection {
-  id: string;
+  id?: string;
   name: string;
   imageUrl?: string;
   matchPercentage?: number;
   linkedin_url?: string;
   email?: string;
   type?: 'person' | 'program';
-  program_description?: string;
-  program_type?: string;
-  organization?: string;
-  website_url?: string;
-  enrollment_info?: string;
-  how_this_helps?: string;
-  description?: string;
+  program_description?: string | null;
+  program_type?: string | null;
+  organization?: string | null;
+  website_url?: string | null;
+  enrollment_info?: string | null;
+  how_this_helps?: string | null;
+  description?: string | null;
   status?:
     | 'not_contacted'
     | 'email_sent'
@@ -30,8 +30,8 @@ export interface Connection {
    * Simplified education level for people connections. One of:
    * 'undergraduate' | 'graduate' | 'postgraduate'
    */
-  education_level?: 'undergraduate' | 'graduate' | 'postgraduate';
-  company?: string;
+  education_level?: 'undergraduate' | 'graduate' | 'postgraduate' | null;
+  company?: string | null;
   /**
    * Original source of the profile data (e.g. linkedin, website scrape)
    */
@@ -72,8 +72,8 @@ export interface Connection {
   };
 
   /** Additional matching dimensions */
-  direct_matches?: any;
-  goal_alignment?: string;
+  direct_matches?: any | null;
+  goal_alignment?: string | null;
 
   /** Hiring-power metadata for person connections */
   hiring_power?: {
@@ -88,7 +88,7 @@ export interface Connection {
   /** Outreach strategy suggestion */
   outreach_strategy?: string;
 
-  shared_background_points?: string[];
+  shared_background_points?: string[] | null;
 }
 
 // USERS

@@ -130,34 +130,6 @@ export async function POST(req: NextRequest) {
       // Use Claude to analyze and structure the resume data
       const analysisPrompt = `<system>You are a resume parser that extracts structured information from resumes. You MUST return ONLY valid JSON - no other text, no markdown formatting, no explanation. The JSON must match the schema below exactly.</system>
 <input>${text}</input>
-<schema>
-{
-  "education": [{
-    "school_name": "string",
-    "clubs": ["string"],
-    "awards": ["string"],
-    "gpa": "string or null",
-    "notable_coursework": ["string"]
-  }],
-  "skills": ["string"],
-  "personal_projects": [{
-    "project_name": "string",
-    "description": "string",
-    "responsibilities": ["string"],
-    "recognition": "string or null",
-    "skills": ["string"]
-  }],
-  "workex": [{
-    "workplace": "string",
-    "notable_projects": ["string"],
-    "role": "string",
-    "reference_email": "string or null",
-    "is_alumni": boolean
-  }],
-  "linkedin": "string or null",
-  "per_web": "string or null"
-}
-</schema>
 <rules>
 1. Return ONLY the JSON object - no other text
 2. The JSON must be properly formatted with double quotes around property names
@@ -171,87 +143,12 @@ export async function POST(req: NextRequest) {
 10. Clean and standardize extracted text (remove extra spaces, normalize formatting)
 </rules>`;
 
-      const analysisResponse = await callClaude(analysisPrompt, {
+      const structuredData = await callClaude(analysisPrompt, {
         maxTokens: 1000,
         model: 'gpt-4.1-nano',
+        schema: ResumeSchema,
+        schemaLabel: 'Resume',
       });
-
-      // Log the raw response for debugging
-      console.log('Raw Claude Response:', analysisResponse);
-
-      let structuredData;
-      try {
-        // Trim any whitespace and check for common formatting issues
-        let cleanedResponse = analysisResponse.trim();
-
-        // If response starts with ``` or ends with ```, remove them
-        if (cleanedResponse.startsWith('```json')) {
-          cleanedResponse = cleanedResponse.slice(7);
-        } else if (cleanedResponse.startsWith('```')) {
-          cleanedResponse = cleanedResponse.slice(3);
-        }
-        if (cleanedResponse.endsWith('```')) {
-          cleanedResponse = cleanedResponse.slice(0, -3);
-        }
-
-        cleanedResponse = cleanedResponse.trim();
-
-        // Log the cleaned response
-        console.log('Cleaned Response:', cleanedResponse);
-
-        const parsedResponse: ResumeAnalysisResponse =
-          JSON.parse(cleanedResponse);
-
-        // Validate the parsed data against our schema
-        const validationResult = ResumeSchema.safeParse(parsedResponse);
-
-        if (!validationResult.success) {
-          console.error('Resume validation failed:', validationResult.error);
-
-          // Try to salvage what we can from the response
-          structuredData = {
-            education: Array.isArray(parsedResponse.education)
-              ? parsedResponse.education.filter((e: School) => e.school_name)
-              : [],
-            skills: Array.isArray(parsedResponse.skills)
-              ? parsedResponse.skills
-              : [],
-            personal_projects: Array.isArray(parsedResponse.personal_projects)
-              ? parsedResponse.personal_projects.filter(
-                  (p: Project) => p.project_name
-                )
-              : [],
-            workex: Array.isArray(parsedResponse.workex)
-              ? parsedResponse.workex.filter(
-                  (w: WorkExperience) => w.workplace && w.role
-                )
-              : [],
-            linkedin:
-              typeof parsedResponse.linkedin === 'string'
-                ? parsedResponse.linkedin
-                : null,
-            per_web:
-              typeof parsedResponse.per_web === 'string'
-                ? parsedResponse.per_web
-                : null,
-          };
-        } else {
-          structuredData = validationResult.data;
-        }
-      } catch (error: unknown) {
-        console.error('Failed to parse or validate Claude response:', error);
-        if (error instanceof Error) {
-          console.error('Error details:', error.message);
-        }
-        structuredData = {
-          education: [],
-          skills: [],
-          personal_projects: [],
-          workex: [],
-          linkedin: null,
-          per_web: null,
-        };
-      }
 
       // Log the final structured data for debugging
       console.log(

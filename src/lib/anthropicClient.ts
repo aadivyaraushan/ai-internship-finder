@@ -1,4 +1,7 @@
 import OpenAI from 'openai';
+import { zodResponseFormat, zodTextFormat } from 'openai/helpers/zod';
+import { z } from 'zod';
+import { ConnectionsResponse } from '../app/api/connections/utils/utils';
 
 // Singleton OpenAI client
 
@@ -6,6 +9,8 @@ export interface ClaudeCallOptions {
   tools?: any[]; // Currently ignored for OpenAI calls, kept for API-compatibility
   maxTokens?: number;
   model?: string;
+  schema: z.ZodType<any>;
+  schemaLabel?: string;
 }
 
 /**
@@ -43,14 +48,17 @@ export async function callClaude(
     tools = [],
     maxTokens = 1024,
     model = 'gpt-4.1-mini',
-  }: ClaudeCallOptions = {}
-): Promise<string> {
+    schema = ConnectionsResponse,
+    schemaLabel = 'ConnectionsResponse',
+  }: ClaudeCallOptions
+): Promise<z.infer<typeof schema>> {
   const client = new OpenAI();
   const messages = buildMessages(prompt);
 
   const completionOptions: any = {
     model,
     input: messages,
+    text: {},
   } as any;
 
   // If an array of tools was provided, pass it through to OpenAI. The OpenAI
@@ -60,19 +68,14 @@ export async function callClaude(
     // Let the model decide when to call a tool.
     completionOptions.tool_choice = 'auto';
   }
-
-  const response = await client.responses.create(completionOptions);
-
-  const assistantMessage = response.output_text;
-  if (!assistantMessage) {
-    throw new Error('OpenAI response did not include a message');
+  console.log(
+    'zodTextFormat(schema, schemaLabel)',
+    zodTextFormat(schema, schemaLabel)
+  );
+  if (schema && schemaLabel) {
+    completionOptions.text.format = zodTextFormat(schema, schemaLabel);
   }
+  const response = await client.responses.parse(completionOptions);
 
-  if (assistantMessage) {
-    return assistantMessage.trim();
-  }
-
-  // Fallback: if the assistant responded with a function call or no content
-  // just return the stringified message so downstream code can handle it.
-  return JSON.stringify(assistantMessage, null, 2);
+  return response.output_parsed as z.infer<typeof ConnectionsResponse>;
 }

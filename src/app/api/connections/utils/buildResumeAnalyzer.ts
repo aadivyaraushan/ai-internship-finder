@@ -7,7 +7,8 @@ ${resumeContext}
 <rules>
 1. Extract ALL information that could create meaningful connections, considering BOTH resume AND career goals:
    - Educational institutions, years, fields of study
-   - Companies worked at (especially startups/small firms)
+   - Companies worked at (especially startups/small firms). Personal projects do NOT count here. 
+   - Personal projects created. These are MUTUALLY EXCLUSIVE from companies worked in — a personal project is NOT a company. 
    - ALL clubs, organizations, and activities mentioned
    - ALL certifications and awards listed
    - Career transitions or pivots mentioned
@@ -31,40 +32,5 @@ ${resumeContext}
    - "graduate" if in or completed master's/PhD
    - If unclear, infer from context (age, work experience, etc.)
 </rules>
-<schema>
-{
-  "connection_aspects": {
-    "education": {
-      "institutions": ["string"],
-      "graduation_years": ["string"],
-      "fields_of_study": ["string"],
-      "current_level": "high_school" | "undergraduate" | "graduate"
-    },
-    "work_experience": {
-      "companies": ["string"],
-      "startup_experience": ["string"],
-      "industry_transitions": {
-        "from_industries": ["string"],
-        "to_industries": ["string"],
-        "transition_context": "string"
-      }
-    },
-    "activities": {
-      "clubs": ["string"],
-      "organizations": ["string"],
-      "volunteer_work": ["string"]
-    },
-    "achievements": {
-      "certifications": ["string"],
-      "awards": ["string"],
-      "notable_projects": ["string"]
-    },
-    "growth_areas": {
-      "developing_skills": ["string"],
-      "target_roles": ["string"],
-      "learning_journey": "string"
-    }
-  }
-}
-</schema>`;
+`;
 }

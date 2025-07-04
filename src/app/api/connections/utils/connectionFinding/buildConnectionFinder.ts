@@ -51,8 +51,28 @@ ${ruleOne}
    - At least one near-peer connection (someone one step ahead in education—e.g., high-school ➔ undergraduate, early undergraduate ➔ later undergraduate, undergraduate ➔ graduate) who can refer the user to roles
    - At least one senior/managerial connection (e.g., hiring managers, mentors) who has influence over hiring decisions or can provide high-level guidance
 2. REQUIRED - each match MUST have BOTH:
-   a) At least one direct background match (same institution, company, organization)
-   b) Clear alignment with stated career goals
+   a) At least one DIRECT, VERIFIABLE background match from these categories:
+      - Same company (must match company name exactly)
+      - Same educational institution (must match institution name exactly)
+      - Same specific organization/club (must be explicitly mentioned in background)
+      - Same specific project (must be explicitly mentioned in background)
+      
+      For EACH direct match, you MUST:
+      - Specify the EXACT matching element from the background
+      - Include a source URL that verifies the connection
+      - Explain the nature of the connection (e.g., 'Both worked at [Company]', 'Both attended [School]')
+      
+      Examples of GOOD matches:
+      ✅ Both worked at Google (https://www.linkedin.com/company/google/)
+      ✅ Both graduated from Stanford University (https://www.stanford.edu/)
+      ✅ Both were members of ACM at UIUC (https://acm.illinois.edu/)
+      
+      Examples of BAD matches:
+      ❌ "Both interested in technology" (too vague)
+      ❌ "Both worked in tech" (not specific enough)
+      ❌ "Both have experience with programming" (not a direct connection)
+      
+   b) Clear, specific alignment with stated career goals that explains EXACTLY how this connection helps achieve those goals
 3. Optional strengthening factors:
    - Parallel experiences or transitions
    - Potential for meaningful mentorship
@@ -62,16 +82,29 @@ ${ruleOne}
 7. If a program has explicit race/ethnicity eligibility requirements, ONLY include if they match the candidate race. Otherwise, exclude.
 8. If a program requires on-site presence or is limited to a specific geographic location, ONLY include if it matches the candidate location.
 9. REJECT any potential match missing either direct matches or goal alignment.
-10. Match opportunities to education level:
+10. Match opportunities to education level and background:
     - High school: Focus on early internships and pre-college programs
     - Undergraduate: Focus on internships, co-ops, and entry-level roles
     - Graduate: Focus on research, specialized roles, and advanced programs
+    - ALWAYS verify the person's current role/education level matches the connection type
+    - For alumni connections, verify they actually attended the same institution
 11. ALWAYS verify program eligibility matches candidate's education level
 12. For every *person* connection include an "education_level" field set to one of: undergraduate, graduate, postgraduate
 13. Avoid celebrities or people who are unlikely to be accessible (e.g., very popular public figures or extremely senior C-suite executives); suggestions should focus on contacts the candidate can realistically reach.
 14. If it is COMPLETELY IMPOSSIBLE to find enough connections satisfying rule 2a given the candidate's background, you may relax rule 2a. In that case, prioritize accessible connections that still align with the candidate's career goals and clearly note the lack of direct background matches.
+15. DO NOT MAKE UP fake people ever, especially not just to create some arbitrary link with the user's background or goals. To ensure this, make sure that each connection is backed up by some web source.
+16. Avoid recommending career services coordinators or career counselors as they do not directly work in the user's target field. Only include people who ACTUALLY work in the user's target field.
+17. For each person connection, you MUST include a 'source' field with a URL where this person's profile can be verified (e.g., LinkedIn, company website, etc.)
+18. If you cannot find a verifiable source for a connection, DO NOT include that connection
+19. Prefer fewer high-quality, verifiable connections over many unverified ones
+20. For each direct match claim, you MUST be able to point to specific evidence in either:
+    - The candidate's resume/background
+    - The connection's public profile
+    - The organization's official records
+21. If you cannot find concrete evidence of a direct connection, DO NOT claim one exists - it's better to have no connection than a tenuous one
 </rules>
-<schema>
+
+Please list each recommended connection in a clear, concise bullet or numbered list. For each item include all the details specified in the rules (name, role, company or organization, contact URL, education level/program type, direct_matches, goal_alignment, shared_background_points, additional_factors, and for programs how_this_helps). Do NOT create any formatted JSON; plain text is preferred.
 {
   "connections": [
     {
@@ -100,5 +133,5 @@ ${ruleOne}
     }
   ]
 }
-</schema>`;
+`;
 }

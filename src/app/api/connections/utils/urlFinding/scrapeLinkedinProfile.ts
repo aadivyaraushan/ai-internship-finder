@@ -11,9 +11,9 @@ interface LinkedInExperience {
 
 interface LinkedInEducation {
   school: string;
-  degree: string;
-  field: string;
-  duration: string;
+  degree?: string;
+  field?: string;
+  duration?: string;
 }
 
 export interface LinkedInProfileData {
@@ -31,28 +31,43 @@ export interface LinkedInProfileData {
 }
 
 interface RapidApiResponse {
-  profile: {
-    name: string;
-    headline: string;
-    location?: string;
-    about?: string;
-    profile_picture_url?: string;
-    profile_url?: string;
-    current_company?: string;
+  success: boolean;
+  message: string;
+  data: {
+    basic_info: {
+      fullname: string;
+      first_name?: string;
+      last_name?: string;
+      headline?: string;
+      about?: string;
+      profile_picture_url?: string;
+      public_identifier?: string;
+      location?: {
+        country?: string;
+        city?: string;
+        full?: string;
+        country_code?: string;
+      };
+      current_company?: string;
+      current_company_url?: string;
+    };
+    experience?: Array<{
+      title: string;
+      company: string;
+      duration: string;
+      is_current: boolean;
+      company_linkedin_url?: string;
+    }>;
+    education?: Array<{
+      school: string;
+      degree?: string;
+      degree_name?: string;
+      field_of_study?: string;
+      duration?: string;
+      school_linkedin_url?: string;
+    }>;
+    skills?: string[];
   };
-  experience?: Array<{
-    title: string;
-    company: string;
-    duration: string;
-    is_current: boolean;
-  }>;
-  education?: Array<{
-    school: string;
-    degree: string;
-    field_of_study: string;
-    duration: string;
-  }>;
-  skills?: string[];
 }
 
 // Common headers to mimic a real browser
@@ -112,31 +127,38 @@ async function fetchFromRapidAPI(username: string): Promise<LinkedInProfileData>
     throw new Error(`API request failed with status ${response.status}`);
   }
 
-  const data = response.data;
-  const profile = data.profile;
-  const currentExperience = data.experience?.[0];
-  
+    const apiData = response.data;
+
+  if (!apiData.success || !apiData.data) {
+    throw new Error('Invalid API response structure');
+  }
+
+  const { basic_info, experience = [], education = [], skills = [] } = apiData.data;
+  const currentExperience = experience.find((exp) => exp.is_current) || experience[0];
+
   return {
-    name: profile.name || '',
-    currentRole: profile.headline || '',
-    company: currentExperience?.company || profile.current_company,
-    about: profile.about,
-    location: profile.location,
-    profileUrl: profile.profile_url,
-    profilePictureUrl: profile.profile_picture_url,
-    experience: data.experience?.map(exp => ({
+    name: basic_info.fullname || '',
+    currentRole: basic_info.headline || '',
+    company: currentExperience?.company || basic_info.current_company,
+    about: basic_info.about,
+    location: basic_info.location?.full,
+    profileUrl: basic_info.public_identifier
+      ? `https://www.linkedin.com/in/${basic_info.public_identifier}`
+      : undefined,
+    profilePictureUrl: basic_info.profile_picture_url,
+    experience: experience.map((exp) => ({
       title: exp.title,
       company: exp.company,
       duration: exp.duration,
       isCurrent: exp.is_current,
     })),
-    education: data.education?.map(edu => ({
+    education: education.map((edu) => ({
       school: edu.school,
-      degree: edu.degree,
+      degree: edu.degree || edu.degree_name,
       field: edu.field_of_study,
       duration: edu.duration,
     })),
-    skills: data.skills,
+    skills,
   };
 }
 

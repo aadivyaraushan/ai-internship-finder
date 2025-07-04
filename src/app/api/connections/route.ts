@@ -2,11 +2,16 @@ import { callClaude } from '../../../lib/anthropicClient';
 import { Connection } from '@/lib/firestoreHelpers';
 import { buildResumeAspectAnalyzerPrompt } from './utils/buildResumeAnalyzer';
 import { buildConnectionFinderPrompt } from './utils/connectionFinding/buildConnectionFinder';
-import { cleanAndParseJSON } from './utils/cleanAndParseJson';
 import { Role, Goal } from './utils/utils';
 import { findAndVerifyLinkedInUrl } from './utils/urlFinding/findAndVerifyLinkedinUrl';
-import { verifyProgramWebsite, findAndVerifyProgramWebsite } from './utils/urlFinding/findAndVerifyProgramWebsite';
+import {
+  verifyProgramWebsite,
+  findAndVerifyProgramWebsite,
+} from './utils/urlFinding/findAndVerifyProgramWebsite';
 import { findEmailWithHunter } from './utils/emailFinding/findEmailHunter';
+import { z } from 'zod';
+import { ConnectionsResponse } from './utils/utils';
+import { aspectSchema } from './utils/utils';
 
 interface SharedActivity {
   name: string;
@@ -86,18 +91,17 @@ export async function POST(req: Request) {
         const aspectsPrompt = buildResumeAspectAnalyzerPrompt(resumeContext);
         console.log('Resume analysis prompt:', aspectsPrompt);
 
-        const aspectsResponse = await callClaude(aspectsPrompt, {
+        const parsedAspects = await callClaude(aspectsPrompt, {
           maxTokens: 1000,
+          model: 'gpt-4.1-nano',
+          schema: aspectSchema,
+          schemaLabel: 'ConnectionAspects',
         });
-        console.log('Raw aspects response from Claude:', aspectsResponse);
-
-        const parsedAspects = cleanAndParseJSON(aspectsResponse);
+        console.log('Raw aspects response from Claude:', parsedAspects);
 
         if (!parsedAspects) {
           throw new Error('Failed to parse Claude response');
         }
-
-        console.log('Parsed aspects result:', parsedAspects);
 
         if (!parsedAspects?.connection_aspects) {
           throw new Error(
@@ -205,26 +209,23 @@ export async function POST(req: Request) {
         });
         console.log('Connection finder prompt:', finderPrompt);
 
-        let finderResponse;
+        let parsedFinder: z.infer<typeof ConnectionsResponse>;
         let initialConnections: Connection[] = [];
         let retryCount = 0;
         const MAX_RETRIES = 2;
 
         while (retryCount <= MAX_RETRIES) {
           try {
-            finderResponse = await callClaude(finderPrompt, {
+            parsedFinder = await callClaude(finderPrompt, {
               tools: [{ type: 'web_search_preview' }],
               maxTokens: 2000,
+              schema: ConnectionsResponse,
+              schemaLabel: 'ConnectionsResponse',
             });
-            console.log('Raw finder response:', finderResponse);
+            console.log('Raw finder response:', parsedFinder);
 
-            const parsedFinder = cleanAndParseJSON(finderResponse);
-            console.log('Parsed finder response:', parsedFinder);
-
-            if (
-              !parsedFinder?.connections ||
-              !Array.isArray(parsedFinder.connections)
-            ) {
+            if (!parsedFinder || !Array.isArray(parsedFinder.connections)) {
+              console.error('Invalid finder response:', parsedFinder);
               throw new Error(
                 'Invalid finder response - missing connections array'
               );
@@ -265,11 +266,6 @@ export async function POST(req: Request) {
               if (!Array.isArray(conn.direct_matches)) {
                 conn.direct_matches = [conn.direct_matches].filter(Boolean);
               }
-              if (!Array.isArray(conn.additional_factors)) {
-                conn.additional_factors = [conn.additional_factors].filter(
-                  Boolean
-                );
-              }
             }
 
             initialConnections = parsedFinder.connections;
@@ -301,7 +297,7 @@ export async function POST(req: Request) {
 
                   // Store the verified LinkedIn URL before email lookup
                   const verifiedLinkedInUrl = conn.linkedin_url;
-                  
+
                   // 📧 Attempt to discover email
                   if (!conn.email) {
                     const email = await findEmailWithHunter(conn as any);
@@ -312,7 +308,9 @@ export async function POST(req: Request) {
                       console.log(`ℹ️  No email found for ${conn.name}`);
                       // If email lookup failed but we have a verified LinkedIn URL, keep it
                       if (verifiedLinkedInUrl) {
-                        console.log(`🔗 Using verified LinkedIn URL as fallback: ${verifiedLinkedInUrl}`);
+                        console.log(
+                          `🔗 Using verified LinkedIn URL as fallback: ${verifiedLinkedInUrl}`
+                        );
                         conn.linkedin_url = verifiedLinkedInUrl;
                       }
                     }
@@ -344,25 +342,30 @@ export async function POST(req: Request) {
                       continue; // Skip to next connection if URL is valid
                     }
                   }
-                  
+
                   // If we get here, either there was no URL or it was invalid
                   // Try to find and verify a new URL
-                  console.log(`🔍 Attempting to find program website for: ${conn.name}`);
+                  console.log(
+                    `🔍 Attempting to find program website for: ${conn.name}`
+                  );
                   const result = await findAndVerifyProgramWebsite(
                     conn.name,
                     conn.organization || ''
                   );
-                  
+
                   if (result.url) {
                     conn.website_url = result.url;
-                    console.log(`✅ Found and verified program website: ${result.url}`);
+                    console.log(
+                      `✅ Found and verified program website: ${result.url}`
+                    );
                   } else {
                     console.warn('⚠️ Could not find a valid program website');
                   }
                 } catch (error) {
                   console.warn('❌ Program verification failed:', {
                     program: conn.name,
-                    error: error instanceof Error ? error.message : String(error),
+                    error:
+                      error instanceof Error ? error.message : String(error),
                   });
                 }
               }
@@ -371,15 +374,26 @@ export async function POST(req: Request) {
             // Filter out connections with failed verifications
             initialConnections = initialConnections.filter((conn) => {
               if (conn.type === 'person') {
-                // Keep person connections that either have a verified LinkedIn URL or don't need one
-                return (
-                  !!conn.linkedin_url || !!conn.email || !conn.current_role || !conn.company
-                );
+                // Only keep person connections that have either a verified LinkedIn URL or email
+                const hasValidContact = !!conn.linkedin_url || !!conn.email;
+                if (!hasValidContact) {
+                  console.log(`❌ Removing connection ${conn.name} - no valid contact method found`);
+                  return false;
+                }
+                // Additional check to ensure required fields are present
+                const hasRequiredFields = conn.name && conn.current_role && conn.company;
+                if (!hasRequiredFields) {
+                  console.log(`❌ Removing connection - missing required fields:`, conn);
+                  return false;
+                }
+                return true;
               } else if (conn.type === 'program') {
                 // Keep program connections that either have a verified website or don't need one
-                return (
-                  !conn.website_url || (conn.website_url && conn.organization)
-                );
+                const isValid = !conn.website_url || (conn.website_url && conn.organization);
+                if (!isValid) {
+                  console.log(`❌ Removing program ${conn.name} - invalid website or missing organization`);
+                }
+                return isValid;
               }
               return false;
             });
@@ -518,7 +532,10 @@ export async function POST(req: Request) {
               `Attended ${conn.exact_matches.education.university}`
             );
           }
-          if (conn.exact_matches?.shared_activities && conn.exact_matches.shared_activities.length > 0) {
+          if (
+            conn.exact_matches?.shared_activities &&
+            conn.exact_matches.shared_activities.length > 0
+          ) {
             const activities = conn.exact_matches.shared_activities
               .map((act) => `${act.name} (${act.year ?? ''})`)
               .join(', ');
@@ -590,7 +607,8 @@ export async function POST(req: Request) {
         exact_matches: conn.exact_matches,
         shared_background_points:
           conn.shared_background_points ??
-          (typeof conn.outreach_strategy === 'object' && (conn.outreach_strategy as any)?.shared_background_points
+          (typeof conn.outreach_strategy === 'object' &&
+          (conn.outreach_strategy as any)?.shared_background_points
             ? (conn.outreach_strategy as any).shared_background_points
             : []),
         description: description || 'No additional details available',
