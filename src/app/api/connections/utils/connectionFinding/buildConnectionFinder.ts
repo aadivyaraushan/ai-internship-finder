@@ -32,6 +32,7 @@ export function buildConnectionFinderPrompt({
       '1. Return up to 5 best potential program matches (do NOT include people).';
   }
 
+  // TODO:  MODIFY THE PART OF THE PROMPT THAT LISTS OUT TYPES OF CONNECTIONS FOR DIFFERENT LEVELS OF EDUCATION TO BE FAR MORE SPECIFIC AND USEFUL TO REAL WORLD CONTEXTS (THINK ABOUT THE TYPE OF CONNECTIONS THAT WOULD HELP YOU PERSONALLY)
   return `<system>You are an agent specialized in finding relevant professional connections that MUST have direct background matches and career goal alignment. Return ONLY valid JSON matching the schema below EXACTLY.</system>
 <input>
 Target role: ${roleTitle}

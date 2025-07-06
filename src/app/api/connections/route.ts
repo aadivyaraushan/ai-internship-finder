@@ -196,6 +196,7 @@ export async function POST(req: Request) {
       JSON.stringify(connectionAspects, null, 2)
     );
 
+    // TODO: WE DONT HAVE ROLES TO PROCESS ANYMORE. TF THIS DOING BRO.
     for (const role of rolesToProcess) {
       console.log('\n📋 Processing role:', role.title);
       try {
@@ -233,7 +234,7 @@ export async function POST(req: Request) {
               );
             }
 
-            // Validate each connection has required fields
+            // === FIRST PASS: ERROR CHECKING: Validate each connection has required fields
             for (const conn of parsedFinder.connections) {
               if (
                 !conn.type ||
@@ -290,6 +291,7 @@ export async function POST(req: Request) {
 
                     // 1. First check if it's a LinkedIn URL and verify it
                     if (existingSource.includes('linkedin.com')) {
+                      // THIS SHOULD HAVE A FUNCTION THAT JUST DOES FINDING NO FINDING ALTERNATIVES THAT ARE NOT LINKEDIN URLS (currently this function finds alts later)
                       const linkedInResult = await findAndVerifyLinkedInUrl(
                         conn,
                         existingSource
@@ -377,6 +379,8 @@ export async function POST(req: Request) {
 
                   // Step 1: Try to find an email if we don't have a LinkedIn URL
                   // or if we have a non-LinkedIn source URL
+
+                  // THIS SHOULD JUST DO THE EMAIL FIRST THERE SHOULD NOT BE ANY CONDITION ON THIS LIKE EVEN IF THERES A LINKEDIN URL FIND EMAIL
                   if (!conn.source?.includes('linkedin.com')) {
                     console.log(
                       `🔍 Attempting to find email for ${conn.name}...`
@@ -589,6 +593,8 @@ export async function POST(req: Request) {
     });
 
     // Transform connections to match frontend interface
+
+    // TODO: THIS FUNCTION SHOULD BE REDUNDANT. FRONTEND + BACKEND INTERFACES SHOULD MATCH.
     const transformedConnections = sorted.map((conn) => {
       // Generate a description based on connection type and match details
       let description = '';
