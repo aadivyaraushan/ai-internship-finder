@@ -4,6 +4,7 @@ import { buildResumeAspectAnalyzerPrompt } from './utils/buildResumeAnalyzer';
 import { buildConnectionFinderPrompt } from './utils/connectionFinding/buildConnectionFinder';
 import { Role, Goal } from './utils/utils';
 import { findAndVerifyLinkedInUrl } from './utils/urlFinding/findAndVerifyLinkedinUrl';
+import { verifyNonLinkedInUrl } from './utils/urlFinding/verifyNonLinkedinUrl';
 import {
   verifyProgramWebsite,
   findAndVerifyProgramWebsite,
@@ -219,6 +220,7 @@ export async function POST(req: Request) {
             parsedFinder = await callClaude(finderPrompt, {
               tools: [{ type: 'web_search_preview' }],
               maxTokens: 2000,
+              model: 'gpt-4.1',
               schema: ConnectionsResponse,
               schemaLabel: 'ConnectionsResponse',
             });
@@ -278,42 +280,120 @@ export async function POST(req: Request) {
             for (const conn of initialConnections) {
               if (conn.type === 'person') {
                 try {
-                  const verificationResult = await findAndVerifyLinkedInUrl(
-                    conn
-                  );
-                  if (verificationResult.url) {
-                    conn.linkedin_url = verificationResult.url;
-                    conn.profile_source = verificationResult.profile_source;
-                    conn.match_confidence = verificationResult.match_confidence;
+                  const existingSource = conn.source; // Store the original source
+
+                  // If we have a source URL, verify it
+                  if (existingSource) {
                     console.log(
-                      `✅ Found and verified profile for: ${conn.name}`
+                      `🔍 Verifying existing source URL for ${conn.name}: ${existingSource}`
+                    );
+
+                    // 1. First check if it's a LinkedIn URL and verify it
+                    if (existingSource.includes('linkedin.com')) {
+                      const linkedInResult = await findAndVerifyLinkedInUrl(
+                        conn,
+                        existingSource
+                      );
+
+                      if (linkedInResult.url) {
+                        console.log(
+                          `✅ Verified existing LinkedIn URL for: ${conn.name}`
+                        );
+                        conn.source = linkedInResult.url;
+                        conn.linkedin_url = conn.source;
+                        conn.profile_source =
+                          linkedInResult.profile_source || 'existing_linkedin';
+                        conn.match_confidence = linkedInResult.match_confidence;
+                        continue; // Skip to next connection as we've verified the LinkedIn URL
+                      } else {
+                        console.warn(
+                          `⚠️ Could not verify existing LinkedIn URL for: ${conn.name}, will try as non-LinkedIn URL`
+                        );
+                      }
+                    }
+
+                    // 2. If not a LinkedIn URL or LinkedIn verification failed, try as non-LinkedIn URL
+                    const nonLinkedInResult = await verifyNonLinkedInUrl(
+                      existingSource,
+                      conn,
+                      [conn.name.toLowerCase()]
+                    );
+
+                    if (nonLinkedInResult && !nonLinkedInResult.error) {
+                      // Non-LinkedIn URL is valid
+                      console.log(
+                        `✅ Verified non-LinkedIn URL for ${conn.name}: ${existingSource}`
+                      );
+                      conn.source = existingSource;
+                      conn.linkedin_url = conn.source;
+                      conn.profile_source = 'verified_non_linkedin';
+
+                      // Default confidence values
+                      const confidence = nonLinkedInResult.confidence || {
+                        name: false,
+                        role: false,
+                        company: false,
+                      };
+
+                      conn.match_confidence = {
+                        name: confidence.name ? 1 : 0,
+                        role: confidence.role ? 1 : 0,
+                        company: confidence.company ? 1 : 0,
+                        overall:
+                          (confidence.name ? 0.6 : 0) +
+                          (confidence.role ? 0.2 : 0) +
+                          (confidence.company ? 0.2 : 0),
+                      };
+                      continue; // Skip to next connection as we've verified the non-LinkedIn URL
+                    } else {
+                      console.warn(
+                        `⚠️ Could not verify URL as either LinkedIn or non-LinkedIn for: ${conn.name}`
+                      );
+                      conn.source = undefined;
+                    }
+                  }
+
+                  // If we get here, we need to find a new LinkedIn URL
+                  console.log(
+                    `🔍 Attempting to find LinkedIn profile for: ${conn.name}`
+                  );
+                  const linkedInResult = await findAndVerifyLinkedInUrl(conn);
+
+                  if (linkedInResult.url) {
+                    conn.source = linkedInResult.url;
+                    conn.linkedin_url = conn.source;
+                    conn.profile_source =
+                      linkedInResult.profile_source || 'search';
+                    conn.match_confidence = linkedInResult.match_confidence;
+                    console.log(
+                      `✅ Found and verified new LinkedIn profile for: ${conn.name}`
                     );
                   } else {
                     console.warn(
-                      `⚠️ Could not verify any profile for: ${conn.name}`
+                      `⚠️ Could not find any valid LinkedIn profile for: ${conn.name}`
                     );
-                    conn.linkedin_url = undefined;
+                    conn.source = undefined;
                   }
 
-                  // Store the verified LinkedIn URL before email lookup
-                  const verifiedLinkedInUrl = conn.linkedin_url;
-
-                  // 📧 Attempt to discover email
-                  if (!conn.email) {
+                  // Step 1: Try to find an email if we don't have a LinkedIn URL
+                  // or if we have a non-LinkedIn source URL
+                  if (!conn.source?.includes('linkedin.com')) {
+                    console.log(
+                      `🔍 Attempting to find email for ${conn.name}...`
+                    );
                     const email = await findEmailWithHunter(conn as any);
                     if (email) {
                       conn.email = email;
                       console.log(`✅ Found email for ${conn.name}: ${email}`);
                     } else {
-                      console.log(`ℹ️  No email found for ${conn.name}`);
-                      // If email lookup failed but we have a verified LinkedIn URL, keep it
-                      if (verifiedLinkedInUrl) {
-                        console.log(
-                          `🔗 Using verified LinkedIn URL as fallback: ${verifiedLinkedInUrl}`
-                        );
-                        conn.linkedin_url = verifiedLinkedInUrl;
-                      }
+                      console.log(
+                        `ℹ️  No email found for ${conn.name}, keeping existing source URL`
+                      );
                     }
+                  } else {
+                    console.log(
+                      `ℹ️  Using existing LinkedIn URL for ${conn.name}`
+                    );
                   }
                 } catch (error) {
                   console.warn('❌ URL verification failed:', {
@@ -326,20 +406,23 @@ export async function POST(req: Request) {
                 try {
                   // If we have a URL, verify it first
                   if (conn.website_url) {
+                    console.log(
+                      `🔍 Verifying existing program website for ${conn.name}: ${conn.website_url}`
+                    );
                     const verificationResult = await verifyProgramWebsite(conn);
-                    if (!verificationResult.isValid) {
+                    if (verificationResult.isValid) {
+                      console.log(
+                        `✅ Verified existing program website for: ${conn.name}`,
+                        verificationResult.matches
+                      );
+                      continue; // Skip to next connection if URL is valid
+                    } else {
                       console.warn(
                         '⚠️ Invalid program website:',
                         conn.website_url,
                         verificationResult.explanation || ''
                       );
                       conn.website_url = undefined; // Clear invalid URL
-                    } else {
-                      console.log(
-                        `✅ Verified program website for: ${conn.name}`,
-                        verificationResult.matches
-                      );
-                      continue; // Skip to next connection if URL is valid
                     }
                   }
 
@@ -348,18 +431,23 @@ export async function POST(req: Request) {
                   console.log(
                     `🔍 Attempting to find program website for: ${conn.name}`
                   );
-                  const result = await findAndVerifyProgramWebsite(
-                    conn.name,
-                    conn.organization || ''
-                  );
-
-                  if (result.url) {
-                    conn.website_url = result.url;
-                    console.log(
-                      `✅ Found and verified program website: ${result.url}`
+                  try {
+                    const result = await findAndVerifyProgramWebsite(
+                      conn.name,
+                      conn.organization || ''
                     );
-                  } else {
-                    console.warn('⚠️ Could not find a valid program website');
+
+                    if (result.url) {
+                      conn.website_url = result.url;
+                      console.log(
+                        `✅ Found and verified program website: ${result.url}`
+                      );
+                    } else {
+                      console.warn('⚠️ Could not find a valid program website');
+                    }
+                  } catch (error) {
+                    console.error('Error finding program website:', error);
+                    // Continue to next connection even if website finding fails
                   }
                 } catch (error) {
                   console.warn('❌ Program verification failed:', {
@@ -377,21 +465,30 @@ export async function POST(req: Request) {
                 // Only keep person connections that have either a verified LinkedIn URL or email
                 const hasValidContact = !!conn.linkedin_url || !!conn.email;
                 if (!hasValidContact) {
-                  console.log(`❌ Removing connection ${conn.name} - no valid contact method found`);
+                  console.log(
+                    `❌ Removing connection ${conn.name} - no valid contact method found`
+                  );
                   return false;
                 }
                 // Additional check to ensure required fields are present
-                const hasRequiredFields = conn.name && conn.current_role && conn.company;
+                const hasRequiredFields =
+                  conn.name && conn.current_role && conn.company;
                 if (!hasRequiredFields) {
-                  console.log(`❌ Removing connection - missing required fields:`, conn);
+                  console.log(
+                    `❌ Removing connection - missing required fields:`,
+                    conn
+                  );
                   return false;
                 }
                 return true;
               } else if (conn.type === 'program') {
                 // Keep program connections that either have a verified website or don't need one
-                const isValid = !conn.website_url || (conn.website_url && conn.organization);
+                const isValid =
+                  !conn.website_url || (conn.website_url && conn.organization);
                 if (!isValid) {
-                  console.log(`❌ Removing program ${conn.name} - invalid website or missing organization`);
+                  console.log(
+                    `❌ Removing program ${conn.name} - invalid website or missing organization`
+                  );
                 }
                 return isValid;
               }

@@ -3,22 +3,33 @@ import { Connection } from '@/lib/firestoreHelpers';
 import axios from 'axios';
 import * as cheerio from 'cheerio';
 
+function normalizeText(text: string): string {
+  if (!text) return '';
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, '') // Remove all non-alphanumeric characters
+    .replace(/\s+/g, ' ') // Replace multiple spaces with single space
+    .trim();
+}
+
 // Add random delay between requests (0.75 - 2.5 seconds)
 const delay = () => {
   const min = 750; // 0.75 seconds
   const max = 2500; // 2.5 seconds
   const ms = Math.floor(Math.random() * (max - min + 1)) + min;
   console.log(`⏳ Adding verification delay of ${ms}ms`);
-  return new Promise(resolve => setTimeout(resolve, ms));
+  return new Promise((resolve) => setTimeout(resolve, ms));
 };
 
 // Common headers to mimic a real browser
 const DEFAULT_HEADERS = {
-  'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-  'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+  'User-Agent':
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+  Accept:
+    'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
   'Accept-Language': 'en-US,en;q=0.5',
   'Accept-Encoding': 'gzip, deflate, br',
-  'Connection': 'keep-alive',
+  Connection: 'keep-alive',
   'Upgrade-Insecure-Requests': '1',
   'Sec-Fetch-Dest': 'document',
   'Sec-Fetch-Mode': 'navigate',
@@ -46,15 +57,17 @@ export async function verifyProgramWebsite(connection: Connection): Promise<{
     const websiteData = await scrapeProgramWebsite(connection.website_url);
     if (websiteData.error || !websiteData.pageText) return { isValid: false };
 
-    const text = websiteData.pageText.toLowerCase();
+    const text = normalizeText(websiteData.pageText);
+    console.log('text: ', text);
 
     // 2. Expectation strings (fallbacks included)
-    const programName = connection.name?.toLowerCase() ?? '';
-    const organization =
-      (connection as any).organization?.toLowerCase?.() ??
-      connection.company?.toLowerCase() ??
-      '';
-    const programType = (connection as any).program_type?.toLowerCase?.() ?? '';
+    const programName = connection.name ? normalizeText(connection.name) : '';
+    const organization = connection.organization
+      ? normalizeText(connection.organization)
+      : '';
+    const programType = connection.program_type
+      ? normalizeText(connection.program_type)
+      : '';
 
     // 3. Simple presence checks with explicit boolean types
     const matches: {
@@ -158,7 +171,9 @@ export async function findAndVerifyProgramWebsite(
         continue; // Skip invalid URLs
       }
 
-      console.log(`  [${i + 1}/${Math.min(results.length, maxResults)}] Checking: ${url}`);
+      console.log(
+        `  [${i + 1}/${Math.min(results.length, maxResults)}] Checking: ${url}`
+      );
 
       try {
         // Add delay between verification attempts
@@ -177,7 +192,11 @@ export async function findAndVerifyProgramWebsite(
             verificationData: verificationResult,
           };
         } else {
-          console.log(`  ❌ Invalid program website: ${verificationResult.explanation || 'No match found'}`);
+          console.log(
+            `  ❌ Invalid program website: ${
+              verificationResult.explanation || 'No match found'
+            }`
+          );
         }
       } catch (error) {
         console.error(`  ⚠️ Error verifying ${url}:`, error);

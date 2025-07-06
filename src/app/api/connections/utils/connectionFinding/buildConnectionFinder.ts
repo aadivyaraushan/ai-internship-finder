@@ -92,16 +92,16 @@ ${ruleOne}
 12. For every *person* connection include an "education_level" field set to one of: undergraduate, graduate, postgraduate
 13. Avoid celebrities or people who are unlikely to be accessible (e.g., very popular public figures or extremely senior C-suite executives); suggestions should focus on contacts the candidate can realistically reach.
 14. If it is COMPLETELY IMPOSSIBLE to find enough connections satisfying rule 2a given the candidate's background, you may relax rule 2a. In that case, prioritize accessible connections that still align with the candidate's career goals and clearly note the lack of direct background matches.
-15. DO NOT MAKE UP fake people ever, especially not just to create some arbitrary link with the user's background or goals. To ensure this, make sure that each connection is backed up by some web source.
-16. Avoid recommending career services coordinators or career counselors as they do not directly work in the user's target field. Only include people who ACTUALLY work in the user's target field.
+15. DO NOT MAKE UP fake people ever, especially not just to create some arbitrary link with the user's background or goals. To ensure this, make sure that each connection is backed up by some web source. If you cannot find a verifiable source for a connection, DO NOT include that connection. E.g. don't make up a connection like "Emily Chen — Senior Data Scientist at LessonGPT" when you know it's not real.
+16. Avoid recommending career services coordinators, directors of education or similar administrative figures at the user's university or school (if they're a student) as they do not directly work in the user's target field. Only include people who ACTUALLY work in the user's target field.
 17. For each person connection, you MUST include a 'source' field with a URL where this person's profile can be verified (e.g., LinkedIn, company website, etc.)
-18. If you cannot find a verifiable source for a connection, DO NOT include that connection
-19. Prefer fewer high-quality, verifiable connections over many unverified ones
-20. For each direct match claim, you MUST be able to point to specific evidence in either:
+18. Prefer fewer high-quality, verifiable connections over many unverified ones
+19. For each direct match claim, you MUST be able to point to specific evidence in either:
     - The candidate's resume/background
     - The connection's public profile
     - The organization's official records
-21. If you cannot find concrete evidence of a direct connection, DO NOT claim one exists - it's better to have no connection than a tenuous one
+21. If you cannot find concrete evidence of a direct connection, DO NOT claim one exists - it's better to not have the connection there than have one with a tenouous background link.
+22. Attach the URLs you used to verify each connection to the relevant connection (program or person) as shown in the schema below.
 </rules>
 
 Please list each recommended connection in a clear, concise bullet or numbered list. For each item include all the details specified in the rules (name, role, company or organization, contact URL, education level/program type, direct_matches, goal_alignment, shared_background_points, additional_factors, and for programs how_this_helps). Do NOT create any formatted JSON; plain text is preferred.
@@ -117,7 +117,8 @@ Please list each recommended connection in a clear, concise bullet or numbered l
       "direct_matches": ["string"],
       "goal_alignment": "string",
       "shared_background_points": ["string"],
-      "additional_factors": ["string"]
+      "additional_factors": ["string"],
+      "source": "string"
     },
     {
       "type": "program",
@@ -129,7 +130,8 @@ Please list each recommended connection in a clear, concise bullet or numbered l
       "direct_matches": ["string"],
       "goal_alignment": "string",
       "shared_background_points": ["string"],
-      "additional_factors": ["string"]
+      "additional_factors": ["string"],
+      "source": "string"
     }
   ]
 }

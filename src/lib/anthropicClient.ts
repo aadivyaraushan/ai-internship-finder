@@ -68,10 +68,6 @@ export async function callClaude(
     // Let the model decide when to call a tool.
     completionOptions.tool_choice = 'auto';
   }
-  console.log(
-    'zodTextFormat(schema, schemaLabel)',
-    zodTextFormat(schema, schemaLabel)
-  );
   if (schema && schemaLabel) {
     completionOptions.text.format = zodTextFormat(schema, schemaLabel);
   }

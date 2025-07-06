@@ -37,7 +37,11 @@ export function PersonConnectionCard({
               rel='noopener noreferrer'
               className='text-blue-500 text-xs'
             >
-              {connection.email ? 'Email' : 'LinkedIn'}
+              {connection.email
+                ? 'Email'
+                : connection.linkedin_url?.includes('linkedin')
+                ? 'LinkedIn'
+                : 'Non-LinkedIn Contact'}
             </a>
           )}
         </div>
@@ -50,35 +54,38 @@ export function PersonConnectionCard({
             {connection.description}
           </p>
         )}
-        {connection.shared_background_points && connection.shared_background_points.length > 0 && (
-          <div className='mt-2'>
-            <button
-              onClick={() => setShowBackground(!showBackground)}
-              className='flex items-center text-xs text-blue-400 hover:text-blue-300 transition-colors'
-            >
-              {showBackground ? (
-                <ChevronUp className='w-3 h-3 mr-1' />
-              ) : (
-                <ChevronDown className='w-3 h-3 mr-1' />
+        {connection.shared_background_points &&
+          connection.shared_background_points.length > 0 && (
+            <div className='mt-2'>
+              <button
+                onClick={() => setShowBackground(!showBackground)}
+                className='flex items-center text-xs text-blue-400 hover:text-blue-300 transition-colors'
+              >
+                {showBackground ? (
+                  <ChevronUp className='w-3 h-3 mr-1' />
+                ) : (
+                  <ChevronDown className='w-3 h-3 mr-1' />
+                )}
+                {showBackground ? 'Hide' : 'Show'} connection points
+              </button>
+              {showBackground && (
+                <div className='mt-2 space-y-1.5'>
+                  {connection.shared_background_points?.map((point, index) => (
+                    <div key={index} className='flex items-start gap-1.5'>
+                      <CheckCircle className='h-3 w-3 text-green-500 mt-0.5 flex-shrink-0' />
+                      <p className='text-xs text-gray-400'>{point}</p>
+                    </div>
+                  ))}
+                </div>
               )}
-              {showBackground ? 'Hide' : 'Show'} connection points
-            </button>
-            {showBackground && (
-              <div className='mt-2 space-y-1.5'>
-                {connection.shared_background_points?.map((point, index) => (
-                  <div key={index} className='flex items-start gap-1.5'>
-                    <CheckCircle className='h-3 w-3 text-green-500 mt-0.5 flex-shrink-0' />
-                    <p className='text-xs text-gray-400'>{point}</p>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
+            </div>
+          )}
         <div className='mt-3'>
           <select
             value={connection.status || 'not_contacted'}
-            onChange={(e) => onStatusChange(connection.id, e.target.value as any)}
+            onChange={(e) =>
+              onStatusChange(connection.id, e.target.value as any)
+            }
             className='w-full bg-[#3a3a3a] text-gray-200 text-xs px-2 py-1 rounded border border-gray-600'
           >
             <option value='not_contacted'>Not Contacted</option>

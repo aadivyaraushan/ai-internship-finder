@@ -16,7 +16,7 @@ interface LinkedInEducation {
   duration?: string;
 }
 
-export interface LinkedInProfileData {
+interface LinkedInProfileData {
   name: string;
   currentRole: string;
   company?: string;
@@ -105,61 +105,84 @@ function extractUsername(profileUrl: string): string | null {
 }
 
 /**
- * Fetches LinkedIn profile data using RapidAPI
+ * Fetches LinkedIn profile data using RapidAPI with retry logic
  */
-async function fetchFromRapidAPI(username: string): Promise<LinkedInProfileData> {
+async function fetchFromRapidAPI(username: string, attempt = 1, maxAttempts = 3): Promise<LinkedInProfileData> {
   if (!process.env.RAPID_API_KEY) {
     throw new Error('RAPID_API_KEY is not configured');
   }
 
-  await delay(); // Add delay between requests
-  const url = `https://linkedin-data-scraper-api1.p.rapidapi.com/profile/detail?username=${encodeURIComponent(username)}`;
-  
-  const response = await axios.get<RapidApiResponse>(url, {
-    headers: {
-      'x-rapidapi-host': 'linkedin-data-scraper-api1.p.rapidapi.com',
-      'x-rapidapi-key': process.env.RAPID_API_KEY,
-    },
-    timeout: 10000, // 10 second timeout
-  });
+  try {
+    // Increase delay between retries (exponential backoff)
+    const delayMs = Math.min(1000 * Math.pow(2, attempt - 1), 15000); // Max 15s delay
+    console.log(`⏳ Adding delay of ${delayMs}ms before RapidAPI request (attempt ${attempt}/${maxAttempts})`);
+    await new Promise(resolve => setTimeout(resolve, delayMs));
+    
+    const url = `https://linkedin-data-scraper-api1.p.rapidapi.com/profile/detail?username=${encodeURIComponent(username)}`;
+    
+    const response = await axios.get<RapidApiResponse>(url, {
+      headers: {
+        'x-rapidapi-host': 'linkedin-data-scraper-api1.p.rapidapi.com',
+        'x-rapidapi-key': process.env.RAPID_API_KEY,
+      },
+      timeout: 20000, // Increased timeout to 20 seconds
+      validateStatus: (status) => status < 500, // Don't throw on 4xx errors
+    });
 
-  if (response.status !== 200) {
-    throw new Error(`API request failed with status ${response.status}`);
-  }
+    // Handle rate limiting
+    if (response.status === 429) {
+      if (attempt < maxAttempts) {
+        console.log(`⚠️ Rate limited (429). Retrying (${attempt + 1}/${maxAttempts})...`);
+        return fetchFromRapidAPI(username, attempt + 1, maxAttempts);
+      }
+      throw new Error(`Rate limited by RapidAPI after ${maxAttempts} attempts`);
+    }
+
+    if (response.status !== 200) {
+      throw new Error(`API request failed with status ${response.status}`);
+    }
 
     const apiData = response.data;
 
-  if (!apiData.success || !apiData.data) {
-    throw new Error('Invalid API response structure');
+    if (!apiData.success || !apiData.data) {
+      throw new Error('Invalid API response structure');
+    }
+
+    const { basic_info, experience = [], education = [], skills = [] } = apiData.data;
+    const currentExperience = experience.find((exp) => exp.is_current) || experience[0];
+
+    return {
+      name: basic_info.fullname || '',
+      currentRole: basic_info.headline || '',
+      company: currentExperience?.company || basic_info.current_company,
+      about: basic_info.about,
+      location: basic_info.location?.full,
+      profileUrl: basic_info.public_identifier
+        ? `https://www.linkedin.com/in/${basic_info.public_identifier}`
+        : undefined,
+      profilePictureUrl: basic_info.profile_picture_url,
+      experience: experience.map((exp) => ({
+        title: exp.title,
+        company: exp.company,
+        duration: exp.duration,
+        isCurrent: exp.is_current,
+      })),
+      education: education.map((edu) => ({
+        school: edu.school,
+        degree: edu.degree || edu.degree_name,
+        field: edu.field_of_study,
+        duration: edu.duration,
+      })),
+      skills,
+    };
+  } catch (error) {
+    console.error('Error in fetchFromRapidAPI:', error);
+    if (attempt < maxAttempts) {
+      console.log(`⚠️ Error occurred. Retrying (${attempt + 1}/${maxAttempts})...`);
+      return fetchFromRapidAPI(username, attempt + 1, maxAttempts);
+    }
+    throw error;
   }
-
-  const { basic_info, experience = [], education = [], skills = [] } = apiData.data;
-  const currentExperience = experience.find((exp) => exp.is_current) || experience[0];
-
-  return {
-    name: basic_info.fullname || '',
-    currentRole: basic_info.headline || '',
-    company: currentExperience?.company || basic_info.current_company,
-    about: basic_info.about,
-    location: basic_info.location?.full,
-    profileUrl: basic_info.public_identifier
-      ? `https://www.linkedin.com/in/${basic_info.public_identifier}`
-      : undefined,
-    profilePictureUrl: basic_info.profile_picture_url,
-    experience: experience.map((exp) => ({
-      title: exp.title,
-      company: exp.company,
-      duration: exp.duration,
-      isCurrent: exp.is_current,
-    })),
-    education: education.map((edu) => ({
-      school: edu.school,
-      degree: edu.degree || edu.degree_name,
-      field: edu.field_of_study,
-      duration: edu.duration,
-    })),
-    skills,
-  };
 }
 
 /**

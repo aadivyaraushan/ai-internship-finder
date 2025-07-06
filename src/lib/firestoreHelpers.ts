@@ -33,6 +33,11 @@ export interface Connection {
   education_level?: 'undergraduate' | 'graduate' | 'postgraduate' | null;
   company?: string | null;
   /**
+   * Original source URL where this connection was found
+   */
+  source?: string | null;
+
+  /**
    * Original source of the profile data (e.g. linkedin, website scrape)
    */
   profile_source?: string;
