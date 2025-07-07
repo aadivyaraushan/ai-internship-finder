@@ -3,14 +3,14 @@ import { buildBackgroundInfoString } from './buildBackgroundInfoString';
 
 export function buildConnectionFinderPrompt({
   roleTitle,
-  goalTitles,
+  goalTitle,
   connectionAspects,
   race,
   location,
   preferences = { programs: true, connections: true },
 }: {
   roleTitle: string;
-  goalTitles?: string[];
+  goalTitle: string;
   connectionAspects: ConnectionAspects;
   race?: string;
   location?: string;
@@ -35,17 +35,12 @@ export function buildConnectionFinderPrompt({
   // TODO:  MODIFY THE PART OF THE PROMPT THAT LISTS OUT TYPES OF CONNECTIONS FOR DIFFERENT LEVELS OF EDUCATION TO BE FAR MORE SPECIFIC AND USEFUL TO REAL WORLD CONTEXTS (THINK ABOUT THE TYPE OF CONNECTIONS THAT WOULD HELP YOU PERSONALLY)
   return `<system>You are an agent specialized in finding relevant professional connections that MUST have direct background matches and career goal alignment. Return ONLY valid JSON matching the schema below EXACTLY.</system>
 <input>
-Target role: ${roleTitle}
 Background information for matching:
     ${backgroundInfo}
 Education level: ${connectionAspects.education?.current_level || 'unknown'}
 ${race ? `\nCandidate race/ethnicity: ${race}` : ''}
 ${location ? `\nCandidate location: ${location}` : ''}
-${
-  goalTitles?.length
-    ? `\nCareer goals to consider for matching: ${goalTitles.join(', ')}`
-    : ''
-}
+\nCareer goal to consider for matching: ${goalTitle}
 </input>
 <rules>
 ${ruleOne}

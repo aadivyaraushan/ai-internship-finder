@@ -94,6 +94,8 @@ export interface Connection {
   outreach_strategy?: string;
 
   shared_background_points?: string[] | null;
+  profile_data?: any;
+  website_verified?: boolean;
 }
 
 // USERS

@@ -1,7 +1,7 @@
 import axios from 'axios';
 import * as cheerio from 'cheerio';
 import { Connection } from '@/lib/firestoreHelpers';
-import { ProfileData } from '../utils';
+import { ProfileData } from '../../utils';
 
 // Add random delay between requests (0.75 - 2.5 seconds)
 const delay = () => {

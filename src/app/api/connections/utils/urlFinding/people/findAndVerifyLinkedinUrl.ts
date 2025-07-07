@@ -1,9 +1,9 @@
 import { Connection } from '@/lib/firestoreHelpers';
 import axios from 'axios';
 import * as cheerio from 'cheerio';
-import { scrapeLinkedInProfile } from './scrapeLinkedinProfile';
-import { ProfileData } from '../utils';
-import { verifyNonLinkedInUrl } from './verifyNonLinkedinUrl';
+import { scrapeLinkedInProfile } from './scrapeLinkedInProfile';
+import { ProfileData } from '../../utils';
+import { verifyNonLinkedInUrl } from './verifyNonLinkedInUrl';
 
 /**
  * Adds a random delay between requests to avoid rate limiting
@@ -13,7 +13,7 @@ import { verifyNonLinkedInUrl } from './verifyNonLinkedinUrl';
 const delay = (minMs = 1000, maxMs = 3000) => {
   const delayMs = Math.floor(Math.random() * (maxMs - minMs + 1)) + minMs;
   console.log(`⏳ Adding delay of ${delayMs}ms to prevent rate limiting`);
-  return new Promise(resolve => setTimeout(resolve, delayMs));
+  return new Promise((resolve) => setTimeout(resolve, delayMs));
 };
 
 interface VerificationResult {
