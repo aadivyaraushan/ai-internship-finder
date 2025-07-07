@@ -3,7 +3,7 @@ import { doc, setDoc, updateDoc, getDoc } from 'firebase/firestore';
 import { db, auth } from './firebase';
 
 export interface Connection {
-  id?: string;
+  id: string;
   name: string;
   imageUrl?: string;
   matchPercentage?: number;

@@ -112,7 +112,9 @@ export default function Dashboard() {
     const activeFilters = filters;
 
     // Always exclude archived connections from active list
-    result = result.filter((c: Connection) => c.status !== 'internship_acquired');
+    result = result.filter(
+      (c: Connection) => c.status !== 'internship_acquired'
+    );
 
     // Apply search filter
     if (activeFilters.search) {
@@ -128,65 +130,9 @@ export default function Dashboard() {
 
     // Apply company filter
     if (activeFilters.company) {
-      result = result.filter((c: Connection) => c.company === activeFilters.company);
-    }
-
-    // Apply type filter (academia/industry)
-    if (activeFilters.type) {
-      result = result.filter((c: Connection) => {
-        const companyName = c.company?.toLowerCase() || '';
-        if (activeFilters.type === 'academia') {
-          return companyName.includes('university') || 
-                 companyName.includes('college') ||
-                 c.type === 'program';
-        } else {
-          return !companyName.includes('university') && 
-                 !companyName.includes('college') &&
-                 c.type !== 'program';
-        }
-      });
-    }
-
-    // Apply education level filter
-    if (activeFilters.education) {
-      result = result.filter((c: Connection) => {
-        const eduLevel = (c.education_level ?? '').toLowerCase();
-        const role = c.current_role?.toLowerCase() || '';
-        switch (activeFilters.education) {
-          case 'undergraduate':
-            return eduLevel === 'undergraduate' || role.includes('undergrad') || role.includes('bachelor');
-          case 'graduate':
-            return eduLevel === 'graduate' || role.includes('grad') || role.includes('master');
-          case 'postgraduate':
-            return eduLevel === 'postgraduate' || role.includes('phd') || role.includes('postdoc') || role.includes('post-doc');
-          default:
-            return true;
-        }
-      });
-    }
-
-    return result;
-  }, [connections, filters]);
-
-  const archivedFilteredConnections = useMemo(() => {
-    let result: Connection[] = connections.filter((c: Connection) => c.status === 'internship_acquired');
-    const activeFilters = archiveFilters;
-
-    // Apply search filter
-    if (activeFilters.search) {
-      const searchTerm = activeFilters.search.toLowerCase();
       result = result.filter(
-        (c: Connection) =>
-          c.name?.toLowerCase().includes(searchTerm) ||
-          c.company?.toLowerCase().includes(searchTerm) ||
-          c.current_role?.toLowerCase().includes(searchTerm) ||
-          c.description?.toLowerCase().includes(searchTerm)
+        (c: Connection) => c.company === activeFilters.company
       );
-    }
-
-    // Apply company filter
-    if (activeFilters.company) {
-      result = result.filter((c: Connection) => c.company === activeFilters.company);
     }
 
     // Apply type filter (academia/industry)
@@ -216,11 +162,104 @@ export default function Dashboard() {
         const role = c.current_role?.toLowerCase() || '';
         switch (activeFilters.education) {
           case 'undergraduate':
-            return eduLevel === 'undergraduate' || role.includes('undergrad') || role.includes('bachelor');
+            return (
+              eduLevel === 'undergraduate' ||
+              role.includes('undergrad') ||
+              role.includes('bachelor')
+            );
           case 'graduate':
-            return eduLevel === 'graduate' || role.includes('grad') || role.includes('master');
+            return (
+              eduLevel === 'graduate' ||
+              role.includes('grad') ||
+              role.includes('master')
+            );
           case 'postgraduate':
-            return eduLevel === 'postgraduate' || role.includes('phd') || role.includes('postdoc') || role.includes('post-doc') || role.includes('postgraduate');
+            return (
+              eduLevel === 'postgraduate' ||
+              role.includes('phd') ||
+              role.includes('postdoc') ||
+              role.includes('post-doc')
+            );
+          default:
+            return true;
+        }
+      });
+    }
+
+    return result;
+  }, [connections, filters]);
+
+  const archivedFilteredConnections = useMemo(() => {
+    let result: Connection[] = connections.filter(
+      (c: Connection) => c.status === 'internship_acquired'
+    );
+    const activeFilters = archiveFilters;
+
+    // Apply search filter
+    if (activeFilters.search) {
+      const searchTerm = activeFilters.search.toLowerCase();
+      result = result.filter(
+        (c: Connection) =>
+          c.name?.toLowerCase().includes(searchTerm) ||
+          c.company?.toLowerCase().includes(searchTerm) ||
+          c.current_role?.toLowerCase().includes(searchTerm) ||
+          c.description?.toLowerCase().includes(searchTerm)
+      );
+    }
+
+    // Apply company filter
+    if (activeFilters.company) {
+      result = result.filter(
+        (c: Connection) => c.company === activeFilters.company
+      );
+    }
+
+    // Apply type filter (academia/industry)
+    if (activeFilters.type) {
+      result = result.filter((c: Connection) => {
+        const companyName = c.company?.toLowerCase() || '';
+        if (activeFilters.type === 'academia') {
+          return (
+            companyName.includes('university') ||
+            companyName.includes('college') ||
+            c.type === 'program'
+          );
+        } else {
+          return (
+            !companyName.includes('university') &&
+            !companyName.includes('college') &&
+            c.type !== 'program'
+          );
+        }
+      });
+    }
+
+    // Apply education level filter
+    if (activeFilters.education) {
+      result = result.filter((c: Connection) => {
+        const eduLevel = (c.education_level ?? '').toLowerCase();
+        const role = c.current_role?.toLowerCase() || '';
+        switch (activeFilters.education) {
+          case 'undergraduate':
+            return (
+              eduLevel === 'undergraduate' ||
+              role.includes('undergrad') ||
+              role.includes('bachelor')
+            );
+          case 'graduate':
+            return (
+              eduLevel === 'graduate' ||
+              role.includes('grad') ||
+              role.includes('master')
+            );
+          case 'postgraduate':
+            return (
+              eduLevel === 'postgraduate' ||
+              role.includes('phd') ||
+              role.includes('postdoc') ||
+              role.includes('post-doc') ||
+              role.includes('postgraduate')
+            );
           default:
             return true;
         }
@@ -350,7 +389,7 @@ export default function Dashboard() {
 
   // Toggle preference for connection types
   const toggleConnectionType = (type: 'connections' | 'programs') => {
-    setConnectionTypePrefs(prev => ({
+    setConnectionTypePrefs((prev) => ({
       ...prev,
       [type]: !prev[type],
     }));
@@ -375,7 +414,11 @@ export default function Dashboard() {
   }, [preferences]);
 
   const fetchMoreConnections = async () => {
-    if (!currentUser || (!connectionTypePrefs.connections && !connectionTypePrefs.programs)) return;
+    if (
+      !currentUser ||
+      (!connectionTypePrefs.connections && !connectionTypePrefs.programs)
+    )
+      return;
 
     try {
       setFindingMore(true);
@@ -407,20 +450,16 @@ export default function Dashboard() {
         );
       }
 
-      // Build goals payload in the format the API expects
-      const goalsPayload = Array.isArray(userData?.goals)
-        ? userData.goals.map((g: any) =>
-            typeof g === 'string' ? { title: g } : g
-          )
-        : userData?.goals
-        ? [{ title: userData.goals }]
-        : [];
+      // Extract a single goal title for the API (backend expects `goalTitle`)
+      // Firebase now stores goals as a single string
+      const goalTitle =
+        typeof userData?.goals === 'string' ? userData.goals : '';
 
       const response = await fetch('/api/connections', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          goals: goalsPayload,
+          goalTitle,
           resumeContext: resumeData?.text || '',
           preferences: {
             programs: preferences.programs,
@@ -669,14 +708,24 @@ export default function Dashboard() {
               {selectedView === 'programs' && (
                 <div className='space-y-4'>
                   <div className='bg-[#2a2a2a] p-4 rounded-lg'>
-                    <ConnectionFilters 
-                      connections={selectedView === 'programs' ? connections.filter((c: Connection) => c.type === 'program') : connections.filter((c: Connection) => c.type === 'person')}
+                    <ConnectionFilters
+                      connections={
+                        selectedView === 'programs'
+                          ? connections.filter(
+                              (c: Connection) => c.type === 'program'
+                            )
+                          : connections.filter(
+                              (c: Connection) => c.type === 'person'
+                            )
+                      }
                       isArchive={false}
                       onFilterChange={handleFilterChange}
                       initialFilters={filters}
                     />
                     <div className='grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4'>
-                      {activeFilteredConnections.filter((c: Connection) => c.type === 'program').length > 0 ? (
+                      {activeFilteredConnections.filter(
+                        (c: Connection) => c.type === 'program'
+                      ).length > 0 ? (
                         activeFilteredConnections
                           .filter((c: Connection) => c.type === 'program')
                           .map((connection: Connection) => (
@@ -714,7 +763,11 @@ export default function Dashboard() {
                         </label>
                       </div>
                       <BorderMagicButton
-                        disabled={findingMore || (!connectionTypePrefs.connections && !connectionTypePrefs.programs)}
+                        disabled={
+                          findingMore ||
+                          (!connectionTypePrefs.connections &&
+                            !connectionTypePrefs.programs)
+                        }
                         onClick={() => fetchMoreConnections()}
                         className='w-full md:w-auto'
                       >
@@ -727,14 +780,18 @@ export default function Dashboard() {
               {selectedView === 'connections' && (
                 <div className='space-y-4'>
                   <div className='bg-[#2a2a2a] p-4 rounded-lg'>
-                    <ConnectionFilters 
-                      connections={selectedView === 'programs' ? connections.filter((c: Connection) => c.type === 'program') : connections.filter((c: Connection) => c.type === 'person')}
+                    <ConnectionFilters
+                      connections={connections.filter(
+                        (c: Connection) => c.type === 'person'
+                      )}
                       isArchive={false}
                       onFilterChange={handleFilterChange}
                       initialFilters={filters}
                     />
                     <div className='grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4'>
-                      {activeFilteredConnections.filter((c: Connection) => c.type === 'person').length > 0 ? (
+                      {activeFilteredConnections.filter(
+                        (c: Connection) => c.type === 'person'
+                      ).length > 0 ? (
                         activeFilteredConnections
                           .filter((c: Connection) => c.type === 'person')
                           .map((connection: Connection) => (
@@ -772,7 +829,11 @@ export default function Dashboard() {
                         </label>
                       </div>
                       <BorderMagicButton
-                        disabled={findingMore || (!connectionTypePrefs.connections && !connectionTypePrefs.programs)}
+                        disabled={
+                          findingMore ||
+                          (!connectionTypePrefs.connections &&
+                            !connectionTypePrefs.programs)
+                        }
                         onClick={() => fetchMoreConnections()}
                         className='w-full md:w-auto'
                       >
@@ -841,7 +902,6 @@ export default function Dashboard() {
                   )}
                 </div>
               </div>
-
             </div>
           </div>
           <div className='space-y-4'>
@@ -879,73 +939,84 @@ export default function Dashboard() {
               {showArchive && (
                 <div className='mt-2'>
                   <ArchiveConnectionFilters
-                    connections={selectedView === 'programs' ? connections.filter((c: Connection) => c.type === 'program') : connections.filter((c: Connection) => c.type === 'person')}
-                    onFilterChange={(filters) => handleFilterChange(filters, true)}
+                    connections={
+                      selectedView === 'programs'
+                        ? connections.filter(
+                            (c: Connection) => c.type === 'program'
+                          )
+                        : connections.filter(
+                            (c: Connection) => c.type === 'person'
+                          )
+                    }
+                    onFilterChange={(filters) =>
+                      handleFilterChange(filters, true)
+                    }
                     initialFilters={archiveFilters}
                   />
                   {archivedFilteredConnections.length > 0 ? (
                     <div className='grid grid-cols-1 gap-4 max-h-96 overflow-y-auto pr-2'>
-                      {archivedFilteredConnections
-                        .map((connection: Connection) => (
-                        <div
-                          key={connection.id}
-                          className='bg-[#2a2a2a] p-4 rounded-xl flex items-start gap-3 h-full min-w-0'
-                        >
-                          <div className='relative'>
-                            <div
-                              className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-medium ${getBackgroundColor(
-                                connection.name
-                              )}`}
-                            >
-                              {getInitials(connection.name)}
-                            </div>
-                          </div>
-                          <div className='flex-1 overflow-auto'>
-                            <div className='flex flex-wrap items-center justify-between gap-2 mb-1'>
-                              <h4 className='text-white font-medium text-sm truncate'>
-                                {connection.name}
-                              </h4>
-                            </div>
-                            <p className='text-gray-400 text-xs'>
-                              {connection.current_role}
-                              {connection.company &&
-                                ` at ${connection.company}`}
-                            </p>
-                            {connection.description && (
-                              <p className='text-gray-500 text-xs mt-1 line-clamp-2'>
-                                {connection.description}
-                              </p>
-                            )}
-                            <div className='mt-2 flex justify-end'>
-                              <select
-                                value={
-                                  connection.status || 'internship_acquired'
-                                }
-                                onChange={(e) =>
-                                  handleStatusChange(
-                                    connection.id,
-                                    e.target.value as Connection['status']
-                                  )
-                                }
-                                className='bg-[#3a3a3a] text-gray-200 text-xs px-2 py-1 rounded-md focus:outline-none border border-gray-600'
+                      {archivedFilteredConnections.map(
+                        (connection: Connection) => (
+                          <div
+                            key={connection.id}
+                            className='bg-[#2a2a2a] p-4 rounded-xl flex items-start gap-3 h-full min-w-0'
+                          >
+                            <div className='relative'>
+                              <div
+                                className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-medium ${getBackgroundColor(
+                                  connection.name
+                                )}`}
                               >
-                                <option value='internship_acquired'>
-                                  Archived
-                                </option>
-                                <option value='not_contacted'>
-                                  Not Contacted
-                                </option>
-                                <option value='email_sent'>
-                                  Email/Message Sent
-                                </option>
-                                <option value='response_received'>
-                                  Responded
-                                </option>
-                              </select>
+                                {getInitials(connection.name)}
+                              </div>
+                            </div>
+                            <div className='flex-1 overflow-auto'>
+                              <div className='flex flex-wrap items-center justify-between gap-2 mb-1'>
+                                <h4 className='text-white font-medium text-sm truncate'>
+                                  {connection.name}
+                                </h4>
+                              </div>
+                              <p className='text-gray-400 text-xs'>
+                                {connection.current_role}
+                                {connection.company &&
+                                  ` at ${connection.company}`}
+                              </p>
+                              {connection.description && (
+                                <p className='text-gray-500 text-xs mt-1 line-clamp-2'>
+                                  {connection.description}
+                                </p>
+                              )}
+                              <div className='mt-2 flex justify-end'>
+                                <select
+                                  value={
+                                    connection.status || 'internship_acquired'
+                                  }
+                                  onChange={(e) =>
+                                    handleStatusChange(
+                                      connection.id,
+                                      e.target.value as Connection['status']
+                                    )
+                                  }
+                                  className='bg-[#3a3a3a] text-gray-200 text-xs px-2 py-1 rounded-md focus:outline-none border border-gray-600'
+                                >
+                                  <option value='internship_acquired'>
+                                    Archived
+                                  </option>
+                                  <option value='not_contacted'>
+                                    Not Contacted
+                                  </option>
+                                  <option value='email_sent'>
+                                    Email/Message Sent
+                                  </option>
+                                  <option value='response_received'>
+                                    Responded
+                                  </option>
+                                </select>
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      ))}
+                        )
+                      )}
                     </div>
                   ) : (
                     <p className='text-gray-400 text-sm'>

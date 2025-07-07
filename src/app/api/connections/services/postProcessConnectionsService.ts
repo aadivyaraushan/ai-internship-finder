@@ -30,17 +30,28 @@ export interface ProcessedConnection {
  */
 export function postProcessConnections(
   connections: Connection[],
-  resumeContext?: string,
+  resumeContext?: string
 ): ProcessedConnection[] {
-  // 1. Optionally filter out connections already mentioned in the resume
+  // 1. Optionally filter out connections already mentioned in the resume (now with fuzzy matching)
   let filtered: Connection[] = connections;
   if (resumeContext) {
-    const lcResume = resumeContext.toLowerCase();
+    const resumeTokens = new Set(
+      resumeContext.toLowerCase().split(/\s+/).filter(Boolean)
+    );
+
+    // Returns true if at least `threshold` proportion of tokens in `phrase` exist in the resume
+    const fuzzyMatch = (phrase: string, threshold = 0.8): boolean => {
+      const tokens = phrase.toLowerCase().split(/\s+/).filter(Boolean);
+      if (!tokens.length) return false;
+      const matches = tokens.filter((t) => resumeTokens.has(t)).length;
+      return matches / tokens.length >= threshold;
+    };
+
     filtered = connections.filter((conn) => {
       if (conn.type === 'person') {
-        const name = (conn.name || '').toLowerCase();
-        const org = (conn.organization || '').toLowerCase();
-        return !lcResume.includes(name) && !lcResume.includes(org);
+        const name = conn.name || '';
+        const org = conn.organization || '';
+        return !fuzzyMatch(name) && !fuzzyMatch(org);
       }
       return true;
     });
@@ -127,7 +138,9 @@ function buildDescription(conn: Connection): string {
   if (conn.type === 'program') {
     const programPoints: string[] = [];
     if (conn.direct_matches?.length)
-      programPoints.push(`Matches your background: ${conn.direct_matches.join(', ')}`);
+      programPoints.push(
+        `Matches your background: ${conn.direct_matches.join(', ')}`
+      );
     if (conn.goal_alignment) programPoints.push(conn.goal_alignment);
     if (conn.program_description) programPoints.push(conn.program_description);
     if (conn.how_this_helps) programPoints.push(conn.how_this_helps);

@@ -4,7 +4,6 @@ import { ConnectionsResponse } from '../utils/utils';
 import { Connection } from '@/lib/firestoreHelpers';
 
 interface FinderParams {
-  roleTitle: string;
   goalTitle: string;
   connectionAspects: any;
   preferences?: any;
@@ -13,7 +12,6 @@ interface FinderParams {
 }
 
 export async function findConnections({
-  roleTitle,
   goalTitle,
   connectionAspects,
   preferences,
@@ -21,7 +19,6 @@ export async function findConnections({
   location,
 }: FinderParams): Promise<Connection[]> {
   const prompt = buildConnectionFinderPrompt({
-    roleTitle,
     goalTitle,
     connectionAspects,
     preferences,
@@ -47,7 +44,12 @@ export async function findConnections({
 
       // Basic validation copied from legacy route
       parsed.connections.forEach((conn: any) => {
-        if (!conn.type || !conn.name || !conn.direct_matches || !conn.goal_alignment) {
+        if (
+          !conn.type ||
+          !conn.name ||
+          !conn.direct_matches ||
+          !conn.goal_alignment
+        ) {
           throw new Error('Invalid connection structure');
         }
       });

@@ -2,14 +2,12 @@ import { Role, Goal, ConnectionAspects } from '../utils';
 import { buildBackgroundInfoString } from './buildBackgroundInfoString';
 
 export function buildConnectionFinderPrompt({
-  roleTitle,
   goalTitle,
   connectionAspects,
   race,
   location,
   preferences = { programs: true, connections: true },
 }: {
-  roleTitle: string;
   goalTitle: string;
   connectionAspects: ConnectionAspects;
   race?: string;
@@ -100,7 +98,7 @@ ${ruleOne}
 22. Attach the URLs you used to verify each connection to the relevant connection (program or person) as shown in the schema below.
 </rules>
 
-Please list each recommended connection in a clear, concise bullet or numbered list. For each item include all the details specified in the rules (name, role, company or organization, contact URL, education level/program type, direct_matches, goal_alignment, shared_background_points, additional_factors, and for programs how_this_helps). Do NOT create any formatted JSON; plain text is preferred.
+Please list each recommended connection in a clear, concise bullet or numbered list. For each item include all the details specified in the rules (name, role, company or organization, contact URL, education level/program type, direct_matches, goal_alignment, shared_background_points, additional_factors, and for programs how_this_helps). 
 {
   "connections": [
     {

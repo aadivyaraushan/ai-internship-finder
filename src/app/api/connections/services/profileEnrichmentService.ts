@@ -1,5 +1,5 @@
 import { Connection } from '@/lib/firestoreHelpers';
-import { findLinkedInUrl } from '../utils/urlFinding/people/findLinkedInUrl';
+import { findAndVerifyLinkedInUrl } from '../utils/urlFinding/people/findAndVerifyLinkedinUrl';
 import { verifyNonLinkedInUrl } from '../utils/urlFinding/people/verifyNonLinkedInUrl';
 import {
   verifyProgramWebsite,
@@ -22,7 +22,7 @@ export async function enrichConnection(conn: Connection): Promise<Connection> {
   // 1. PROFILE URL ENRICHMENT ------------------------------------------------
   if (!conn.linkedin_url) {
     try {
-      const res = await findLinkedInUrl(conn);
+      const res = await findAndVerifyLinkedInUrl(conn);
       if (res.url) {
         conn.linkedin_url = res.url;
         conn.profile_source = res.profile_source;

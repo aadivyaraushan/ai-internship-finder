@@ -27,7 +27,6 @@ export async function POST(req: Request) {
 
     // 2. Find and enrich connections (roles deprecated) -----------------------
     const found = await findConnections({
-      roleTitle: '', // deprecated
       goalTitle,
       connectionAspects: aspects,
       preferences,
