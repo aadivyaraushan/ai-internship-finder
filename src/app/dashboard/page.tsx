@@ -24,6 +24,7 @@ import { Connection } from '@/lib/firestoreHelpers';
 import { ConnectionFilters } from '@/components/dashboard/ConnectionFilters';
 import { ArchiveConnectionFilters } from '@/components/dashboard/ArchiveConnectionFilters';
 import { useRouter } from 'next/navigation';
+import { fetchUserData } from '@/lib/frontendUtils';
 
 interface Goal {
   title: string;
@@ -85,6 +86,10 @@ export default function Dashboard() {
     education: '',
     search: '',
   });
+
+  const [connectionSteps, setConnectionSteps] = useState<string[]>([]);
+  const [currentConnectionStepIndex, setCurrentConnectionStepIndex] =
+    useState(-1);
 
   const router = useRouter();
 
@@ -178,7 +183,8 @@ export default function Dashboard() {
               eduLevel === 'postgraduate' ||
               role.includes('phd') ||
               role.includes('postdoc') ||
-              role.includes('post-doc')
+              role.includes('post-doc') ||
+              role.includes('postgraduate')
             );
           default:
             return true;
@@ -277,49 +283,25 @@ export default function Dashboard() {
     return () => unsubscribe();
   }, []);
 
+  const fetchUserDataLocal = async () => {
+    setLoading(true);
+    if (!currentUser) return;
+    try {
+      const { goals, connections } = await fetchUserData(currentUser);
+      setGoals(goals);
+      setConnections(connections);
+    } catch (error) {
+      console.error('Error fetching user data:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Fetch user data when currentUser is available
   useEffect(() => {
     if (!currentUser) return;
-    const fetchUserData = async () => {
-      console.log('fetchUserData called');
-      console.log('Current user:', currentUser);
-      setLoading(true);
-      try {
-        const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
-        if (userDoc.exists()) {
-          const userData = userDoc.data();
-          console.log('Fetched userData from Firestore:', userData);
-          // Handle goals: can be a string or array of objects
-          if (userData.goals) {
-            if (typeof userData.goals === 'string') {
-              setGoals(userData.goals);
-              console.log('Set goals (string):', userData.goals);
-            } else if (Array.isArray(userData.goals)) {
-              setGoals(userData.goals);
-              console.log('Set goals (array):', userData.goals);
-            } else {
-              setGoals('');
-              console.log('Set goals (unknown type):', userData.goals);
-            }
-          }
-          // Handle connections if present
-          if (userData.connections && Array.isArray(userData.connections)) {
-            setConnections(userData.connections);
-            console.log(
-              'Set connections from Firestore:',
-              userData.connections
-            );
-          }
-        } else {
-          console.log('No userDoc found for user:', currentUser.uid);
-        }
-      } catch (error) {
-        console.error('Error fetching user data:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchUserData();
+
+    fetchUserDataLocal();
   }, [currentUser]);
 
   const saveGoal = async () => {
@@ -484,7 +466,7 @@ export default function Dashboard() {
       }
 
       const data = await response.json();
-      const newConnections: Connection[] = data.response.connections || [];
+      const newConnections: Connection[] = data.connections || [];
 
       setConnections((prev) => {
         const existingIds = new Set(prev.map((c) => c.id));
@@ -638,6 +620,38 @@ export default function Dashboard() {
       setUploading(false);
     }
   };
+
+  // Effect for real-time connection updates
+  useEffect(() => {
+    const eventSource = new EventSource('/api/events/connections');
+
+    eventSource.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      if (data.type === 'step-init') {
+        setConnectionSteps(data.steps);
+        setCurrentConnectionStepIndex(0);
+      } else if (data.type === 'step-update') {
+        setCurrentConnectionStepIndex(data.stepIndex);
+      }
+    };
+
+    eventSource.onerror = (error) => {
+      console.error('EventSource error:', error);
+    };
+
+    return () => {
+      eventSource.close();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (
+      currentConnectionStepIndex >= 0 &&
+      currentConnectionStepIndex === connectionSteps.length - 1
+    ) {
+      fetchUserDataLocal();
+    }
+  }, [currentConnectionStepIndex, connectionSteps]);
 
   return (
     <div className='min-h-screen bg-[#0a0a0a] p-4'>

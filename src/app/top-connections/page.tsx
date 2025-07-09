@@ -1,7 +1,6 @@
 'use client';
 
-import React from 'react';
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { checkAuth, auth } from '@/lib/firebase';
 import { MultiStepLoader } from '@/components/ui/MultiStepLoader';
@@ -10,51 +9,9 @@ import {
   getResume,
   updateUserConnections,
 } from '@/lib/firestoreHelpers';
+import { Connection } from '@/lib/firestoreHelpers';
 import BorderMagicButton from '@/components/ui/BorderMagicButton';
-
-interface Connection {
-  id: string;
-  name: string;
-  imageUrl: string;
-  matchPercentage?: number;
-  linkedin_url?: string;
-  email?: string;
-  type?: 'person' | 'program';
-  program_description?: string;
-  program_type?: string;
-  organization?: string;
-  website_url?: string;
-  enrollment_info?: string;
-  how_this_helps?: string;
-  status?:
-    | 'not_contacted'
-    | 'email_sent'
-    | 'response_received'
-    | 'meeting_scheduled'
-    | 'rejected'
-    | 'ghosted';
-  current_role?: string;
-  company?: string;
-  hiring_power?: {
-    role_type: string;
-    can_hire_interns: boolean;
-    department: string;
-  };
-  exact_matches?: {
-    education: {
-      university: string;
-      graduation_year: string;
-      degree: string;
-    };
-    shared_activities: Array<{
-      name: string;
-      year: string;
-      type: string;
-    }>;
-  };
-  shared_background_points?: string[];
-  suggested_approach?: string;
-}
+import { fetchUserData } from '@/lib/frontendUtils';
 
 function getInitials(name: string): string {
   return name
@@ -116,15 +73,15 @@ function generateMatchExplanation(connection: Connection): React.ReactNode {
       <p className='text-gray-300 font-medium'>
         {connection.current_role &&
           `${sanitize(connection.name)} is a ${sanitize(
-            connection.current_role
-          )} at ${sanitize(connection.company)}`}
+            connection.current_role ?? undefined
+          )} at ${sanitize(connection.company ?? undefined)}`}
         {connection.hiring_power &&
           ` with ${
             connection.hiring_power.role_type === 'manager'
               ? 'management'
               : 'hiring'
           } responsibilities in ${sanitize(
-            connection.hiring_power.department
+            connection.hiring_power.department ?? undefined
           )}`}
       </p>
       <div className='space-y-1'>
@@ -160,11 +117,62 @@ export default function TopConnections() {
     { id: 'score', label: 'Scoring matches', status: 'pending' },
     { id: 'prepare', label: 'Preparing recommendations', status: 'pending' },
   ]);
+  const [connectionSteps, setConnectionSteps] = useState<string[]>([]);
+  const [currentConnectionStepIndex, setCurrentConnectionStepIndex] = useState(-1);
+
+  useEffect(() => {
+    const eventSource = new EventSource('/api/events/connections');
+
+    eventSource.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.type === 'step-init') {
+          setConnectionSteps(data.steps);
+          setCurrentConnectionStepIndex(0);
+        } else if (data.type === 'step-update') {
+          setCurrentConnectionStepIndex(data.stepIndex);
+        } else if (data.action === 'add') {
+          setConnections((prev) => {
+            if (prev.some((c) => c.id === data.connection.id)) return prev;
+            return [data.connection, ...prev];
+          });
+        } else if (data.action === 'remove') {
+          setConnections((prev) =>
+            prev.filter((c) => c.id !== data.connection.id)
+          );
+        }
+      } catch (error) {
+        console.error('Error parsing connection event:', error);
+      }
+    };
+
+    return () => eventSource.close();
+  }, []);
 
   const updateStep = (stepId: string, status: ProcessingStep['status']) => {
     setSteps((prev) =>
       prev.map((step) => (step.id === stepId ? { ...step, status } : step))
     );
+  };
+
+  useEffect(() => {
+    if (currentConnectionStepIndex >= 0 && currentConnectionStepIndex === connectionSteps.length - 1) {
+      fetchUserDataLocal();
+    }
+  }, [currentConnectionStepIndex, connectionSteps]);
+
+  const fetchUserDataLocal = async () => {
+    setLoading(true);
+    const currentUser = auth.currentUser;
+    if (!currentUser) return;
+    try {
+      const { connections } = await fetchUserData(currentUser);
+      setConnections(connections);
+    } catch (error) {
+      console.error('Error fetching user data:', error);
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -333,10 +341,10 @@ export default function TopConnections() {
 
         {!inProgress && connections.length > 0 && (
           <div className='grid grid-cols-1 md:grid-cols-2 gap-6'>
-            {connections.map((connection, index) => (
+            {connections.map((connection) => (
               <div
-                key={index}
-                className='bg-[#2a2a2a] p-6 rounded-lg flex items-start gap-4 h-full'
+                key={connection.id}
+                className="bg-[#2a2a2a] p-6 rounded-lg flex items-start gap-4 h-full"
               >
                 <div className='relative'>
                   <div
@@ -388,12 +396,13 @@ export default function TopConnections() {
 
                       {/* Show contact link for person connections */}
                       {connection.type === 'person' &&
-                        (connection.email || connection.linkedin_url) && (
+                        (connection.email ||
+                          connection.verified_profile_url) && (
                           <a
                             href={
                               connection.email
                                 ? `mailto:${connection.email}`
-                                : connection.linkedin_url
+                                : connection.verified_profile_url
                             }
                             target='_blank'
                             rel='noopener noreferrer'

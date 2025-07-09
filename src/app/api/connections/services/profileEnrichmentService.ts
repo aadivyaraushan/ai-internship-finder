@@ -1,74 +1,88 @@
 import { Connection } from '@/lib/firestoreHelpers';
 import { findAndVerifyLinkedInUrl } from '../utils/urlFinding/people/findAndVerifyLinkedinUrl';
 import { verifyNonLinkedInUrl } from '../utils/urlFinding/people/verifyNonLinkedInUrl';
-import {
-  verifyProgramWebsite,
-  findAndVerifyProgramWebsite,
-} from '../utils/urlFinding/program/findAndVerifyProgramWebsite';
 import { findEmailWithHunter } from '../utils/emailFinding/findEmailHunter';
+import { verifyLinkedInUrl } from '../utils/urlFinding/people/verifyLinkedInUrl';
 
 /**
- * Enrich an individual connection with:
- *  - LinkedIn / profile URLs + scraped data
- *  - Program website verification (for program type)
- *  - Email address (Hunter.io)
+ * Enriches a person connection with additional data:
+ *  - LinkedIn/profile URLs + scraped data
+ *  - Non-LinkedIn URL verification
+ *  - Email address
  *
- *  This function is a direct extraction of the enrichment block from the
- *  legacy route.  All logging / fallback semantics are preserved.
+ * @param {Connection} conn - The person connection to enrich
+ * @returns {Promise<Connection>} The enriched connection
  */
-export async function enrichConnection(conn: Connection): Promise<Connection> {
-  console.log(`🔄 Enriching: ${conn.name}`);
+export async function enrichPersonConnection(
+  conn: Connection
+): Promise<Connection> {
+  console.log(` Enriching person: ${conn.name}`);
 
-  // 1. PROFILE URL ENRICHMENT ------------------------------------------------
-  if (!conn.linkedin_url) {
+  // 1. VERIFY EXISTING LINKEDIN URL (if present)
+  if (conn.verified_profile_url) {
     try {
-      const res = await findAndVerifyLinkedInUrl(conn);
-      if (res.url) {
-        conn.linkedin_url = res.url;
-        conn.profile_source = res.profile_source;
-        conn.profile_data = res.profile_data;
-        conn.match_confidence = res.match_confidence;
+      const verification = await verifyLinkedInUrl(
+        conn.verified_profile_url,
+        conn
+      );
+      if (verification.valid) {
+        // Valid LinkedIn URL
+        conn.website_verified = true;
+        conn.profile_data = verification.profile_data;
+      } else {
+        // Invalid LinkedIn URL - clear it so we can search for a new one
+        conn.verified_profile_url = undefined;
       }
     } catch (err) {
-      console.warn('LinkedIn enrichment failed:', err);
+      console.warn('LinkedIn URL verification failed:', err);
     }
   }
 
-  // 2. NON-LINKEDIN URL VERIFICATION ----------------------------------------
+  // 2. VERIFY SOURCE URL (if present and not LinkedIn)
   if (conn.url && !conn.website_verified) {
     try {
-      const verified = await verifyNonLinkedInUrl(conn.url, conn, [conn.name]);
-      if (!verified.error) {
-        conn.website_verified = true;
-        conn.profile_data = { ...(conn.profile_data || {}), ...verified };
-      }
-    } catch (err) {
-      console.warn('Non-LinkedIn verification failed:', err);
-    }
-  }
-
-  // 3. PROGRAM WEBSITE HANDLING ---------------------------------------------
-  if (conn.type === 'program') {
-    try {
-      if (conn.website_url) {
-        const { isValid } = await verifyProgramWebsite(conn);
-        conn.website_verified = isValid;
-      } else {
-        const found = await findAndVerifyProgramWebsite(
-          conn.name,
-          conn.organization || undefined
-        );
-        if (found.url) {
-          conn.website_url = found.url;
+      if (conn.url.includes('linkedin.com')) {
+        // Verify as LinkedIn URL
+        const verification = await verifyLinkedInUrl(conn.url, conn);
+        if (verification.valid) {
+          conn.verified_profile_url = conn.url;
           conn.website_verified = true;
+          conn.profile_data = verification.profile_data;
+        }
+      } else {
+        // Verify as non-LinkedIn URL
+        const verified = await verifyNonLinkedInUrl(conn.url, conn, [
+          conn.name,
+        ]);
+        if (!verified.error) {
+          conn.website_verified = true;
+          conn.profile_data = { ...(conn.profile_data || {}), ...verified };
         }
       }
     } catch (err) {
-      console.warn('Program website enrichment failed:', err);
+      console.warn('URL verification failed:', err);
     }
   }
 
-  // 4. EMAIL ENRICHMENT ------------------------------------------------------
+  // 3. SEARCH FOR NEW LINKEDIN URL (if no valid URL found)
+  if (!conn.verified_profile_url && !conn.website_verified) {
+    try {
+      const res = await findAndVerifyLinkedInUrl(
+        conn,
+        conn.source ?? undefined
+      );
+      if (res.verified_profile_url) {
+        conn.verified_profile_url = res.verified_profile_url;
+        conn.profile_source = res.profile_source;
+        conn.profile_data = res.profile_data;
+        conn.match_confidence = { overall: res.match_confidence };
+      }
+    } catch (err) {
+      console.warn('LinkedIn search failed:', err);
+    }
+  }
+
+  // 4. EMAIL ENRICHMENT
   if (!conn.email) {
     try {
       const email = await findEmailWithHunter(conn);

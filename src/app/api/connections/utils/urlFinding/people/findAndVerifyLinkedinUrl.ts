@@ -43,20 +43,17 @@ function textSimilarity(a: string = '', b: string = ''): number {
   return overlap / Math.max(setA.size, setB.size);
 }
 
+interface FindAndVerifyResult {
+  verified_profile_url: string;
+  profile_source: string;
+  profile_data: any;
+  match_confidence: number;
+}
+
 export async function findAndVerifyLinkedInUrl(
   connection: Connection,
   existingUrl?: string
-): Promise<{
-  url: string | null;
-  profile_source?: string;
-  profile_data?: any; // Add profile data to return
-  match_confidence?: {
-    name: number;
-    role: number;
-    company: number;
-    overall: number;
-  };
-}> {
+): Promise<FindAndVerifyResult | { verified_profile_url: null }> {
   let isVerifiedUrl = false; // flag indicating if a verified URL has been found
   let attempts = 0;
 
@@ -72,15 +69,10 @@ export async function findAndVerifyLinkedInUrl(
           `✅ Successfully verified existing LinkedIn URL: ${existingUrl}`
         );
         return {
-          url: existingUrl,
+          verified_profile_url: existingUrl,
           profile_source: 'existing_url',
           profile_data: profileData,
-          match_confidence: {
-            name: 1,
-            role: 1,
-            company: 1,
-            overall: 1,
-          },
+          match_confidence: 1,
         };
       }
     } catch (error) {
@@ -273,14 +265,10 @@ export async function findAndVerifyLinkedInUrl(
             if (isMatch) {
               isVerifiedUrl = true;
               return {
-                url,
+                verified_profile_url: url,
                 profile_source: sourceType,
-                match_confidence: {
-                  name: nameSim,
-                  role: roleSim,
-                  company: companySim,
-                  overall: weightedScore,
-                },
+                profile_data: profileData,
+                match_confidence: weightedScore,
               };
             }
           }
@@ -302,6 +290,6 @@ export async function findAndVerifyLinkedInUrl(
   }
 
   return {
-    url: null,
+    verified_profile_url: null,
   };
 }

@@ -4,16 +4,20 @@ import { ChevronDown, ChevronUp, CheckCircle } from 'lucide-react';
 import { getBackgroundColor, getInitials } from '@/lib/utils';
 import { Connection } from '@/lib/firestoreHelpers';
 
+interface ProgramConnectionCardProps {
+  connection: Connection;
+  onStatusChange: (id: string, status: Connection['status']) => void;
+  className?: string;
+}
+
 export function ProgramConnectionCard({
   connection,
   onStatusChange,
-}: {
-  connection: Connection;
-  onStatusChange: (id: string, status: Connection['status']) => void;
-}) {
+  className = '',
+}: ProgramConnectionCardProps) {
   const [showBackground, setShowBackground] = useState(false);
   return (
-    <div className='bg-[#1a1a1a] p-5 rounded-2xl flex items-start gap-4 h-full min-w-0'>
+    <div className={`bg-[#1a1a1a] p-5 rounded-2xl flex items-start gap-4 h-full min-w-0 ${className}`}>
       <div className='relative'>
         <div
           className={`w-12 h-12 rounded-full flex items-center justify-center text-white font-medium ${getBackgroundColor(

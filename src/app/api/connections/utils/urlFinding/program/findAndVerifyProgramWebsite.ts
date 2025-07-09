@@ -50,6 +50,22 @@ export async function verifyProgramWebsite(connection: Connection): Promise<{
   try {
     if (!connection.website_url) return { isValid: false };
 
+    // Skip if the URL is from a blocked domain
+    const blockedDomains = ['medium.com', 'github.com', 'blogspot.com', 'wordpress.com'];
+    try {
+      const urlObj = new URL(connection.website_url);
+      if (blockedDomains.some(domain => urlObj.hostname.includes(domain))) {
+        console.log(`Skipping blocked domain: ${connection.website_url}`);
+        return {
+          isValid: false,
+          explanation: 'Blocked domain',
+        };
+      }
+    } catch (err) {
+      console.warn('Invalid URL format', err);
+      return { isValid: false };
+    }
+
     // Add random delay before starting verification
     await delay();
 

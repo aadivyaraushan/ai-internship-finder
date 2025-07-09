@@ -21,6 +21,21 @@ export async function verifyNonLinkedInUrl(
   nameVariations: string[]
 ): Promise<ProfileData> {
   console.log(`🔍 Scraping non-LinkedIn URL: ${url}`);
+
+  // Skip if the URL is from a blocked domain
+  const blockedDomains = ['medium.com', 'github.com', 'blogspot.com', 'wordpress.com'];
+  try {
+    const urlObj = new URL(url);
+    if (blockedDomains.some(domain => urlObj.hostname.includes(domain))) {
+      console.log(`Skipping blocked domain: ${url}`);
+      return {
+        error: 'Blocked domain',
+      };
+    }
+  } catch (err) {
+    console.warn('Invalid URL format', err);
+  }
+
   await delay(); // Additional delay before API request
 
   const response = await axios.get(url, {
@@ -51,6 +66,15 @@ export async function verifyNonLinkedInUrl(
     metaDescription: metaDescription.substring(0, 100) + '...',
     bodyLength: bodyText.length,
   });
+
+  // Check for email in the body text
+  const emailRegex = /([a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+\.[a-zA-Z0-9_-]+)/gi;
+  const emails = bodyText.match(emailRegex);
+  if (!emails || emails.length === 0) {
+    return {
+      error: 'No email found on the page',
+    };
+  }
 
   // Look for name and company/role matches in the page content
   const searchTerms = {

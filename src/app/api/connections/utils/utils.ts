@@ -103,16 +103,18 @@ export const isConnection = (item: any): item is Connection => {
     item &&
     typeof item === 'object' &&
     (item.website_url === undefined || typeof item.website_url === 'string') &&
-    (item.linkedin_url === undefined || typeof item.linkedin_url === 'string')
+    (item.verified_profile_url === undefined ||
+      typeof item.verified_profile_url === 'string')
   );
 };
 
 const personSchema = z.object({
+  id: z.string(),
   type: z.literal('person'),
   name: z.string(),
   current_role: z.string(),
   company: z.string().or(z.null()).optional(),
-  linkedin_url: z
+  verified_profile_url: z
     .string()
     .regex(/^https?:\/\/.+/i, { message: 'must be http/https URL' }),
   education_level: z
@@ -126,6 +128,7 @@ const personSchema = z.object({
 });
 
 const programSchema = z.object({
+  id: z.string(),
   type: z.literal('program'),
   name: z.string(),
   organization: z.string(),

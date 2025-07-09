@@ -6,7 +6,7 @@ export interface ProcessedConnection {
   name: string;
   imageUrl: string;
   matchPercentage: number;
-  linkedin_url?: string;
+  verified_profile_url?: string;
   email?: string;
   status: string;
   current_role?: string;
@@ -78,7 +78,7 @@ export function postProcessConnections(
       name: conn.name,
       imageUrl: '', // kept for backward compatibility (TODO: supply real image)
       matchPercentage: conn.match_details?.total_percentage || 0,
-      linkedin_url: conn.linkedin_url,
+      verified_profile_url: conn.verified_profile_url,
       email: conn.email,
       status: 'not_contacted',
       current_role: conn.current_role,

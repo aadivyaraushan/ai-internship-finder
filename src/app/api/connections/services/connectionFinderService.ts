@@ -11,6 +11,12 @@ interface FinderParams {
   location?: string;
 }
 
+/**
+ * Finds relevant connections based on the provided parameters
+ *
+ * @param {FinderParams} params - Parameters for finding connections
+ * @returns {Promise<Connection[]>} A promise that resolves to an array of connections
+ */
 export async function findConnections({
   goalTitle,
   connectionAspects,
@@ -42,19 +48,30 @@ export async function findConnections({
 
       if (!parsed?.connections) throw new Error('Invalid finder response');
 
-      // Basic validation copied from legacy route
-      parsed.connections.forEach((conn: any) => {
-        if (
-          !conn.type ||
-          !conn.name ||
-          !conn.direct_matches ||
-          !conn.goal_alignment
-        ) {
-          throw new Error('Invalid connection structure');
-        }
-      });
+      // Filter and validate connections
+      const validConnections = parsed.connections.filter(
+        (conn: Connection) => conn.name // Only require name
+      );
 
-      return parsed.connections;
+      if (validConnections.length === 0) {
+        throw new Error('No valid connections found - all are missing name');
+      }
+
+      if (validConnections.length < parsed.connections.length) {
+        const invalidCount =
+          parsed.connections.length - validConnections.length;
+        console.warn(
+          `⚠️ Filtered out ${invalidCount} invalid connections missing name`
+        );
+        // Log invalid connections for debugging
+        parsed.connections
+          .filter((conn: Connection) => !conn.name)
+          .forEach((invalidConn: Connection) =>
+            console.warn('Invalid connection:', invalidConn)
+          );
+      }
+
+      return validConnections;
     } catch (err) {
       console.error(`❌ Connection finder attempt ${retry + 1} failed:`, err);
       if (retry === MAX_RETRIES) throw err;

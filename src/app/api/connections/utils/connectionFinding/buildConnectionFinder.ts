@@ -106,7 +106,7 @@ Please list each recommended connection in a clear, concise bullet or numbered l
       "name": "string",
       "current_role": "string",
       "company": "string",
-      "linkedin_url": "string",
+      "verified_profile_url": "string",
       "education_level": "undergraduate" | "graduate" | "postgraduate",
       "direct_matches": ["string"],
       "goal_alignment": "string",
