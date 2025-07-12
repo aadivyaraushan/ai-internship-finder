@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { checkAuth, auth } from '@/lib/firebase';
 import {
@@ -59,42 +59,43 @@ export default function UploadResume() {
     );
   };
 
-  const handleSubmit = async () => {
-    if (!file) {
-      setError('Please upload a resume file');
-      return;
-    }
-
-    if (!goals.trim()) {
-      setError('Please enter your goals before submitting');
-      return;
-    }
-
-    if (!auth.currentUser) {
-      setError('Please sign in to continue');
-      router.push('/signup');
-      return;
-    }
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!file) return;
 
     setLoading(true);
     setError('');
     setCurrentStatus('Starting resume analysis...');
 
-    // Reset all steps to pending
-    setSteps(steps.map((step) => ({ ...step, status: 'pending' })));
+    // Create SSE connection
+    const eventSource = new EventSource('/api/resume-analysis');
+
+    eventSource.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      if (data.type === 'step-init') {
+        setSteps(data.steps);
+      } else if (data.type === 'step-update') {
+        const currentStep = steps.find((step) => step.status === 'in_progress');
+        if (currentStep) {
+          updateStep(currentStep.id, 'completed');
+        }
+        const nextStep = steps.find((step) => step.status === 'pending');
+        if (nextStep) {
+          updateStep(nextStep.id, 'in_progress');
+        }
+      }
+    };
+
+    eventSource.onerror = (err) => {
+      console.error('EventSource failed:', err);
+      eventSource.close();
+      setLoading(false);
+    };
 
     try {
-      // Prepare upload
-      updateStep('prepare', 'in_progress');
-      setCurrentStatus('Preparing to upload resume...');
       const formData = new FormData();
       formData.append('file', file);
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-      updateStep('prepare', 'completed');
 
-      // Upload file
-      updateStep('upload', 'in_progress');
-      setCurrentStatus('Uploading resume...');
       const response = await fetch('/api/resume-analysis', {
         method: 'POST',
         body: formData,
@@ -104,12 +105,7 @@ export default function UploadResume() {
         const error = await response.json();
         throw new Error(error.error || 'Failed to analyze resume');
       }
-      updateStep('upload', 'completed');
-      await new Promise((resolve) => setTimeout(resolve, 800));
 
-      // Parse and analyze
-      updateStep('parse', 'in_progress');
-      setCurrentStatus('Reading resume content...');
       const data = await response.json();
 
       // Handle initial processing steps
@@ -118,12 +114,7 @@ export default function UploadResume() {
 
         // File read step
         if (apiSteps.fileRead) {
-          updateStep('parse', 'completed');
           await new Promise((resolve) => setTimeout(resolve, 800));
-
-          // Start AI analysis
-          updateStep('analyze', 'in_progress');
-          setCurrentStatus('AI analyzing resume...');
         }
 
         // PDF parsed step
@@ -133,32 +124,33 @@ export default function UploadResume() {
 
         // AI analysis step
         if (apiSteps.aiAnalysis) {
-          updateStep('analyze', 'completed');
           await new Promise((resolve) => setTimeout(resolve, 800));
 
           // Start storing results
-          updateStep('store', 'in_progress');
-          setCurrentStatus('Processing analysis results...');
+          await new Promise((resolve) => setTimeout(resolve, 800));
 
           // Store resume data in Firestore with correct ID format
-          await createOrUpdateResume(auth.currentUser.uid, {
-            text: data.response.rawText, // Store the actual resume text
-            structuredData: data.response.structuredData,
-            userId: auth.currentUser.uid,
-            uploadedAt: new Date().toISOString(),
-          });
+          if (auth.currentUser) {
+            await createOrUpdateResume(auth.currentUser.uid, {
+              text: data.response.rawText, // Store the actual resume text
+              structuredData: data.response.structuredData,
+              userId: auth.currentUser.uid,
+              uploadedAt: new Date().toISOString(),
+            });
+          }
 
           // Update user with resume reference (no need to store resume_id since it's predictable)
-          await createOrUpdateUser(auth.currentUser.uid, {
-            goals: goals.trim(),
-            hasResume: true,
-          });
+          if (auth.currentUser) {
+            await createOrUpdateUser(auth.currentUser.uid, {
+              goals: goals.trim(),
+              hasResume: true,
+            });
+          }
         }
 
         // Data storage step
         if (apiSteps.dataStored) {
           await new Promise((resolve) => setTimeout(resolve, 1000));
-          updateStep('store', 'completed');
           setCurrentStatus('Analysis complete! Redirecting...');
         }
       }
@@ -186,6 +178,7 @@ export default function UploadResume() {
       }
     } finally {
       setLoading(false);
+      eventSource.close();
     }
   };
 

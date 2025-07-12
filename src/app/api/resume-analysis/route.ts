@@ -5,6 +5,11 @@ import { z } from 'zod';
 import { writeFile, unlink } from 'fs/promises';
 import { join } from 'path';
 import { tmpdir } from 'os';
+import { EventEmitter } from 'events';
+import { analyzeResume } from '@/app/api/connections/services/resumeAnalysisService';
+
+// Create a global event emitter (consider using a request-specific emitter in production)
+const globalEmitter = new EventEmitter();
 
 type School = {
   school_name: string;
@@ -110,6 +115,7 @@ export async function POST(req: NextRequest) {
   try {
     const formData = await req.formData();
     const file = formData.get('file') as File;
+    const userId = formData.get('userId') as string;
 
     if (!file) {
       return NextResponse.json({ error: 'No file provided' }, { status: 400 });
@@ -123,11 +129,40 @@ export async function POST(req: NextRequest) {
     await writeFile(tempFilePath, buffer);
 
     try {
-      // Load and parse PDF
+      // Create a request-specific event emitter
+      const requestEmitter = new EventEmitter();
+
+      // Function to broadcast events for this request
+      const broadcastEvent = (event: any) => {
+        requestEmitter.emit('event', event);
+      };
+
+      // Define processing steps to match frontend
+      const steps = [
+        'Preparing upload',
+        'Uploading file',
+        'Parsing resume content',
+        'Processing results with AI',
+        'Uploading data',
+      ];
+      let currentStep = 0;
+
+      // Broadcast initial events
+      broadcastEvent({ type: 'step-init', steps });
+      broadcastEvent({ type: 'step-update', stepIndex: currentStep });
+
+      // Step 1: File reading -> Preparing upload (already step 0)
+      // We are already at step 0, so move to step 1 for uploading file
+      currentStep = 1;
+      broadcastEvent({ type: 'step-update', stepIndex: currentStep });
+
+      // Step 2: Load and parse PDF -> Parsing resume content
+      currentStep = 2;
+      broadcastEvent({ type: 'step-update', stepIndex: currentStep });
       const pdfData = await pdfParse(buffer);
       const text = pdfData.text;
 
-      // Use Claude to analyze and structure the resume data
+      // Build the prompt for structured parsing
       const analysisPrompt = `<system>You are a resume parser that extracts structured information from resumes. You MUST return ONLY valid JSON - no other text, no markdown formatting, no explanation. The JSON must match the schema below exactly.</system>
 <input>${text}</input>
 <rules>
@@ -143,12 +178,23 @@ export async function POST(req: NextRequest) {
 10. Clean and standardize extracted text (remove extra spaces, normalize formatting)
 </rules>`;
 
+      // Parse the resume to structured data using AI
       const structuredData = await callClaude(analysisPrompt, {
         maxTokens: 1000,
         model: 'gpt-4.1-nano',
         schema: ResumeSchema,
         schemaLabel: 'Resume',
       });
+
+      // Step 3: Processing results with AI -> Analyzing connection aspects
+      currentStep = 3;
+      broadcastEvent({ type: 'step-update', stepIndex: currentStep });
+      const analyzedAspects = await analyzeResume(text);
+
+      // Step 4: Uploading data
+      currentStep = 4;
+      broadcastEvent({ type: 'step-update', stepIndex: currentStep });
+      // We are now returning the data to the frontend, which will handle the Firestore write
 
       // Log the final structured data for debugging
       console.log(
@@ -160,6 +206,7 @@ export async function POST(req: NextRequest) {
         response: {
           rawText: text,
           structuredData: structuredData,
+          resumeAspects: analyzedAspects,
           timestamp: new Date().toISOString(),
           status: 'success',
           processingSteps: {
@@ -184,4 +231,37 @@ export async function POST(req: NextRequest) {
       { status: 500 }
     );
   }
+}
+
+// SSE endpoint for progress events
+export async function GET(req: NextRequest) {
+  const responseStream = new TransformStream();
+  const writer = responseStream.writable.getWriter();
+  const encoder = new TextEncoder();
+
+  // Write the SSE headers
+  const headers = new Headers({
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    Connection: 'keep-alive',
+  });
+
+  const listener = (event: any) => {
+    writer.write(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+  };
+
+  // Use a temporary event emitter for this connection
+  const emitter = new EventEmitter();
+  emitter.on('event', listener);
+
+  // Cleanup on client disconnect
+  req.signal.onabort = () => {
+    emitter.off('event', listener);
+    writer.close();
+  };
+
+  // Send initial event to keep connection alive
+  writer.write(encoder.encode(': ping\n\n'));
+
+  return new Response(responseStream.readable, { headers });
 }

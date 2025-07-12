@@ -1,6 +1,6 @@
 import { callClaude } from '../../../../lib/anthropicClient';
 import { buildResumeAspectAnalyzerPrompt } from '../utils/buildResumeAnalyzer';
-import { aspectSchema } from '../utils/utils';
+import { aspectSchema, ConnectionAspects } from '../utils/utils';
 
 /**
  * Resulting structure from resume analysis.
@@ -12,6 +12,7 @@ export interface ResumeAspects {
   activities: any;
   achievements: any;
   growth_areas: any;
+  connection_aspects: ConnectionAspects;
 }
 
 /**
@@ -38,10 +39,12 @@ export async function analyzeResume(
         schema: aspectSchema,
         schemaLabel: 'ConnectionAspects',
       });
-      console.log('Raw aspects response:', parsed);
+      console.log('Raw aspects response:', parsed, typeof parsed);
 
       if (!parsed?.connection_aspects) {
-        throw new Error('Invalid aspects response – missing connection_aspects');
+        throw new Error(
+          'Invalid aspects response – missing connection_aspects'
+        );
       }
 
       const aspects = parsed.connection_aspects as ResumeAspects;

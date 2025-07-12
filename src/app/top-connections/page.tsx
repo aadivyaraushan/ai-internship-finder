@@ -12,6 +12,13 @@ import {
 import { Connection } from '@/lib/firestoreHelpers';
 import BorderMagicButton from '@/components/ui/BorderMagicButton';
 import { fetchUserData } from '@/lib/frontendUtils';
+import { MultiStepLoader } from '@/components/ui/MultiStepLoader';
+
+type ProcessingStep = {
+  id: string;
+  label: string;
+  status: 'pending' | 'in_progress' | 'completed' | 'error';
+};
 
 function getInitials(name: string): string {
   return name
@@ -98,12 +105,6 @@ function generateMatchExplanation(connection: Connection): React.ReactNode {
   );
 }
 
-interface ProcessingStep {
-  id: string;
-  label: string;
-  status: 'pending' | 'in_progress' | 'completed' | 'error';
-}
-
 export default function TopConnections() {
   const router = useRouter();
   const [connections, setConnections] = useState<Connection[]>([]);
@@ -117,37 +118,11 @@ export default function TopConnections() {
     { id: 'score', label: 'Scoring matches', status: 'pending' },
     { id: 'prepare', label: 'Preparing recommendations', status: 'pending' },
   ]);
-  const [connectionSteps, setConnectionSteps] = useState<string[]>([]);
-  const [currentConnectionStepIndex, setCurrentConnectionStepIndex] = useState(-1);
 
-  useEffect(() => {
-    const eventSource = new EventSource('/api/events/connections');
-
-    eventSource.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        if (data.type === 'step-init') {
-          setConnectionSteps(data.steps);
-          setCurrentConnectionStepIndex(0);
-        } else if (data.type === 'step-update') {
-          setCurrentConnectionStepIndex(data.stepIndex);
-        } else if (data.action === 'add') {
-          setConnections((prev) => {
-            if (prev.some((c) => c.id === data.connection.id)) return prev;
-            return [data.connection, ...prev];
-          });
-        } else if (data.action === 'remove') {
-          setConnections((prev) =>
-            prev.filter((c) => c.id !== data.connection.id)
-          );
-        }
-      } catch (error) {
-        console.error('Error parsing connection event:', error);
-      }
-    };
-
-    return () => eventSource.close();
-  }, []);
+  const [connectionSteps, setConnectionSteps] = useState<ProcessingStep[]>([]);
+  const [currentConnectionStepIndex, setCurrentConnectionStepIndex] =
+    useState(0);
+  const [findingMore, setFindingMore] = useState(false);
 
   const updateStep = (stepId: string, status: ProcessingStep['status']) => {
     setSteps((prev) =>
@@ -155,27 +130,19 @@ export default function TopConnections() {
     );
   };
 
-  useEffect(() => {
-    if (currentConnectionStepIndex >= 0 && currentConnectionStepIndex === connectionSteps.length - 1) {
-      fetchUserDataLocal();
-    }
-  }, [currentConnectionStepIndex, connectionSteps]);
-
-  const fetchUserDataLocal = async () => {
-    setLoading(true);
-    const currentUser = auth.currentUser;
-    if (!currentUser) return;
-    try {
-      const { connections } = await fetchUserData(currentUser);
-      setConnections(connections);
-    } catch (error) {
-      console.error('Error fetching user data:', error);
-    } finally {
-      setLoading(false);
-    }
+  const updateConnectionStep = (
+    stepId: string,
+    status: ProcessingStep['status']
+  ) => {
+    setConnectionSteps((prev) =>
+      prev.map((step) => (step.id === stepId ? { ...step, status } : step))
+    );
   };
 
   useEffect(() => {
+    const user = auth.currentUser;
+    if (!user) return;
+
     const storedPrefs =
       typeof window !== 'undefined'
         ? localStorage.getItem('connectionPreferences')
@@ -221,6 +188,8 @@ export default function TopConnections() {
           : userData.goals
           ? [{ title: userData.goals }]
           : [];
+        // Fetch the raw resume text
+        const rawResumeText = resumeData?.text || ''; // Fallback to empty string
 
         const response = await fetch('/api/connections', {
           method: 'POST',
@@ -232,6 +201,8 @@ export default function TopConnections() {
             race: userData.race || '',
             location: userData.location || '',
             preferences: parsedPrefs,
+            resumeAspects: userData?.resumeAspects,
+            rawResumeText,
           }),
         });
 
@@ -241,6 +212,9 @@ export default function TopConnections() {
         }
 
         const data = await response.json();
+        console.log('POST response connections:', data.connections);
+        // Temporary fallback: set connections from the POST response
+        setConnections(data.connections);
 
         updateStep('find', 'completed');
         await new Promise((r) => setTimeout(r, 800));
@@ -274,6 +248,60 @@ export default function TopConnections() {
 
     runConnectionSearch();
   }, [router]);
+
+  useEffect(() => {
+    if (!auth.currentUser) return;
+
+    const eventSource = new EventSource(
+      `/api/connections?userId=${auth.currentUser.uid}`
+    );
+
+    eventSource.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+
+        if (data.type === 'step-init') {
+          // Initialize connection steps
+          const steps = data.steps.map((label: string) => ({
+            id: label.toLowerCase().replace(/\s+/g, '_'),
+            label,
+            status: 'pending' as const,
+          }));
+          setConnectionSteps(steps);
+          setCurrentConnectionStepIndex(0);
+        } else if (data.type === 'step-update') {
+          // Update step statuses
+          const stepIndex = data.stepIndex;
+
+          // Update previous step to completed
+          if (currentConnectionStepIndex >= 0) {
+            updateConnectionStep(
+              connectionSteps[currentConnectionStepIndex].id,
+              'completed'
+            );
+          }
+
+          // Update current step to in_progress
+          if (stepIndex < connectionSteps.length) {
+            updateConnectionStep(connectionSteps[stepIndex].id, 'in_progress');
+          }
+
+          setCurrentConnectionStepIndex(stepIndex);
+        }
+      } catch (error) {
+        console.error('Error parsing connection event:', error);
+      }
+    };
+
+    eventSource.onerror = (error) => {
+      console.error('EventSource error:', error);
+      eventSource.close();
+    };
+
+    return () => {
+      eventSource.close();
+    };
+  }, [auth.currentUser, connectionSteps, currentConnectionStepIndex]);
 
   // Helper to decide if we're mid-process
   const inProgress =
@@ -324,6 +352,32 @@ export default function TopConnections() {
             );
           })()}
 
+        {findingMore && (
+          <div className='w-full mb-6'>
+            <MultiStepLoader
+              loadingStates={connectionSteps.map((s) => ({ text: s.label }))}
+              loading={findingMore}
+              progressIndex={
+                connectionSteps.length > 0 ? currentConnectionStepIndex : 0
+              }
+              loop={false}
+            />
+          </div>
+        )}
+
+        {findingMore && (
+          <div className='w-full mb-6'>
+            <MultiStepLoader
+              loadingStates={connectionSteps.map((s) => ({ text: s.label }))}
+              loading={findingMore}
+              progressIndex={
+                connectionSteps.length > 0 ? currentConnectionStepIndex : 0
+              }
+              loop={false}
+            />
+          </div>
+        )}
+
         {!inProgress && connections.length === 0 && (
           <div className='text-center'>
             <p className='text-gray-400 mb-6'>
@@ -344,7 +398,7 @@ export default function TopConnections() {
             {connections.map((connection) => (
               <div
                 key={connection.id}
-                className="bg-[#2a2a2a] p-6 rounded-lg flex items-start gap-4 h-full"
+                className='bg-[#2a2a2a] p-6 rounded-lg flex items-start gap-4 h-full'
               >
                 <div className='relative'>
                   <div
