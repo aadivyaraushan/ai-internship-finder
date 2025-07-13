@@ -88,7 +88,7 @@ export interface LinkedInApiResponse {
 export async function fetchFromLinkedInAPI(
   profileUrl: string,
   attempt = 1,
-  maxAttempts = 3
+  maxAttempts = 2
 ): Promise<LinkedInApiResponse['data']> {
   if (!process.env.RAPID_API_KEY) {
     throw new Error('RAPID_API_KEY is not configured');
@@ -97,11 +97,15 @@ export async function fetchFromLinkedInAPI(
   try {
     // Increase delay between retries (exponential backoff)
     const delayMs = Math.min(1000 * Math.pow(2, attempt - 1), 15000); // Max 15s delay
-    console.log(`⏳ Adding delay of ${delayMs}ms before LinkedIn API request (attempt ${attempt}/${maxAttempts})`);
-    await new Promise(resolve => setTimeout(resolve, delayMs));
-    
-    const url = `https://data.p.rapidapi.com/get-profile-public-data?linkedin_url=${encodeURIComponent(profileUrl)}&include_skills=false&include_certifications=false&include_publications=false&include_honors=false&include_volunteers=false&include_projects=false&include_patents=false&include_courses=false&include_organizations=false&include_profile_status=false&include_company_public_url=false`;
-    
+    console.log(
+      `⏳ Adding delay of ${delayMs}ms before LinkedIn API request (attempt ${attempt}/${maxAttempts})`
+    );
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
+
+    const url = `https://data.p.rapidapi.com/get-profile-public-data?linkedin_url=${encodeURIComponent(
+      profileUrl
+    )}&include_skills=false&include_certifications=false&include_publications=false&include_honors=false&include_volunteers=false&include_projects=false&include_patents=false&include_courses=false&include_organizations=false&include_profile_status=false&include_company_public_url=false`;
+
     const response = await axios.get<LinkedInApiResponse>(url, {
       headers: {
         'x-rapidapi-host': 'fresh-linkedin-profile-data.p.rapidapi.com',
@@ -114,10 +118,14 @@ export async function fetchFromLinkedInAPI(
     // Handle rate limiting
     if (response.status === 429) {
       if (attempt < maxAttempts) {
-        console.log(`⚠️ Rate limited (429). Retrying (${attempt + 1}/${maxAttempts})...`);
+        console.log(
+          `⚠️ Rate limited (429). Retrying (${attempt + 1}/${maxAttempts})...`
+        );
         return fetchFromLinkedInAPI(profileUrl, attempt + 1, maxAttempts);
       }
-      throw new Error(`Rate limited by LinkedIn API after ${maxAttempts} attempts`);
+      throw new Error(
+        `Rate limited by LinkedIn API after ${maxAttempts} attempts`
+      );
     }
 
     if (response.status !== 200) {
@@ -134,7 +142,9 @@ export async function fetchFromLinkedInAPI(
   } catch (error) {
     console.error('Error in fetchFromLinkedInAPI:', error);
     if (attempt < maxAttempts) {
-      console.log(`⚠️ Error occurred. Retrying (${attempt + 1}/${maxAttempts})...`);
+      console.log(
+        `⚠️ Error occurred. Retrying (${attempt + 1}/${maxAttempts})...`
+      );
       return fetchFromLinkedInAPI(profileUrl, attempt + 1, maxAttempts);
     }
     throw error;

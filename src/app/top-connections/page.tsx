@@ -3,7 +3,6 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { checkAuth, auth } from '@/lib/firebase';
-import { MultiStepLoader } from '@/components/ui/MultiStepLoader';
 import {
   getUser,
   getResume,
@@ -168,19 +167,8 @@ export default function TopConnections() {
         const resumeData: any = await getResume(user.uid);
 
         updateStep('load', 'completed');
-        await new Promise((r) => setTimeout(r, 600));
 
-        // 3. Analyze step (visual only)
-        updateStep('analyze', 'in_progress');
-        setCurrentStatus('Analyzing your resume and goals...');
-        await new Promise((r) => setTimeout(r, 900));
-        updateStep('analyze', 'completed');
-
-        // 4. Find connections
-        updateStep('find', 'in_progress');
-        setCurrentStatus('Searching for potential connections...');
-
-        // Ensure goals are always passed as an array of objects with a `title` key
+        // Prepare the request payload
         const goalsPayload = Array.isArray(userData.goals)
           ? userData.goals.map((g: any) =>
               typeof g === 'string' ? { title: g } : g
@@ -188,8 +176,12 @@ export default function TopConnections() {
           : userData.goals
           ? [{ title: userData.goals }]
           : [];
-        // Fetch the raw resume text
-        const rawResumeText = resumeData?.text || ''; // Fallback to empty string
+
+        const rawResumeText = resumeData?.text || '';
+
+        // Start the streaming connection search
+        updateStep('analyze', 'in_progress');
+        setCurrentStatus('Analyzing your resume and goals...');
 
         const response = await fetch('/api/connections', {
           method: 'POST',
@@ -211,97 +203,115 @@ export default function TopConnections() {
           throw new Error(err.error || 'Failed to find connections');
         }
 
-        const data = await response.json();
-        console.log('POST response connections:', data.connections);
-        // Temporary fallback: set connections from the POST response
-        setConnections(data.connections);
+        // Set up streaming
+        const reader = response.body?.getReader();
+        const decoder = new TextDecoder();
+        let foundConnections: any[] = [];
+        let finalData: any = null;
 
-        updateStep('find', 'completed');
-        await new Promise((r) => setTimeout(r, 800));
+        while (reader) {
+          const { done, value } = await reader.read();
+          if (done) break;
 
-        // 5. Scoring step (visual)
-        updateStep('score', 'in_progress');
-        setCurrentStatus(
-          `${data.response.connections.length} connections found! Scoring and ranking matches...`
-        );
-        await new Promise((r) => setTimeout(r, 800));
-        updateStep('score', 'completed');
+          const chunk = decoder.decode(value);
+          const lines = chunk.split('\n');
 
-        // 6. Prepare final recommendations
-        updateStep('prepare', 'in_progress');
-        setCurrentStatus('Preparing your outreach strategies...');
-        await new Promise((r) => setTimeout(r, 700));
-        updateStep('prepare', 'completed');
-        setCurrentStatus('Your connections are ready!');
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              try {
+                const data = JSON.parse(line.slice(6));
 
-        setConnections(data.response.connections);
+                switch (data.type) {
+                  case 'step-update':
+                    // Map backend steps to your UI steps
+                    switch (data.step) {
+                      case 0:
+                        updateStep('analyze', 'completed');
+                        updateStep('find', 'in_progress');
+                        setCurrentStatus(
+                          'Searching for potential connections...'
+                        );
+                        break;
+                      case 1:
+                        setCurrentStatus('Finding connections...');
+                        break;
+                      case 2:
+                        updateStep('find', 'completed');
+                        updateStep('score', 'in_progress');
+                        setCurrentStatus('Enriching and scoring matches...');
+                        break;
+                      case 3:
+                        updateStep('score', 'completed');
+                        updateStep('prepare', 'in_progress');
+                        setCurrentStatus(
+                          'Preparing your outreach strategies...'
+                        );
+                        break;
+                    }
+                    break;
 
-        // Persist connections to Firestore only
-        await updateUserConnections(user.uid, data.response.connections);
+                  case 'connection-found':
+                    // Track connections as they're found
+                    foundConnections.push(data.connection);
+                    setCurrentStatus(
+                      `Found ${data.count} of ${data.total} potential connections...`
+                    );
+                    break;
+
+                  case 'enrichment-progress':
+                    // Update status with enrichment progress
+                    setCurrentStatus(
+                      `Scoring matches... ${Math.round(
+                        data.progress
+                      )}% complete`
+                    );
+                    break;
+
+                  case 'complete':
+                    // Final processed connections
+                    finalData = data.data;
+                    updateStep('prepare', 'completed');
+                    setCurrentStatus('Your connections are ready!');
+                    break;
+
+                  case 'error':
+                    throw new Error(data.message);
+                }
+              } catch (e) {
+                console.error('Failed to parse SSE message:', e);
+              }
+            }
+          }
+        }
+
+        if (finalData) {
+          // Use the final processed connections
+          setConnections(finalData.connections);
+
+          // Persist connections to Firestore
+          await updateUserConnections(user.uid, finalData.connections);
+        } else {
+          throw new Error('No data received from connection search');
+        }
       } catch (err: any) {
         console.error('Error during connection search:', err);
         setError(err.message || 'Failed to find connections');
+
+        // Update UI to show error state
+        ['analyze', 'find', 'score', 'prepare'].forEach((step) => {
+          if (step !== 'load') {
+            updateStep(step as any, 'pending');
+          }
+        });
       } finally {
         setLoading(false);
       }
     };
 
     runConnectionSearch();
+
+    runConnectionSearch();
   }, [router]);
-
-  useEffect(() => {
-    if (!auth.currentUser) return;
-
-    const eventSource = new EventSource(
-      `/api/connections?userId=${auth.currentUser.uid}`
-    );
-
-    eventSource.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-
-        if (data.type === 'step-init') {
-          // Initialize connection steps
-          const steps = data.steps.map((label: string) => ({
-            id: label.toLowerCase().replace(/\s+/g, '_'),
-            label,
-            status: 'pending' as const,
-          }));
-          setConnectionSteps(steps);
-          setCurrentConnectionStepIndex(0);
-        } else if (data.type === 'step-update') {
-          // Update step statuses
-          const stepIndex = data.stepIndex;
-
-          // Update previous step to completed
-          if (currentConnectionStepIndex >= 0) {
-            updateConnectionStep(
-              connectionSteps[currentConnectionStepIndex].id,
-              'completed'
-            );
-          }
-
-          // Update current step to in_progress
-          if (stepIndex < connectionSteps.length) {
-            updateConnectionStep(connectionSteps[stepIndex].id, 'in_progress');
-          }
-
-          setCurrentConnectionStepIndex(stepIndex);
-        }
-      } catch (error) {
-        console.error('Error parsing connection event:', error);
-      }
-    };
-
-    eventSource.onerror = (error) => {
-      console.error('EventSource error:', error);
-      eventSource.close();
-    };
-
-    return () => {
-      eventSource.close();
-    };
-  }, [auth.currentUser, connectionSteps, currentConnectionStepIndex]);
 
   // Helper to decide if we're mid-process
   const inProgress =

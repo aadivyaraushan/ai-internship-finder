@@ -396,7 +396,6 @@ export default function Dashboard() {
 
   const fetchMoreConnections = async () => {
     if (!currentUser) return;
-
     setFindingMore(true);
 
     try {
@@ -427,14 +426,12 @@ export default function Dashboard() {
         );
       }
 
-      // Extract a single goal title for the API (backend expects `goalTitle`)
-      // Firebase now stores goals as a single string
+      // Extract a single goal title for the API
       const goalTitle =
         typeof userData?.goals === 'string' ? userData.goals : '';
+      const rawResumeText = resumeData?.text || '';
 
-      // Fetch the raw resume text
-      const rawResumeText = resumeData?.text || ''; // Fallback to empty string
-
+      // Make the streaming request
       const response = await fetch('/api/connections', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -462,14 +459,63 @@ export default function Dashboard() {
         );
       }
 
-      const data = await response.json();
-      const newConnections: Connection[] = data.connections || [];
+      // Set up streaming
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+      let streamedConnections: Connection[] = [];
+      let finalConnections: Connection[] = [];
 
+      while (reader) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value);
+        const lines = chunk.split('\n');
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.slice(6));
+
+              switch (data.type) {
+                case 'step-update':
+                  // Update your loader step
+                  setCurrentConnectionStepIndex(data.step);
+                  break;
+
+                case 'connection-found':
+                  // Add connections as they're found (optional - for real-time display)
+                  streamedConnections.push(data.connection);
+                  // You could update UI here to show connections as they arrive
+                  break;
+
+                case 'enrichment-progress':
+                  // Optional: show enrichment progress
+                  console.log(`Enriching connections: ${data.progress}%`);
+                  break;
+
+                case 'complete':
+                  // This contains the final processed connections
+                  finalConnections = data.data.connections || [];
+                  break;
+
+                case 'error':
+                  console.error('Stream error:', data.message);
+                  throw new Error(data.message);
+              }
+            } catch (e) {
+              console.error('Failed to parse SSE message:', e);
+            }
+          }
+        }
+      }
+
+      // Use the final processed connections
       setConnections((prev) => {
         const existingIds = new Set(prev.map((c) => c.id));
         const merged = [
           ...prev,
-          ...newConnections.filter((c) => !existingIds.has(c.id)),
+          ...finalConnections.filter((c) => !existingIds.has(c.id)),
         ];
 
         // Persist merged list back to Firestore
@@ -478,7 +524,6 @@ export default function Dashboard() {
             userId: currentUser.uid,
             error: error instanceof Error ? error.message : String(error),
           });
-          // Don't throw here as this is a background operation
         });
 
         return merged;
@@ -487,10 +532,12 @@ export default function Dashboard() {
       console.error('❌ Technical error - Failed to fetch connections:', {
         error: error instanceof Error ? error.message : String(error),
       });
-      // You might want to add a toast notification here if you have a notification system
+      // You might want to add a toast notification here
       // toast.error('We had trouble finding connections. Please try again.');
     } finally {
       setFindingMore(false);
+      // Reset the step index after completion
+      setCurrentConnectionStepIndex(0);
     }
   };
 
