@@ -638,25 +638,6 @@ export default function Dashboard() {
     }
   };
 
-  useEffect(() => {
-    if (!currentUser) return;
-
-    const sse = new EventSource(`/api/connections?userId=${currentUser?.uid}`);
-
-    // sse.addEventListener('step-update', () => {
-    //   setCurrentConnectionStepIndex((priorIndex) => priorIndex + 1);
-    // });
-
-    sse.onmessage = () => {
-      console.log('event source called!')
-      setCurrentConnectionStepIndex((priorIndex) => priorIndex+1);
-    };
-
-    return () => {
-      sse.close();
-    }
-  }, [currentUser, currentConnectionStepIndex]);
-
   return (
     <>
       {findingMore && (

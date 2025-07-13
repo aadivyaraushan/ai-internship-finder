@@ -25,100 +25,167 @@ type ConnectionRequest = {
 export async function POST(req: Request) {
   console.log('\n🚀 Starting connection search process');
 
-  try {
-    const body: ConnectionRequest = await req.json();
-    const {
-      goalTitle,
-      preferences,
-      userId,
-      race,
-      location,
-      resumeAspects,
-      rawResumeText,
-    } = body;
+  const encoder = new TextEncoder();
+  let streamClosed = false;
 
-    // Create a request-specific event emitter
-    const requestEmitter = new EventEmitter();
+  // Create the SSE stream
+  const stream = new ReadableStream({
+    async start(controller) {
+      try {
+        const body: ConnectionRequest = await req.json();
+        const {
+          goalTitle,
+          preferences,
+          userId,
+          race,
+          location,
+          resumeAspects,
+          rawResumeText,
+        } = body;
 
-    // Forward events to the global emitter
-    requestEmitter.on('event', (event) => {
-      globalEmitter.emit('event', { ...event, userId });
-    });
+        // Helper to send SSE messages
+        const sendSSE = (data: any) => {
+          if (!streamClosed) {
+            controller.enqueue(
+              encoder.encode(`data: ${JSON.stringify(data)}\n\n`)
+            );
+          }
+        };
 
-    // Function to broadcast events for this request
-    const broadcastEvent = (event: any) => {
-      requestEmitter.emit('event', event);
-    };
-
-    // Basic validation -------------------------------------------------------
-    if (!goalTitle) {
-      return errorResponse(400, 'Goal title is required');
-    }
-    if (!userId) {
-      return errorResponse(400, 'User ID is required');
-    }
-
-    // Step 1: Use resumeAspects from request body
-    broadcastEvent({ type: 'step-update' });
-    const aspects = resumeAspects as ResumeAspects;
-    if (!aspects) {
-      return errorResponse(400, 'No resume aspects provided');
-    }
-
-    logAspects(aspects);
-
-    // Step 2: Find and enrich connections (roles deprecated) -----------------------
-    broadcastEvent({ type: 'step-update' });
-    const found = await findConnections({
-      goalTitle,
-      connectionAspects: aspects,
-      preferences,
-      race,
-      location,
-    });
-
-    // Broadcast found connections
-    found.forEach((connection) => {
-      broadcastEvent({ type: 'add', action: 'add', connection });
-    });
-
-    broadcastEvent({ type: 'step-update' });
-    const enriched: Connection[] = await Promise.all(
-      found.map((conn) => {
-        if (conn.type === 'person') {
-          return enrichPersonConnection(conn);
-        } else if (conn.type === 'program') {
-          return enrichProgramConnection(conn);
+        // Basic validation
+        if (!goalTitle) {
+          sendSSE({ type: 'error', message: 'Goal title is required' });
+          controller.close();
+          return;
         }
-        return conn; // Fallback
-      })
-    );
+        if (!userId) {
+          sendSSE({ type: 'error', message: 'User ID is required' });
+          controller.close();
+          return;
+        }
 
-    // Broadcast enriched connections
-    enriched.forEach((connection) => {
-      broadcastEvent({
-        type: 'add',
-        action: 'add',
-        connection: postProcessConnections([connection], rawResumeText)[0],
-      });
-    });
+        // Step 1: Use resumeAspects
+        sendSSE({
+          type: 'step-update',
+          step: 0,
+          message: 'Processing resume aspects...',
+        });
+        const aspects = resumeAspects as ResumeAspects;
+        if (!aspects) {
+          sendSSE({ type: 'error', message: 'No resume aspects provided' });
+          controller.close();
+          return;
+        }
+        logAspects(aspects);
 
-    // Step 3: Post-process to trimmed structure expected by frontend
-    broadcastEvent({ type: 'step-update' });
-    const processed = postProcessConnections(enriched, rawResumeText);
+        // Step 2: Find connections
+        sendSSE({
+          type: 'step-update',
+          step: 1,
+          message: 'Finding connections...',
+        });
+        const found = await findConnections({
+          goalTitle,
+          connectionAspects: aspects,
+          preferences,
+          race,
+          location,
+        });
 
-    // Return the processed connections to the client
-    return NextResponse.json({
-      connections: processed,
-      aspects,
-      goalTitle,
-      timestamp: new Date().toISOString(),
-      status: 'success',
-    });
-  } catch (err) {
-    console.error('❌ Critical error in connection search:', err);
-    return errorResponse(500, 'Failed to fetch connections');
-  }
+        // Send found connections as they're discovered
+        found.forEach((connection, index) => {
+          sendSSE({
+            type: 'connection-found',
+            connection,
+            count: index + 1,
+            total: found.length,
+          });
+        });
+
+        // Step 3: Enrich connections
+        sendSSE({
+          type: 'step-update',
+          step: 2,
+          message: 'Enriching connections...',
+        });
+
+        // Process enrichment in batches to send updates
+        const enriched: Connection[] = [];
+        for (let i = 0; i < found.length; i++) {
+          const conn = found[i];
+          let enrichedConn: Connection;
+
+          if (conn.type === 'person') {
+            enrichedConn = await enrichPersonConnection(conn);
+          } else if (conn.type === 'program') {
+            enrichedConn = await enrichProgramConnection(conn);
+          } else {
+            enrichedConn = conn;
+          }
+
+          enriched.push(enrichedConn);
+
+          // Send progress update
+          sendSSE({
+            type: 'enrichment-progress',
+            progress: ((i + 1) / found.length) * 100,
+            current: i + 1,
+            total: found.length,
+          });
+        }
+
+        // Step 4: Post-process
+        sendSSE({
+          type: 'step-update',
+          step: 3,
+          message: 'Finalizing results...',
+        });
+        const processed = postProcessConnections(enriched, rawResumeText);
+
+        // Send final results
+        sendSSE({
+          type: 'complete',
+          data: {
+            connections: processed,
+            aspects,
+            goalTitle,
+            timestamp: new Date().toISOString(),
+            status: 'success',
+          },
+        });
+
+        // Close the stream
+        controller.close();
+      } catch (err: any) {
+        console.error('❌ Critical error in connection search:', err);
+        if (!streamClosed) {
+          controller.enqueue(
+            encoder.encode(
+              `data: ${JSON.stringify({
+                type: 'error',
+                message: 'Failed to fetch connections',
+                error: err.message,
+              })}\n\n`
+            )
+          );
+        }
+        controller.close();
+      }
+    },
+
+    cancel() {
+      streamClosed = true;
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      Connection: 'keep-alive',
+      'X-Accel-Buffering': 'no', // Disable Nginx buffering
+    },
+  });
 }
 
 // SSE endpoint for progress events
