@@ -102,7 +102,7 @@ export async function fetchFromLinkedInAPI(
     );
     await new Promise((resolve) => setTimeout(resolve, delayMs));
 
-    const url = `https://data.p.rapidapi.com/get-profile-public-data?linkedin_url=${encodeURIComponent(
+    const url = `https://fresh-linkedin-profile-data.p.rapidapi.com/get-profile-public-data?linkedin_url=${encodeURIComponent(
       profileUrl
     )}&include_skills=false&include_certifications=false&include_publications=false&include_honors=false&include_volunteers=false&include_projects=false&include_patents=false&include_courses=false&include_organizations=false&include_profile_status=false&include_company_public_url=false`;
 
