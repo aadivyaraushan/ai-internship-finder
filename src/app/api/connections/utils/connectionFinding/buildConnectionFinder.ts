@@ -53,6 +53,7 @@ Direct matches must be from these categories:
 
 ## Verification Standards
 - Include source URL for every connection that verifies their profile
+- Ensure that this source URL ACTUALLY EXISTS. Don't make one up. Take it from your actual tool call.
 - Specify the EXACT matching element from the background
 - Explain the nature of the connection clearly
 - Do NOT create fake people or connections

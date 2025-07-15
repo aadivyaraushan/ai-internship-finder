@@ -6,10 +6,10 @@ import { ConnectionsResponse } from '../app/api/connections/utils/utils';
 // Singleton OpenAI client
 
 export interface ClaudeCallOptions {
-  tools?: any[]; // Currently ignored for OpenAI calls, kept for API-compatibility
+  tools?: any[];
   maxTokens?: number;
   model?: string;
-  schema: z.ZodType<any>;
+  schema?: z.ZodType<any>;
   schemaLabel?: string;
 }
 
@@ -48,10 +48,10 @@ export async function callClaude(
     tools = [],
     maxTokens = 1024,
     model = 'gpt-4.1-mini',
-    schema = ConnectionsResponse,
-    schemaLabel = 'ConnectionsResponse',
+    schema,
+    schemaLabel,
   }: ClaudeCallOptions
-): Promise<z.infer<typeof schema>> {
+): Promise<any> {
   const client = new OpenAI();
   const messages = buildMessages(prompt);
 
@@ -64,6 +64,7 @@ export async function callClaude(
   // If an array of tools was provided, pass it through to OpenAI. The OpenAI
   // web-search tool expects objects of the form `{ type: 'web_search' }`.
   if (tools && tools.length > 0) {
+    console.log('✅ Tool used!');
     completionOptions.tools = tools;
     // Let the model decide when to call a tool.
     completionOptions.tool_choice = 'auto';
@@ -71,7 +72,11 @@ export async function callClaude(
   if (schema && schemaLabel) {
     completionOptions.text.format = zodTextFormat(schema, schemaLabel);
   }
-  const response = await client.responses.parse(completionOptions);
-
-  return response.output_parsed as z.infer<typeof ConnectionsResponse>;
+  if (schema) {
+    const response = await client.responses.parse(completionOptions);
+    console.log('Response data structure: ', response);
+    return response.output_parsed as z.infer<typeof ConnectionsResponse>;
+  }
+  const response = await client.responses.create(completionOptions);
+  return response.output_text;
 }

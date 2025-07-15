@@ -7,13 +7,13 @@ export interface Connection {
   name: string;
   imageUrl?: string;
   matchPercentage?: number;
-  verified_profile_url?: string;
+  verified_profile_url: string;
   email?: string;
   type?: 'person' | 'program';
   program_description?: string | null;
   program_type?: string | null;
   organization?: string | null;
-  website_url?: string | null;
+  website_url: string | null;
   enrollment_info?: string | null;
   how_this_helps?: string | null;
   description?: string | null;

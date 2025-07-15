@@ -38,15 +38,28 @@ export async function findConnections({
 
   while (retry <= MAX_RETRIES) {
     try {
-      const parsed = await callClaude(prompt, {
+      const rawResponse = await callClaude(prompt, {
         tools: [{ type: 'web_search_preview' }],
         maxTokens: 2000,
         model: 'gpt-4.1',
-        schema: ConnectionsResponse,
-        schemaLabel: 'ConnectionsResponse',
       });
 
+      console.log(rawResponse);
+
+      const parsed = await callClaude(
+        'Parse the following response and convert the JSON at the end to pure JSON: \n\n' +
+          rawResponse,
+        {
+          model: 'gpt-4.1-nano',
+          maxTokens: 2000,
+          schema: ConnectionsResponse,
+          schemaLabel: 'ConnectionsResponse',
+        }
+      );
+
       if (!parsed?.connections) throw new Error('Invalid finder response');
+
+      console.log('✅ Connections found: ', parsed);
 
       // Filter and validate connections
       const validConnections = parsed.connections.filter(

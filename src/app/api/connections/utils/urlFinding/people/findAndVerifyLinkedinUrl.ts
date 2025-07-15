@@ -53,7 +53,7 @@ interface FindAndVerifyResult {
 export async function findAndVerifyLinkedInUrl(
   connection: Connection,
   existingUrl?: string
-): Promise<FindAndVerifyResult | { verified_profile_url: null }> {
+): Promise<any> {
   let isVerifiedUrl = false; // flag indicating if a verified URL has been found
   let attempts = 0;
 
@@ -83,213 +83,215 @@ export async function findAndVerifyLinkedInUrl(
     }
   }
 
-  // Pre-compute reusable constants
-  const name = connection.name;
-  const currentRole = connection.current_role ?? '';
-  const company = connection.company ?? '';
-  const nameVariations = [
-    name.toLowerCase(),
-    name.toLowerCase().replace(/\s+/g, ''),
-    name.split(' ')[0].toLowerCase(),
-    (name.split(' ').pop() ?? '').toLowerCase(),
-  ];
+  return null;
 
-  while (!isVerifiedUrl) {
-    // Add delay before each search attempt
-    await delay();
+  // // Pre-compute reusable constants
+  // const name = connection.name;
+  // const currentRole = connection.current_role ?? '';
+  // const company = connection.company ?? '';
+  // const nameVariations = [
+  //   name.toLowerCase(),
+  //   name.toLowerCase().replace(/\s+/g, ''),
+  //   name.split(' ')[0].toLowerCase(),
+  //   (name.split(' ').pop() ?? '').toLowerCase(),
+  // ];
 
-    // Build different search queries for each attempt
-    let searchQuery: string;
+  // while (!isVerifiedUrl) {
+  //   // Add delay before each search attempt
+  //   await delay();
 
-    // Safely handle optional fields
-    const name = connection.name;
-    const currentRole = connection.current_role ?? '';
-    const company = connection.company ?? '';
+  //   // Build different search queries for each attempt
+  //   let searchQuery: string;
 
-    if (attempts === 0) {
-      searchQuery = `${name} ${currentRole} ${company} (site:linkedin.com/in/ OR site:github.com OR site:medium.com OR site:about.me OR site:personalwebsite)`;
-    } else if (attempts === 1) {
-      // Try with just name and company
-      searchQuery = `${name} ${company} profile contact`;
-    } else {
-      // Try with name and role keywords
-      const roleKeywords = currentRole
-        .split(' ')
-        .filter(
-          (word: string) =>
-            ![
-              'the',
-              'a',
-              'an',
-              'and',
-              'or',
-              'but',
-              'in',
-              'on',
-              'at',
-              'to',
-              'for',
-            ].includes(word.toLowerCase())
-        )
-        .join(' ');
-      searchQuery = `${name} ${roleKeywords} contact profile`;
-    }
+  //   // Safely handle optional fields
+  //   const name = connection.name;
+  //   const currentRole = connection.current_role ?? '';
+  //   const company = connection.company ?? '';
 
-    const serpApiKey = process.env.SERP_API_KEY;
-    if (!serpApiKey) {
-      throw new Error('Missing SERP_API_KEY environment variable');
-    }
+  //   if (attempts === 0) {
+  //     searchQuery = `${name} ${currentRole} ${company} (site:linkedin.com/in/ OR site:github.com OR site:medium.com OR site:about.me OR site:personalwebsite)`;
+  //   } else if (attempts === 1) {
+  //     // Try with just name and company
+  //     searchQuery = `${name} ${company} profile contact`;
+  //   } else {
+  //     // Try with name and role keywords
+  //     const roleKeywords = currentRole
+  //       .split(' ')
+  //       .filter(
+  //         (word: string) =>
+  //           ![
+  //             'the',
+  //             'a',
+  //             'an',
+  //             'and',
+  //             'or',
+  //             'but',
+  //             'in',
+  //             'on',
+  //             'at',
+  //             'to',
+  //             'for',
+  //           ].includes(word.toLowerCase())
+  //       )
+  //       .join(' ');
+  //     searchQuery = `${name} ${roleKeywords} contact profile`;
+  //   }
 
-    const serpUrl = `https://serpapi.com/search.json?engine=google&q=${encodeURIComponent(
-      searchQuery
-    )}&api_key=${serpApiKey}`;
+  //   const serpApiKey = process.env.SERP_API_KEY;
+  //   if (!serpApiKey) {
+  //     throw new Error('Missing SERP_API_KEY environment variable');
+  //   }
 
-    let parsedUrl: {
-      potential_urls: { url: string; source_type: string }[];
-    } | null = null;
+  //   const serpUrl = `https://serpapi.com/search.json?engine=google&q=${encodeURIComponent(
+  //     searchQuery
+  //   )}&api_key=${serpApiKey}`;
 
-    try {
-      console.log(`🔍 Search attempt ${attempts + 1} for: ${name}`);
-      await delay(); // Additional delay before API request
-      const serpResp = await fetch(serpUrl);
+  //   let parsedUrl: {
+  //     potential_urls: { url: string; source_type: string }[];
+  //   } | null = null;
 
-      if (!serpResp.ok) {
-        console.error('SERP API error:', await serpResp.text());
-        attempts++;
-        if (attempts >= 3) break;
-        continue;
-      }
+  //   try {
+  //     console.log(`🔍 Search attempt ${attempts + 1} for: ${name}`);
+  //     await delay(); // Additional delay before API request
+  //     const serpResp = await fetch(serpUrl);
 
-      const data = await serpResp.json();
+  //     if (!serpResp.ok) {
+  //       console.error('SERP API error:', await serpResp.text());
+  //       attempts++;
+  //       if (attempts >= 3) break;
+  //       continue;
+  //     }
 
-      // Process the search results...
-      const organic: any[] = data.organic_results || [];
+  //     const data = await serpResp.json();
 
-      const potential_urls = organic
-        .map((r) => r.link as string)
-        .filter((link) => typeof link === 'string')
-        .slice(0, 5) // limit to top 5 like previous prompt
-        .map((url) => {
-          let source_type: string = 'other';
-          if (url.includes('linkedin.com')) source_type = 'linkedin';
-          else if (url.includes('github.com')) source_type = 'github';
-          else if (url.includes('medium.com')) source_type = 'medium';
-          else if (url.includes('about.me')) source_type = 'personal';
-          return { url, source_type };
-        });
+  //     // Process the search results...
+  //     const organic: any[] = data.organic_results || [];
 
-      parsedUrl = { potential_urls };
-    } catch (error) {
-      console.error('Error during search:', error);
-      attempts++;
-      if (attempts >= 3) break;
-      await delay(); // Additional delay on error before retry
-    }
+  //     const potential_urls = organic
+  //       .map((r) => r.link as string)
+  //       .filter((link) => typeof link === 'string')
+  //       .slice(0, 5) // limit to top 5 like previous prompt
+  //       .map((url) => {
+  //         let source_type: string = 'other';
+  //         if (url.includes('linkedin.com')) source_type = 'linkedin';
+  //         else if (url.includes('github.com')) source_type = 'github';
+  //         else if (url.includes('medium.com')) source_type = 'medium';
+  //         else if (url.includes('about.me')) source_type = 'personal';
+  //         return { url, source_type };
+  //       });
 
-    if (parsedUrl?.potential_urls && parsedUrl.potential_urls.length > 0) {
-      // Try each URL until we find a match
-      for (const urlData of parsedUrl.potential_urls) {
-        const url = typeof urlData === 'string' ? urlData : urlData.url;
-        const sourceType =
-          typeof urlData === 'string'
-            ? url.includes('linkedin.com')
-              ? 'linkedin'
-              : url.includes('github.com')
-              ? 'github'
-              : url.includes('medium.com')
-              ? 'medium'
-              : 'other'
-            : urlData.source_type;
+  //     parsedUrl = { potential_urls };
+  //   } catch (error) {
+  //     console.error('Error during search:', error);
+  //     attempts++;
+  //     if (attempts >= 3) break;
+  //     await delay(); // Additional delay on error before retry
+  //   }
 
-        console.log(`🔍 Attempting to verify URL (attempt ${attempts + 1}):`, {
-          url,
-          sourceType,
-        });
+  //   if (parsedUrl?.potential_urls && parsedUrl.potential_urls.length > 0) {
+  //     // Try each URL until we find a match
+  //     for (const urlData of parsedUrl.potential_urls) {
+  //       const url = typeof urlData === 'string' ? urlData : urlData.url;
+  //       const sourceType =
+  //         typeof urlData === 'string'
+  //           ? url.includes('linkedin.com')
+  //             ? 'linkedin'
+  //             : url.includes('github.com')
+  //             ? 'github'
+  //             : url.includes('medium.com')
+  //             ? 'medium'
+  //             : 'other'
+  //           : urlData.source_type;
 
-        try {
-          let profileData: ProfileData;
-          if (sourceType === 'linkedin') {
-            await delay(); // Additional delay before API request
-            profileData = await scrapeLinkedInProfile(url);
-          } else {
-            // Use the new function for non-LinkedIn URLs
-            profileData = await verifyNonLinkedInUrl(
-              url,
-              connection,
-              nameVariations
-            );
-          }
+  //       console.log(`🔍 Attempting to verify URL (attempt ${attempts + 1}):`, {
+  //         url,
+  //         sourceType,
+  //       });
 
-          if (!profileData.error) {
-            // Check if scraped data matches our connection
+  //       try {
+  //         let profileData: ProfileData;
+  //         if (sourceType === 'linkedin') {
+  //           await delay(); // Additional delay before API request
+  //           profileData = await scrapeLinkedInProfile(url);
+  //         } else {
+  //           // Use the new function for non-LinkedIn URLs
+  //           profileData = await verifyNonLinkedInUrl(
+  //             url,
+  //             connection,
+  //             nameVariations
+  //           );
+  //         }
 
-            // ... (rest of the code remains the same)
-            const nameSim = textSimilarity(
-              connection.name,
-              profileData.name ?? ''
-            );
-            const roleSim = textSimilarity(
-              connection.current_role ?? '',
-              profileData.currentRole ?? ''
-            );
-            const companySim = textSimilarity(
-              connection.company ?? '',
-              profileData.company ?? ''
-            );
-            const weightedScore =
-              nameSim * 0.5 + roleSim * 0.3 + companySim * 0.2;
+  //         if (!profileData.error) {
+  //           // Check if scraped data matches our connection
 
-            console.log('Profile similarity:', {
-              source: sourceType,
-              found: {
-                name: profileData.name,
-                role: profileData.currentRole,
-                company: profileData.company,
-                confidence: profileData.confidence,
-              },
-              expected: {
-                name: connection.name,
-                role: connection.current_role,
-                company: connection.company,
-              },
-              similarity: {
-                nameSim,
-                roleSim,
-                companySim,
-                weightedScore,
-              },
-            });
+  //           // ... (rest of the code remains the same)
+  //           const nameSim = textSimilarity(
+  //             connection.name,
+  //             profileData.name ?? ''
+  //           );
+  //           const roleSim = textSimilarity(
+  //             connection.current_role ?? '',
+  //             profileData.currentRole ?? ''
+  //           );
+  //           const companySim = textSimilarity(
+  //             connection.company ?? '',
+  //             profileData.company ?? ''
+  //           );
+  //           const weightedScore =
+  //             nameSim * 0.5 + roleSim * 0.3 + companySim * 0.2;
 
-            const isMatch = weightedScore >= 0.75;
+  //           console.log('Profile similarity:', {
+  //             source: sourceType,
+  //             found: {
+  //               name: profileData.name,
+  //               role: profileData.currentRole,
+  //               company: profileData.company,
+  //               confidence: profileData.confidence,
+  //             },
+  //             expected: {
+  //               name: connection.name,
+  //               role: connection.current_role,
+  //               company: connection.company,
+  //             },
+  //             similarity: {
+  //               nameSim,
+  //               roleSim,
+  //               companySim,
+  //               weightedScore,
+  //             },
+  //           });
 
-            if (isMatch) {
-              isVerifiedUrl = true;
-              return {
-                verified_profile_url: url,
-                profile_source: sourceType,
-                profile_data: profileData,
-                match_confidence: weightedScore,
-              };
-            }
-          }
-        } catch (error) {
-          console.error('❌ Error during profile scraping:', {
-            url,
-            error: error instanceof Error ? error.message : String(error),
-          });
-          continue;
-        }
-      }
-    }
+  //           const isMatch = weightedScore >= 0.75;
 
-    attempts++;
-    if (!isVerifiedUrl) {
-      // Add a small delay between attempts to avoid rate limiting
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-    }
-  }
+  //           if (isMatch) {
+  //             isVerifiedUrl = true;
+  //             return {
+  //               verified_profile_url: url,
+  //               profile_source: sourceType,
+  //               profile_data: profileData,
+  //               match_confidence: weightedScore,
+  //             };
+  //           }
+  //         }
+  //       } catch (error) {
+  //         console.error('❌ Error during profile scraping:', {
+  //           url,
+  //           error: error instanceof Error ? error.message : String(error),
+  //         });
+  //         continue;
+  //       }
+  //     }
+  //   }
 
-  return {
-    verified_profile_url: null,
-  };
+  //   attempts++;
+  //   if (!isVerifiedUrl) {
+  //     // Add a small delay between attempts to avoid rate limiting
+  //     await new Promise((resolve) => setTimeout(resolve, 1000));
+  //   }
+  // }
+
+  // return {
+  //   verified_profile_url: null,
+  // };
 }

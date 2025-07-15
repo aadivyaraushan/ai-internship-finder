@@ -18,46 +18,34 @@ export async function enrichPersonConnection(
 ): Promise<Connection> {
   console.log(` Enriching person: ${conn.name}`);
 
-  // 1. VERIFY EXISTING LINKEDIN URL (if present)
-  if (conn.verified_profile_url) {
-    try {
-      const verification = await verifyLinkedInUrl(
-        conn.verified_profile_url,
-        conn
-      );
-      if (verification.valid) {
-        // Valid LinkedIn URL
-        conn.website_verified = true;
-        conn.profile_data = verification.profile_data;
-      } else {
-        // Invalid LinkedIn URL - clear it so we can search for a new one
-        conn.verified_profile_url = undefined;
-      }
-    } catch (err) {
-      console.warn('LinkedIn URL verification failed:', err);
+  // 1. VERIFY EXISTING LINKEDIN URL (if linkedin URL)
+  try {
+    const verification = await verifyLinkedInUrl(
+      conn.verified_profile_url,
+      conn
+    );
+    if (verification.valid) {
+      // Valid LinkedIn URL
+      conn.website_verified = true;
+      conn.profile_data = verification.profile_data;
+    } else {
+      // Invalid LinkedIn URL - clear it so we can search for a new one
     }
+  } catch (err) {
+    console.warn('LinkedIn URL verification failed:', err);
   }
-
-  // 2. VERIFY SOURCE URL (if present and not LinkedIn)
-  if (conn.url && !conn.website_verified) {
+  // 2. VERIFY NON-LINKEDIN URL
+  if (!conn.website_verified) {
     try {
-      if (conn.url.includes('linkedin.com')) {
-        // Verify as LinkedIn URL
-        const verification = await verifyLinkedInUrl(conn.url, conn);
-        if (verification.valid) {
-          conn.verified_profile_url = conn.url;
-          conn.website_verified = true;
-          conn.profile_data = verification.profile_data;
-        }
-      } else {
-        // Verify as non-LinkedIn URL
-        const verified = await verifyNonLinkedInUrl(conn.url, conn, [
-          conn.name,
-        ]);
-        if (!verified.error) {
-          conn.website_verified = true;
-          conn.profile_data = { ...(conn.profile_data || {}), ...verified };
-        }
+      const verified = await verifyNonLinkedInUrl(
+        conn.verified_profile_url,
+        conn,
+        [conn.name]
+      );
+
+      if (!verified.error) {
+        conn.website_verified = true;
+        conn.profile_data = { ...(conn.profile_data || {}), ...verified };
       }
     } catch (err) {
       console.warn('URL verification failed:', err);
@@ -65,7 +53,7 @@ export async function enrichPersonConnection(
   }
 
   // 3. SEARCH FOR NEW LINKEDIN URL (if no valid URL found)
-  if (!conn.verified_profile_url && !conn.website_verified) {
+  if (!conn.website_verified) {
     try {
       const res = await findAndVerifyLinkedInUrl(
         conn,

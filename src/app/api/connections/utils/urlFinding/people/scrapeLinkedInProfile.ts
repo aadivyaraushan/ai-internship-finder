@@ -147,9 +147,7 @@ async function fallbackScrape(
   }
 }
 
-export async function scrapeLinkedInProfile(
-  profileUrl: string
-): Promise<LinkedInProfileData> {
+export async function scrapeLinkedInProfile(profileUrl: string): Promise<any> {
   try {
     console.log(`🔍 Attempting to scrape LinkedIn profile: ${profileUrl}`);
 
@@ -164,8 +162,7 @@ export async function scrapeLinkedInProfile(
         'LinkedIn API fetch failed, falling back to direct scraping:',
         apiError
       );
-      // If API fails, fall back to direct scraping
-      return await fallbackScrape(profileUrl);
+      return null;
     }
   } catch (error) {
     console.error('❌ Error scraping LinkedIn profile:', error);
