@@ -104,49 +104,6 @@ function transformLinkedInData(
   };
 }
 
-/**
- * Fallback method using direct scraping when API fails
- */
-async function fallbackScrape(
-  profileUrl: string
-): Promise<LinkedInProfileData> {
-  try {
-    await delay();
-    console.log('🔍 Falling back to direct scraping for:', profileUrl);
-
-    const response = await axios.get(profileUrl, {
-      headers: DEFAULT_HEADERS,
-      timeout: 10000,
-    });
-
-    if (response.status !== 200) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-
-    const $ = cheerio.load(response.data);
-    const name = $('h1.text-heading-xlarge').text().trim() || 'Unknown';
-    const currentRole =
-      $('div.text-body-medium.break-words').first().text().trim() || '';
-
-    if (name === 'Unknown') {
-      throw new Error(
-        'Could not extract profile information - LinkedIn may have detected scraping'
-      );
-    }
-
-    return {
-      name,
-      currentRole,
-      company:
-        $('div.pv-entity__company-summary-info h3').first().text().trim() ||
-        undefined,
-    };
-  } catch (error) {
-    console.error('Error in fallback scrape:', error);
-    throw new Error('Failed to scrape LinkedIn profile directly');
-  }
-}
-
 export async function scrapeLinkedInProfile(profileUrl: string): Promise<any> {
   try {
     console.log(`🔍 Attempting to scrape LinkedIn profile: ${profileUrl}`);
@@ -158,10 +115,7 @@ export async function scrapeLinkedInProfile(profileUrl: string): Promise<any> {
       console.log('✅ Successfully fetched profile via LinkedIn API');
       return profileData;
     } catch (apiError) {
-      console.warn(
-        'LinkedIn API fetch failed, falling back to direct scraping:',
-        apiError
-      );
+      console.log('LinkedIn Profile not found', apiError);
       return null;
     }
   } catch (error) {
