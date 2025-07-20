@@ -35,18 +35,18 @@ export function PersonConnectionCard({
           {(connection.email || connection.verified_profile_url) && (
             <a
               href={
-                connection.email
-                  ? `mailto:${connection.email}`
-                  : connection.verified_profile_url
+                connection.verified_profile_url
+                  ? connection.verified_profile_url
+                  : `mailto:${connection.email}`
               }
               target='_blank'
               rel='noopener noreferrer'
               className='text-blue-500 text-xs'
             >
-              {connection.email
-                ? 'Email'
-                : connection.verified_profile_url?.includes('linkedin')
+              {connection.verified_profile_url?.includes('linkedin')
                 ? 'LinkedIn'
+                : connection.email
+                ? 'Email'
                 : 'Non-LinkedIn Contact'}
             </a>
           )}

@@ -7,7 +7,7 @@ export interface Connection {
   name: string;
   imageUrl?: string;
   matchPercentage?: number;
-  verified_profile_url: string;
+  verified_profile_url: string | null;
   email?: string;
   type?: 'person' | 'program';
   program_description?: string | null;

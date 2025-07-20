@@ -52,7 +52,7 @@ interface FindAndVerifyResult {
 
 export async function findAndVerifyLinkedInUrl(
   connection: Connection,
-  existingUrl?: string
+  existingUrl: string
 ): Promise<any> {
   let isVerifiedUrl = false; // flag indicating if a verified URL has been found
   let attempts = 0;

@@ -11,6 +11,7 @@ export interface ClaudeCallOptions {
   model?: string;
   schema?: z.ZodType<any>;
   schemaLabel?: string;
+  effort?: string;
 }
 
 /**
@@ -50,6 +51,7 @@ export async function callClaude(
     model = 'gpt-4.1-mini',
     schema,
     schemaLabel,
+    effort,
   }: ClaudeCallOptions
 ): Promise<any> {
   const client = new OpenAI();
@@ -58,6 +60,7 @@ export async function callClaude(
   const completionOptions: any = {
     model,
     input: messages,
+    max_output_tokens: maxTokens,
     text: {},
   } as any;
 
@@ -69,6 +72,11 @@ export async function callClaude(
     // Let the model decide when to call a tool.
     completionOptions.tool_choice = 'auto';
   }
+  if (effort) {
+    completionOptions.reasoning = {};
+    completionOptions.reasoning.effort = effort;
+  }
+
   if (schema && schemaLabel) {
     completionOptions.text.format = zodTextFormat(schema, schemaLabel);
   }

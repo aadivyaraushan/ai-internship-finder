@@ -102,13 +102,6 @@ export async function POST(req: Request) {
           });
         });
 
-        // Step 3: Enrich connections
-        sendSSE({
-          type: 'step-update',
-          step: 2,
-          message: 'Enriching connections...',
-        });
-
         // Process enrichment in batches to send updates
         const enriched: Connection[] = [];
         for (let i = 0; i < found.length; i++) {
@@ -122,8 +115,9 @@ export async function POST(req: Request) {
           } else {
             enrichedConn = conn;
           }
-
-          enriched.push(enrichedConn);
+          if (enrichedConn.verified_profile_url) {
+            enriched.push(enrichedConn);
+          }
 
           // Send progress update
           sendSSE({

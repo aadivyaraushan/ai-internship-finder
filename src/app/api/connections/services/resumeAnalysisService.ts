@@ -33,13 +33,24 @@ export async function analyzeResume(
       const prompt = buildResumeAspectAnalyzerPrompt(resumeContext);
       console.log('Resume analysis prompt:', prompt);
 
-      const parsed = await callClaude(prompt, {
+      const rawResponse = await callClaude(prompt, {
         maxTokens: 1000,
         model: 'gpt-4.1-nano',
-        schema: aspectSchema,
-        schemaLabel: 'ConnectionAspects',
       });
-      console.log('Raw aspects response:', parsed, typeof parsed);
+
+      console.log('🧠 Thinking...', rawResponse);
+
+      const parsed = await callClaude(
+        'Parse the following response and convert the JSON at the end to pure JSON: \n\n' +
+          rawResponse,
+        {
+          model: 'gpt-4.1-nano',
+          maxTokens: 2000,
+          schema: aspectSchema,
+          schemaLabel: 'ConnectionAspects',
+        }
+      );
+      console.log('Parsed aspects response:', parsed, typeof parsed);
 
       if (!parsed?.connection_aspects) {
         throw new Error(
