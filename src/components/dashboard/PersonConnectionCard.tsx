@@ -56,7 +56,7 @@ export function PersonConnectionCard({
           {connection.company && ` at ${connection.company}`}
         </p>
         {connection.description && (
-          <p className='text-gray-500 text-xs mt-2 line-clamp-2'>
+          <p className='text-gray-500 text-xs mt-2 line-clamp-5'>
             {connection.description}
           </p>
         )}

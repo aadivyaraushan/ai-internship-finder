@@ -37,7 +37,7 @@
     "mini-svg-data-uri": "^1.4.4",
     "motion": "^12.19.2",
     "next": "15.3.3",
-    "openai": "^4.104.0",
+    "openai": "^5.10.1",
     "pdf-parse": "^1.1.1",
     "postprocessing": "^6.37.4",
     "react": "^19.1.0",

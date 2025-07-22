@@ -691,8 +691,9 @@ export default function Dashboard() {
         <MultiStepLoader
           loadingStates={[
             { text: 'Analyzing resume' },
-            { text: 'Finding connections' },
-            { text: 'Verifying and evaluating connections' },
+            {
+              text: "Finding connections (this may take 50-60 seconds — we're searching the web for the best opportunities for you)",
+            },
             { text: 'Processing connections for display' },
           ]}
           loading={findingMore}
@@ -751,8 +752,8 @@ export default function Dashboard() {
                     <div className='space-y-4'>
                       <div className='bg-[#2a2a2a] p-4 rounded-lg'>
                         <h3 className='text-white font-medium mb-2'>
-                          Current Goal (What do you want to do? Be as specific
-                          as possible)
+                          Current Goal (What do you want to do? Be as clear and
+                          precise in your goals as possible)
                         </h3>
                         <textarea
                           className='w-full h-24 px-3 py-2 text-gray-300 bg-[#1a1a1a] rounded-lg focus:outline-none'
@@ -914,7 +915,7 @@ export default function Dashboard() {
                               }
                               className='w-full md:w-auto'
                             >
-                              Find more connections
+                              Find 5 more connections
                             </BorderMagicButton>
                           </div>
                         </div>

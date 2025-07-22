@@ -184,6 +184,7 @@ export async function POST(req: NextRequest) {
         model: 'gpt-4.1-nano',
         schema: ResumeSchema,
         schemaLabel: 'Resume',
+        isReasoning: false,
       });
 
       // Step 3: Processing results with AI -> Analyzing connection aspects

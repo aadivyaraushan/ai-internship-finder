@@ -2,7 +2,6 @@ import { callClaude } from '../../../../lib/anthropicClient';
 import { buildConnectionFinderPrompt } from '../utils/connectionFinding/buildConnectionFinder';
 import { ConnectionsResponse } from '../utils/utils';
 import { Connection } from '@/lib/firestoreHelpers';
-
 interface FinderParams {
   goalTitle: string;
   connectionAspects: any;
@@ -38,14 +37,41 @@ export async function findConnections({
 
   while (retry <= MAX_RETRIES) {
     try {
-      const parsed = await callClaude(prompt, {
-        tools: [{ type: 'web_search_preview' }],
+      const rawResponse = await callClaude(prompt, {
+        tools: [
+          { type: 'web_search_preview' },
+          {
+            type: 'function',
+            name: 'access_linkedin_url',
+            description:
+              "Get access to public data from the URL of a person's LinkedIn profile",
+            parameters: {
+              type: 'object',
+              properties: {
+                profile_url: {
+                  type: 'string',
+                  description:
+                    "URL of person's LinkedIn profile accessed from web search results",
+                },
+              },
+              required: ['profile_url'],
+            },
+          },
+        ],
         maxTokens: 5000,
-        model: 'o3',
-        schema: ConnectionsResponse,
-        schemaLabel: 'ConnectionsResponse',
-        effort: 'medium',
+        model: 'gpt-4o-search-preview',
       });
+
+      const parsed = await callClaude(
+        'Parse the following response and convert the JSON at the end to pure JSON: \n\n' +
+          rawResponse,
+        {
+          model: 'gpt-4.1-nano',
+          maxTokens: 2000,
+          schema: ConnectionsResponse,
+          schemaLabel: 'ConnectionsResponse',
+        }
+      );
 
       if (!parsed?.connections) throw new Error('Invalid finder response');
 

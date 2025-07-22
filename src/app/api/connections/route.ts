@@ -84,6 +84,7 @@ export async function POST(req: Request) {
           step: 1,
           message: 'Finding connections...',
         });
+        console.log('preferences: ', preferences);
         const found = await findConnections({
           goalTitle,
           connectionAspects: aspects,
@@ -102,31 +103,31 @@ export async function POST(req: Request) {
           });
         });
 
-        // Process enrichment in batches to send updates
-        const enriched: Connection[] = [];
-        for (let i = 0; i < found.length; i++) {
-          const conn = found[i];
-          let enrichedConn: Connection;
+        // // Process enrichment in batches to send updates
+        // const enriched: Connection[] = [];
+        // for (let i = 0; i < found.length; i++) {
+        //   const conn = found[i];
+        //   let enrichedConn: Connection;
 
-          if (conn.type === 'person') {
-            enrichedConn = await enrichPersonConnection(conn);
-          } else if (conn.type === 'program') {
-            enrichedConn = await enrichProgramConnection(conn);
-          } else {
-            enrichedConn = conn;
-          }
-          if (enrichedConn.verified_profile_url) {
-            enriched.push(enrichedConn);
-          }
+        //   if (conn.type === 'person') {
+        //     enrichedConn = await enrichPersonConnection(conn);
+        //   } else if (conn.type === 'program') {
+        //     enrichedConn = await enrichProgramConnection(conn);
+        //   } else {
+        //     enrichedConn = conn;
+        //   }
+        //   if (enrichedConn.verified_profile_url) {
+        //     enriched.push(enrichedConn);
+        //   }
 
-          // Send progress update
-          sendSSE({
-            type: 'enrichment-progress',
-            progress: ((i + 1) / found.length) * 100,
-            current: i + 1,
-            total: found.length,
-          });
-        }
+        // Send progress update
+        //   sendSSE({
+        //     type: 'enrichment-progress',
+        //     progress: ((i + 1) / found.length) * 100,
+        //     current: i + 1,
+        //     total: found.length,
+        //   });
+        // }
 
         // Step 4: Post-process
         sendSSE({
@@ -134,7 +135,7 @@ export async function POST(req: Request) {
           step: 3,
           message: 'Finalizing results...',
         });
-        const processed = postProcessConnections(enriched, rawResumeText);
+        const processed = postProcessConnections(found, rawResumeText);
 
         // Send final results
         sendSSE({
