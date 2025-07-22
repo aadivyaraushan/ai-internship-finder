@@ -1,4 +1,4 @@
-import { callClaude } from '../../../../lib/anthropicClient';
+import { callClaude } from '@/lib/anthropicClient';
 import { buildConnectionFinderPrompt } from '../utils/connectionFinding/buildConnectionFinder';
 import { ConnectionsResponse } from '../utils/utils';
 import { Connection } from '@/lib/firestoreHelpers';
@@ -52,9 +52,9 @@ export async function findConnections({
                 },
                 location: {
                   type: 'string',
-                  description:'check whether you\'d want to search with a location, if none just specify `NONE` if u want to specify location specify like `city(optional), state, country`'
+                  description:
+                    "check whether you'd want to search with a location, if none just specify `NONE` if u want to specify location specify like `city(optional), state, country`",
                 },
-                
               },
               required: ['query'],
             },
@@ -78,7 +78,7 @@ export async function findConnections({
           },
         ],
         maxTokens: 5000,
-        model: 'gpt-4o-search-preview',
+        model: 'gpt-4.1',
       });
 
       const parsed = await callClaude(

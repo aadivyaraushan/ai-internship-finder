@@ -3,7 +3,6 @@ import { zodResponseFormat, zodTextFormat } from 'openai/helpers/zod';
 import { z } from 'zod';
 import { ConnectionsResponse } from '../app/api/connections/utils/utils';
 import { scrapeLinkedInProfile } from '@/app/api/connections/utils/urlFinding/people/scrapeLinkedInProfile';
-import {getJson} from 'serpapi'
 
 // Singleton OpenAI client
 
@@ -201,18 +200,34 @@ export async function callClaude(
                 item.name === 'web_search'
               ) {
                 const args = JSON.parse(item.arguments);
-                getJson({
-                  engine: 'google',
-                  api_key: process.env.SERP_API_KEY,
-                  q: args.query,
-                  location: args.query == 'NONE' ? undefined : args.query
-                }, (json) => {
-                  toolCallOutputs.push({
-                    type: 'function_call_output',
-                    call_id: item.call_id,
-                    output: JSON.stringify(json)
-                  })
-                })
+                console.log('args used for search: ', args);
+                // getJson(
+                //   {
+                //     engine: 'google_light',
+                //     api_key: process.env.SERP_API_KEY,
+                //     q: args.query,
+                //     location:
+                //       args.location === 'NONE' ? undefined : args.location,
+                //   },
+                //   (json) => {
+                //     console.log('JSON output from search: ', json);
+                //     toolCallOutputs.push({
+                //       type: 'function_call_output',
+                //       call_id: item.call_id,
+                //       output: JSON.stringify(json),
+                //     });
+                //   }
+                // );
+                const response = await fetch(
+                  `https://api.avesapi.com/search?apikey=${process.env.NEXT_PUBLIC_AVES_API_KEY}&type=web&query=${args.query}&google_domain=google.ae&gl=ae&hl=en&device=desktop&output=json&num=10`
+                );
+
+                const data = await response.json();
+                toolCallOutputs.push({
+                  type: 'function_call_output',
+                  call_id: item.call_id,
+                  output: JSON.stringify(data),
+                });
               }
               // Add more tool handlers as needed
             }
@@ -317,8 +332,18 @@ export async function callClaude(
                 item.name === 'search_web' ||
                 item.name === 'web_search'
               ) {
-                console.log('🔎 Web search tool called (handled by OpenAI)');
-                // OpenAI handles web search internally, results will be in next response
+                const args = JSON.parse(item.arguments);
+                console.log('args used for search: ', args);
+                const response = await fetch(
+                  `https://api.avesapi.com/search?apikey=${process.env.NEXT_PUBLIC_AVES_API_KEY}&type=web&query=${args.query}&google_domain=google.ae&gl=ae&hl=en&device=desktop&output=json&num=10`
+                );
+
+                const data = await response.json();
+                toolCallOutputs.push({
+                  type: 'function_call_output',
+                  call_id: item.call_id,
+                  output: JSON.stringify(data),
+                });
               }
               // Add more tool handlers as needed
             }
@@ -435,8 +460,17 @@ export async function callClaude(
             }
             // Add other tool handlers here as needed
             else if (item.name === 'search_web' || item.name === 'web_search') {
-              console.log('🔎 Web search tool called (handled by OpenAI)');
-              // OpenAI handles web search internally, results will be in next response
+              const args = JSON.parse(item.arguments);
+              console.log('args used for search: ', args);
+              const response = await fetch(
+                `https://api.avesapi.com/search?apikey=${process.env.NEXT_PUBLIC_AVES_API_KEY}&type=web&query=${args.query}&google_domain=google.ae&gl=ae&hl=en&device=desktop&output=json&num=10`
+              );
+              const data = await response.json();
+              toolCallOutputs.push({
+                type: 'function_call_output',
+                call_id: item.call_id,
+                output: JSON.stringify(data),
+              });
             }
             // Add more tool handlers as needed
           }
