@@ -39,60 +39,8 @@ function buildMessages(prompt: string): Array<any> {
   return [{ role: 'user', content: prompt }];
 }
 
-// Helper function to transform tools for chat completions API
-function transformToolsForChatCompletions(tools: any[]): any[] {
-  return tools
-    .map((tool) => {
-      // If tool is already in correct format (has type: "function" and function object), return as-is
-      if (
-        tool.type === 'function' &&
-        tool.function &&
-        typeof tool.function === 'object'
-      ) {
-        return tool;
-      }
-
-      // Handle tools with type: 'function' but function details at top level (your current format)
-      if (tool.type === 'function' && tool.name) {
-        return {
-          type: 'function',
-          function: {
-            name: tool.name,
-            description: tool.description,
-            parameters: tool.parameters,
-            ...(tool.strict !== undefined && { strict: tool.strict }),
-          },
-        };
-      }
-
-      // Handle simple tools that need to be converted to function format
-      if (tool.name) {
-        return {
-          type: 'function',
-          function: {
-            name: tool.name,
-            description: tool.description || `Execute ${tool.name} function`,
-            parameters: tool.parameters || {
-              type: 'object',
-              properties: {},
-              required: [],
-            },
-          },
-        };
-      }
-
-      // Skip tools that can't be converted (like web_search_preview)
-      console.warn(
-        'Skipping incompatible tool for Chat Completions API:',
-        tool
-      );
-      return null;
-    })
-    .filter(Boolean); // Remove null entries
-}
-
 /**
- * Call OpenAI Chat Completions (defaults to gpt-4o-mini). The function name and
+ * Call OpenAI Responses API. The function name and
  * signature are preserved so that the rest of the codebase continues to work
  * without modification.
  */

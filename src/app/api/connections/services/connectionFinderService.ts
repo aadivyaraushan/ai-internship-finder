@@ -39,7 +39,21 @@ export async function findConnections({
     try {
       const rawResponse = await callClaude(prompt, {
         tools: [
-          { type: 'web_search_preview' },
+          {
+            type: 'function',
+            name: 'search_web',
+            description: 'Search the internet using a particular query',
+            parameters: {
+              type: 'object',
+              properties: {
+                query: {
+                  type: 'string',
+                  description: 'The query to search using',
+                },
+              },
+              required: ['query'],
+            },
+          },
           {
             type: 'function',
             name: 'access_linkedin_url',
