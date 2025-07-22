@@ -3,6 +3,7 @@ import { zodResponseFormat, zodTextFormat } from 'openai/helpers/zod';
 import { z } from 'zod';
 import { ConnectionsResponse } from '../app/api/connections/utils/utils';
 import { scrapeLinkedInProfile } from '@/app/api/connections/utils/urlFinding/people/scrapeLinkedInProfile';
+import {getJson} from 'serpapi'
 
 // Singleton OpenAI client
 
@@ -199,8 +200,19 @@ export async function callClaude(
                 item.name === 'search_web' ||
                 item.name === 'web_search'
               ) {
-                console.log('🔎 Web search tool called (handled by OpenAI)');
-                // OpenAI handles web search internally, results will be in next response
+                const args = JSON.parse(item.arguments);
+                getJson({
+                  engine: 'google',
+                  api_key: process.env.SERP_API_KEY,
+                  q: args.query,
+                  location: args.query == 'NONE' ? undefined : args.query
+                }, (json) => {
+                  toolCallOutputs.push({
+                    type: 'function_call_output',
+                    call_id: item.call_id,
+                    output: JSON.stringify(json)
+                  })
+                })
               }
               // Add more tool handlers as needed
             }

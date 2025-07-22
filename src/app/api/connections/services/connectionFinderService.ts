@@ -48,8 +48,13 @@ export async function findConnections({
               properties: {
                 query: {
                   type: 'string',
-                  description: 'The query to search using',
+                  description: 'The query to search using SERP API',
                 },
+                location: {
+                  type: 'string',
+                  description:'check whether you\'d want to search with a location, if none just specify `NONE` if u want to specify location specify like `city(optional), state, country`'
+                },
+                
               },
               required: ['query'],
             },
