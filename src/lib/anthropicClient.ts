@@ -196,7 +196,7 @@ export async function callClaude(
               }
               // Add other tool handlers here as needed
               else if (
-                item.name === 'web_search_preview' ||
+                item.name === 'search_web' ||
                 item.name === 'web_search'
               ) {
                 console.log('🔎 Web search tool called (handled by OpenAI)');
@@ -302,7 +302,7 @@ export async function callClaude(
               }
               // Add other tool handlers here as needed
               else if (
-                item.name === 'web_search_preview' ||
+                item.name === 'search_web' ||
                 item.name === 'web_search'
               ) {
                 console.log('🔎 Web search tool called (handled by OpenAI)');
@@ -422,10 +422,7 @@ export async function callClaude(
               }
             }
             // Add other tool handlers here as needed
-            else if (
-              item.name === 'web_search_preview' ||
-              item.name === 'web_search'
-            ) {
+            else if (item.name === 'search_web' || item.name === 'web_search') {
               console.log('🔎 Web search tool called (handled by OpenAI)');
               // OpenAI handles web search internally, results will be in next response
             }
