@@ -17,17 +17,39 @@ Take time to understand the context, consider the implications of career transit
 - Include only confirmed future plans (accepted programs, enrolled courses) - NOT applications or aspirations
 
 ### Professional Experience  
-- Identify ALL companies: past employment, current positions, AND confirmed future roles
+- **ONLY include actual employment, internships, and official roles where you worked WITH OTHER PEOPLE**
+- **CRITICAL DISTINCTION**: Professional experience MUST involve:
+  - Working at an established company/organization (not solo projects)
+  - Collaborating with colleagues, teams, or other employees  
+  - Having supervisors, managers, or organizational structure
+  - Receiving compensation (salary, stipend, or official internship)
+- **EXCLUDE from work experience**:
+  - Solo personal projects (even if they generated revenue)
+  - Individual startups where you were the only person working
+  - Personal side businesses with no employees or co-founders
+  - Academic projects done alone
+  - Freelance work done independently without team collaboration
+- **For legitimate work experiences, capture:**
+  - Company name (exactly as listed)
+  - Specific role/job title
+  - Duration/timeframe
+  - Key responsibilities and daily tasks
+  - **Scale and impact**: Team size managed, budget handled, users served, revenue generated, projects delivered, etc.
+  - Major achievements and accomplishments
 - Include full-time, part-time, internships, and accepted job offers with confirmed start dates
-- Distinguish between employment at companies vs. personal projects
-- Personal projects are individual/self-initiated work, NOT employment
 - Include only confirmed future employment (signed offers, confirmed internships) - NOT applications or interviews
-- Include company names exactly as listed, job titles, and timeframes (past, current, or confirmed future)
 
 ### Personal Projects and Initiatives
-- Extract self-directed projects, side businesses, or independent work
-- These are SEPARATE from employment and should not be categorized as companies
-- Include project names, descriptions, and relevant technologies/skills
+- **ONLY include solo projects, independent work, or self-initiated ventures**
+- **Examples of personal projects:**
+  - Individual coding projects, apps, or websites you built alone
+  - Solo startups where you were the only person involved
+  - Personal side businesses without employees
+  - Academic projects done independently
+  - Freelance work done without team collaboration
+- **These are SEPARATE from employment** - do NOT categorize as work experience
+- Include project names, descriptions, technologies used, and personal achievements
+- **Note**: These projects have LIMITED networking value since no colleagues were involved
 
 ### Organizations and Activities
 - Capture ALL clubs, professional organizations, volunteer work, and extracurricular activities
@@ -100,6 +122,16 @@ Provide your analysis in two parts:
     "graduation_years": ["string"]
   },
   "professional_experience": {
+    "detailed_experiences": [
+      {
+        "company": "string",
+        "role": "string", 
+        "duration": "string",
+        "responsibilities": ["string"],
+        "scale_and_impact": "string describing team size, budget, users, revenue, scope, etc.",
+        "key_achievements": ["string"]
+      }
+    ],
     "companies": ["string"],
     "industries": ["string"]
   },
@@ -127,6 +159,24 @@ Provide your analysis in two parts:
     "graduation_years": ["2020", "2028"]
   },
   "professional_experience": {
+    "detailed_experiences": [
+      {
+        "company": "Google",
+        "role": "Software Engineer",
+        "duration": "2020-2022",
+        "responsibilities": ["Developed backend services", "Collaborated with cross-functional teams"],
+        "scale_and_impact": "Worked on systems serving 100M+ users, managed 3-person team, $2M annual cost savings",
+        "key_achievements": ["Reduced API latency by 40%", "Led migration to new architecture"]
+      },
+      {
+        "company": "TechFlow",
+        "role": "Senior Developer",
+        "duration": "2022-present",
+        "responsibilities": ["Lead product development", "Mentor junior developers"],
+        "scale_and_impact": "Leading team of 5 engineers, building product for 50K+ users, $5M ARR",
+        "key_achievements": ["Shipped 3 major features", "Improved system reliability to 99.9%"]
+      }
+    ],
     "companies": ["Google", "TechFlow", "PayPal"],
     "industries": ["Technology", "Software", "Fintech"]
   },
@@ -157,6 +207,8 @@ Analyze the provided resume content thoughtfully and systematically:
 2. **Read completely**: Review all resume content and stated career goals with full attention
 3. **Analyze context**: What story does this resume tell? What are the networking implications?
 4. **Extract systematically**: Go through each category and extract ALL relevant information while explaining your reasoning
+   - **For work experience**: Pay special attention to role titles, responsibilities, and quantifiable impact metrics (team sizes, budgets, user numbers, revenue, etc.)
+   - **Capture scale indicators**: Look for numbers, metrics, and scope descriptors that show the magnitude of work
 5. **Cross-reference thoughtfully**: Compare career goals against current experience to identify meaningful transitions and growth areas
 6. **Validate completeness**: Ensure every piece of networking-relevant information is captured and explain why it matters
 7. **Present findings**: Share your analysis and reasoning, then provide the structured JSON output

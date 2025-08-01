@@ -20,6 +20,7 @@ export interface ProcessedConnection {
   hiring_power?: Connection['hiring_power'];
   exact_matches?: Connection['exact_matches'];
   shared_background_points?: string[] | null;
+  ai_outreach_message?: string | null;
   description: string;
 }
 
@@ -71,7 +72,7 @@ export function postProcessConnections(
     return {
       id: `${conn.type || 'person'}-${conn.name}-${
         conn.company || conn.organization || ''
-      }`
+      }-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`
         .replace(/\s+/g, '-')
         .toLowerCase(),
       type: (conn.type || 'person') as 'person' | 'program',
@@ -97,6 +98,7 @@ export function postProcessConnections(
         (conn.outreach_strategy as any)?.shared_background_points
           ? (conn.outreach_strategy as any).shared_background_points
           : []),
+      ai_outreach_message: conn.ai_outreach_message,
       description: description || 'No additional details available',
     };
   });

@@ -1,6 +1,6 @@
 // components/ProgramConnectionCard.tsx
 import { useState } from 'react';
-import { ChevronDown, ChevronUp, CheckCircle } from 'lucide-react';
+import { ChevronUp, ChevronDown, CheckCircle } from 'lucide-react';
 import { getBackgroundColor, getInitials } from '@/lib/utils';
 import { Connection } from '@/lib/firestoreHelpers';
 
@@ -16,6 +16,7 @@ export function ProgramConnectionCard({
   className = '',
 }: ProgramConnectionCardProps) {
   const [showBackground, setShowBackground] = useState(false);
+
   return (
     <div className={`bg-[#1a1a1a] p-5 rounded-2xl flex items-start gap-4 h-full min-w-0 ${className}`}>
       <div className='relative'>
@@ -41,22 +42,30 @@ export function ProgramConnectionCard({
             </a>
           )}
         </div>
-        <p className='text-gray-400 text-xs'>
-          {connection.program_type && (
-            <span className='capitalize'>{connection.program_type}</span>
-          )}
-          {connection.organization && (
-            <>
-              {connection.program_type && ' • '}
-              <span>{connection.organization}</span>
-            </>
-          )}
-        </p>
-        {connection.description && (
-          <p className='text-gray-500 text-xs mt-2 line-clamp-2'>
-            {connection.description}
-          </p>
+        
+        {/* Program Type and Organization */}
+        {(connection.program_type || connection.organization) && (
+          <div className='mt-3'>
+            <div className='flex items-center gap-2 mb-2'>
+              <span className='text-xs font-medium text-blue-400'>Program Details</span>
+            </div>
+            <div className='space-y-1'>
+              {connection.program_type && (
+                <div className='flex items-start gap-1.5'>
+                  <div className='w-1 h-1 rounded-full bg-blue-400 mt-2 flex-shrink-0' />
+                  <p className='text-xs text-white leading-relaxed capitalize'>{connection.program_type}</p>
+                </div>
+              )}
+              {connection.organization && (
+                <div className='flex items-start gap-1.5'>
+                  <div className='w-1 h-1 rounded-full bg-blue-400 mt-2 flex-shrink-0' />
+                  <p className='text-xs text-white leading-relaxed'>{connection.organization}</p>
+                </div>
+              )}
+            </div>
+          </div>
         )}
+        
         {connection.shared_background_points && connection.shared_background_points.length > 0 && (
           <div className='mt-2'>
             <button

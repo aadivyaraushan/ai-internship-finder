@@ -15,10 +15,22 @@ export interface Role {
 
 export interface IndustryTransition {
   transition_context: string;
+  from_industries?: string[];
+  to_industries?: string[];
+}
+
+export interface WorkExperienceDetail {
+  company: string;
+  role: string;
+  duration: string;
+  responsibilities: string[];
+  scale_and_impact: string;
+  key_achievements: string[];
 }
 
 export interface WorkExperience {
-  companies: string[];
+  detailed_experiences: WorkExperienceDetail[];
+  companies: string[]; // Keep for backward compatibility
   startup_experience: string[];
   industry_transitions?: IndustryTransition;
 }
@@ -26,18 +38,26 @@ export interface WorkExperience {
 export interface Education {
   institutions: string[];
   current_level?: string;
+  fields_of_study?: string[];
+  graduation_years?: string[];
 }
 
 export interface Activities {
   organizations: string[];
+  clubs?: string[];
+  volunteer_work?: string[];
 }
 
 export interface Achievements {
   certifications: string[];
+  awards?: string[];
+  notable_projects?: string[];
 }
 
 export interface GrowthAreas {
   learning_journey?: string;
+  developing_skills?: string[];
+  target_roles?: string[];
 }
 
 export interface ConnectionAspects {
@@ -46,6 +66,8 @@ export interface ConnectionAspects {
   activities?: Activities;
   achievements?: Achievements;
   growth_areas?: GrowthAreas;
+  professional_interests?: string;
+  personal_interests?: string;
 }
 
 export interface LinkedInProfileData {
@@ -124,7 +146,9 @@ const personSchema = z.object({
   direct_matches: z.array(z.string()).or(z.null()).optional(),
   goal_alignment: z.string().or(z.null()).optional(),
   shared_background_points: z.array(z.string()).or(z.null()).optional(),
-  additional_factors: z.array(z.string()).or(z.null()).optional(),
+  shared_professional_interests: z.array(z.string()).or(z.null()).optional(),
+  shared_personal_interests: z.array(z.string()).or(z.null()).optional(),
+  ai_outreach_message: z.string().or(z.null()).optional(),
 });
 
 const programSchema = z.object({
@@ -142,7 +166,6 @@ const programSchema = z.object({
   direct_matches: z.array(z.string()).or(z.null()).optional(),
   goal_alignment: z.string().or(z.null()).optional(),
   shared_background_points: z.array(z.string()).or(z.null()).optional(),
-  additional_factors: z.array(z.string()).or(z.null()).optional(),
 });
 
 export const ConnectionsResponse = z.object({
@@ -158,7 +181,15 @@ export const aspectSchema = z.object({
       current_level: z.enum(['high_school', 'undergraduate', 'graduate']),
     }),
     work_experience: z.object({
-      companies: z.array(z.string()),
+      detailed_experiences: z.array(z.object({
+        company: z.string(),
+        role: z.string(),
+        duration: z.string(),
+        responsibilities: z.array(z.string()),
+        scale_and_impact: z.string(),
+        key_achievements: z.array(z.string()),
+      })),
+      companies: z.array(z.string()), // Keep for backward compatibility
       startup_experience: z.array(z.string()),
       industry_transitions: z.object({
         from_industries: z.array(z.string()),

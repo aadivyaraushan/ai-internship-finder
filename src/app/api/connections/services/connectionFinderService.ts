@@ -1,13 +1,19 @@
 import { callClaude } from '@/lib/anthropicClient';
 import { buildConnectionFinderPrompt } from '../utils/connectionFinding/buildConnectionFinder';
-import { ConnectionsResponse } from '../utils/utils';
+import { ConnectionsResponse, ConnectionAspects } from '../utils/utils';
 import { Connection } from '@/lib/firestoreHelpers';
+import { ConnectionPreferences } from '@/components/ui/ConnectionPreferencesSelector';
 interface FinderParams {
   goalTitle: string;
-  connectionAspects: any;
-  preferences?: any;
+  connectionAspects: ConnectionAspects;
+  preferences?: ConnectionPreferences;
   race?: string;
   location?: string;
+  personalizationSettings?: {
+    enabled: boolean;
+    professionalInterests: string;
+    personalInterests: string;
+  };
 }
 
 /**
@@ -22,15 +28,41 @@ export async function findConnections({
   preferences,
   race,
   location,
+  personalizationSettings,
 }: FinderParams): Promise<Connection[]> {
+  // Validate that we have detailed work experience context
+  if (connectionAspects.work_experience?.detailed_experiences?.length > 0) {
+    console.log(`✅ Using detailed work experience context: ${connectionAspects.work_experience.detailed_experiences.length} experiences`);
+    connectionAspects.work_experience.detailed_experiences.forEach((exp, i) => {
+      console.log(`  ${i + 1}. ${exp.role} at ${exp.company} - ${exp.scale_and_impact?.slice(0, 50)}...`);
+    });
+  } else {
+    console.warn('⚠️ No detailed work experiences available - connection matching may be less precise');
+  }
+  
+  // Validate other important context
+  const contextSummary = {
+    education: connectionAspects.education?.institutions?.length || 0,
+    companies: connectionAspects.work_experience?.companies?.length || 0,
+    detailed_experiences: connectionAspects.work_experience?.detailed_experiences?.length || 0,
+    activities: connectionAspects.activities?.organizations?.length || 0,
+    achievements: connectionAspects.achievements?.certifications?.length || 0
+  };
+  console.log('📊 Context summary for connection finding:', contextSummary);
+
   const prompt = buildConnectionFinderPrompt({
     goalTitle,
     connectionAspects,
     preferences,
     race,
     location,
+    personalizationSettings,
   });
-  console.log('Connection finder prompt:', prompt);
+  
+  console.log('🔍 Connection finder prompt character count:', prompt.length);
+  if (prompt.length < 5000) {
+    console.warn('⚠️ Prompt seems short - may not have comprehensive background context');
+  }
 
   const MAX_RETRIES = 2;
   let retry = 0;
@@ -42,42 +74,22 @@ export async function findConnections({
           {
             type: 'function',
             name: 'search_web',
-            description: 'Search the internet using a particular query',
+            description:
+              'Search the internet using Perplexity AI to find relevant sources, URLs, and information',
             parameters: {
               type: 'object',
               properties: {
                 query: {
                   type: 'string',
-                  description: 'The query to search using SERP API',
-                },
-                location: {
-                  type: 'string',
                   description:
-                    "check whether you'd want to search with a location, if none just specify `NONE` if u want to specify location specify like `city(optional), state, country`",
+                    'The search query to find relevant information about people, companies, programs, or opportunities',
                 },
               },
               required: ['query'],
             },
           },
-          {
-            type: 'function',
-            name: 'access_linkedin_url',
-            description:
-              "Get access to public data from the URL of a person's LinkedIn profile",
-            parameters: {
-              type: 'object',
-              properties: {
-                profile_url: {
-                  type: 'string',
-                  description:
-                    "URL of person's LinkedIn profile accessed from web search results",
-                },
-              },
-              required: ['profile_url'],
-            },
-          },
         ],
-        maxTokens: 5000,
+        maxTokens: 10000,
         model: 'gpt-4.1',
       });
 

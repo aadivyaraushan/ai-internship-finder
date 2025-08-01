@@ -1,17 +1,17 @@
 import { callClaude } from '../../../../lib/anthropicClient';
 import { buildResumeAspectAnalyzerPrompt } from '../utils/buildResumeAnalyzer';
-import { aspectSchema, ConnectionAspects } from '../utils/utils';
+import { aspectSchema, ConnectionAspects, WorkExperienceDetail, Education, WorkExperience, Activities, Achievements, GrowthAreas } from '../utils/utils';
 
 /**
  * Resulting structure from resume analysis.
- * Matches the shape returned by the previous route implementation.
+ * Now properly typed to preserve maximum context.
  */
 export interface ResumeAspects {
-  education: any;
-  work_experience: any;
-  activities: any;
-  achievements: any;
-  growth_areas: any;
+  education: Education;
+  work_experience: WorkExperience;
+  activities: Activities;
+  achievements: Achievements;
+  growth_areas: GrowthAreas;
   connection_aspects: ConnectionAspects;
 }
 
@@ -34,8 +34,8 @@ export async function analyzeResume(
       console.log('Resume analysis prompt:', prompt);
 
       const rawResponse = await callClaude(prompt, {
-        maxTokens: 1000,
-        model: 'gpt-4.1-nano',
+        maxTokens: 3000, // Increased for detailed context preservation
+        model: 'gpt-4.1-mini', // Upgraded for better analysis quality
       });
 
       console.log('🧠 Thinking...', rawResponse);
@@ -59,6 +59,30 @@ export async function analyzeResume(
       }
 
       const aspects = parsed.connection_aspects as ResumeAspects;
+
+      // Ensure backward compatibility: populate companies array from detailed_experiences
+      if (aspects.work_experience?.detailed_experiences?.length > 0 && 
+          (!aspects.work_experience.companies || aspects.work_experience.companies.length === 0)) {
+        aspects.work_experience.companies = aspects.work_experience.detailed_experiences.map((exp: WorkExperienceDetail) => exp.company);
+      }
+
+      // Validate that detailed experiences have meaningful content
+      if (aspects.work_experience?.detailed_experiences?.length > 0) {
+        const incompleteExperiences = aspects.work_experience.detailed_experiences.filter(
+          exp => !exp.company || !exp.role || !exp.scale_and_impact
+        );
+        if (incompleteExperiences.length > 0) {
+          console.warn(`⚠️ Found ${incompleteExperiences.length} incomplete work experiences missing key details`);
+          console.warn('Incomplete experiences:', incompleteExperiences);
+        }
+        
+        console.log(`✅ Successfully captured ${aspects.work_experience.detailed_experiences.length} detailed work experiences`);
+        aspects.work_experience.detailed_experiences.forEach((exp, i) => {
+          console.log(`Experience ${i + 1}: ${exp.role} at ${exp.company} - Scale: ${exp.scale_and_impact?.slice(0, 100)}...`);
+        });
+      } else {
+        console.warn('⚠️ No detailed work experiences captured - may lose important context for connection matching');
+      }
 
       // Basic structural validation
       const expected = [

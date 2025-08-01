@@ -6,7 +6,6 @@ import { writeFile, unlink } from 'fs/promises';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { EventEmitter } from 'events';
-import { analyzeResume } from '@/app/api/connections/services/resumeAnalysisService';
 
 // Create a global event emitter (consider using a request-specific emitter in production)
 const globalEmitter = new EventEmitter();
@@ -111,6 +110,59 @@ const ResumeSchema = z.object({
   per_web: z.string().nullable().describe('Personal website URL'),
 });
 
+// Combined schema that includes both structured data and connection aspects
+const CombinedResumeSchema = z.object({
+  education: z.array(EducationSchema).describe('Educational background'),
+  skills: z.array(z.string()).describe('Technical and non-technical skills'),
+  personal_projects: z
+    .array(PersonalProjectSchema)
+    .describe('Personal and academic projects'),
+  workex: z.array(WorkExperienceSchema).describe('Work experience entries'),
+  linkedin: z.string().nullable().describe('LinkedIn profile URL'),
+  per_web: z.string().nullable().describe('Personal website URL'),
+  connection_aspects: z.object({
+    education: z.object({
+      institutions: z.array(z.string()),
+      graduation_years: z.array(z.string()),
+      fields_of_study: z.array(z.string()),
+      current_level: z.enum(['high_school', 'undergraduate', 'graduate']),
+    }),
+    work_experience: z.object({
+      detailed_experiences: z.array(z.object({
+        company: z.string(),
+        role: z.string(),
+        duration: z.string(),
+        responsibilities: z.array(z.string()),
+        scale_and_impact: z.string(),
+        key_achievements: z.array(z.string()),
+      })),
+      companies: z.array(z.string()),
+      startup_experience: z.array(z.string()),
+      industry_transitions: z.object({
+        from_industries: z.array(z.string()),
+        to_industries: z.array(z.string()),
+        transition_context: z.string(),
+      }),
+    }),
+    personal_projects: z.array(z.string()),
+    activities: z.object({
+      clubs: z.array(z.string()),
+      organizations: z.array(z.string()),
+      volunteer_work: z.array(z.string()),
+    }),
+    achievements: z.object({
+      certifications: z.array(z.string()),
+      awards: z.array(z.string()),
+      notable_projects: z.array(z.string()),
+    }),
+    growth_areas: z.object({
+      developing_skills: z.array(z.string()),
+      target_roles: z.array(z.string()),
+      learning_journey: z.string(),
+    }),
+  }).describe('Detailed connection aspects for networking'),
+});
+
 export async function POST(req: NextRequest) {
   try {
     const formData = await req.formData();
@@ -162,35 +214,248 @@ export async function POST(req: NextRequest) {
       const pdfData = await pdfParse(buffer);
       const text = pdfData.text;
 
-      // Build the prompt for structured parsing
-      const analysisPrompt = `<system>You are a resume parser that extracts structured information from resumes. You MUST return ONLY valid JSON - no other text, no markdown formatting, no explanation. The JSON must match the schema below exactly.</system>
-<input>${text}</input>
-<rules>
-1. Return ONLY the JSON object - no other text
-2. The JSON must be properly formatted with double quotes around property names
-3. Extract all relevant information from the resume text
-4. For education: Include all schools, clubs, awards, GPA if mentioned
-5. For skills: List all technical and soft skills mentioned
-6. For projects: Include both personal and academic projects
-7. For work experience: Include internships and jobs
-8. Extract LinkedIn and personal website URLs if present
-9. If a field is not found in the text, use appropriate empty values ([], null, etc.)
-10. Clean and standardize extracted text (remove extra spaces, normalize formatting)
-</rules>`;
-
-      // Parse the resume to structured data using AI
-      const structuredData = await callClaude(analysisPrompt, {
-        maxTokens: 1000,
-        model: 'gpt-4.1-nano',
-        schema: ResumeSchema,
-        schemaLabel: 'Resume',
-        isReasoning: false,
-      });
-
-      // Step 3: Processing results with AI -> Analyzing connection aspects
+      // Step 3: Single comprehensive resume analysis with detailed networking-focused extraction
       currentStep = 3;
       broadcastEvent({ type: 'step-update', stepIndex: currentStep });
-      const analyzedAspects = await analyzeResume(text);
+      
+      // Enhanced resume parsing with comprehensive structure and networking focus
+      const analysisPrompt = `
+# Role and Objective
+
+You are a specialized resume and career analysis agent. Your primary objective is to carefully analyze a candidate's resume and career goals, thinking through each piece of information to identify all potential networking connection points with professionals, alumni, and industry contacts. 
+
+Take time to understand the context, consider the implications of career transitions, and think about what information would be most valuable for networking purposes.
+
+# Instructions
+
+## Information Extraction Categories
+
+### Educational Background
+- Extract ALL educational institutions: past, current, AND confirmed future attendance
+- Include universities, colleges, bootcamps, trade schools, online programs
+- Capture graduation years, degree types, fields of study, and any academic honors
+- Include only confirmed future plans (accepted programs, enrolled courses) - NOT applications or aspirations
+
+### Professional Experience  
+- **ONLY include actual employment, internships, and official roles where you worked WITH OTHER PEOPLE**
+- **CRITICAL DISTINCTION**: Professional experience MUST involve:
+  - Working at an established company/organization (not solo projects)
+  - Collaborating with colleagues, teams, or other employees  
+  - Having supervisors, managers, or organizational structure
+  - Receiving compensation (salary, stipend, or official internship)
+- **EXCLUDE from work experience**:
+  - Solo personal projects (even if they generated revenue)
+  - Individual startups where you were the only person working
+  - Personal side businesses with no employees or co-founders
+  - Academic projects done alone
+  - Freelance work done independently without team collaboration
+- **For legitimate work experiences, capture:**
+  - Company name (exactly as listed)
+  - Specific role/job title
+  - Duration/timeframe
+  - Key responsibilities and daily tasks
+  - **Scale and impact**: Team size managed, budget handled, users served, revenue generated, projects delivered, etc.
+  - Major achievements and accomplishments
+- Include full-time, part-time, internships, and accepted job offers with confirmed start dates
+- Include only confirmed future employment (signed offers, confirmed internships) - NOT applications or interviews
+
+### Personal Projects and Initiatives
+- **ONLY include solo projects, independent work, or self-initiated ventures**
+- **Examples of personal projects:**
+  - Individual coding projects, apps, or websites you built alone
+  - Solo startups where you were the only person involved
+  - Personal side businesses without employees
+  - Academic projects done independently
+  - Freelance work done without team collaboration
+- **These are SEPARATE from employment** - do NOT categorize as work experience
+- Include project names, descriptions, technologies used, and personal achievements
+- **Note**: These projects have LIMITED networking value since no colleagues were involved
+
+### Organizations and Activities
+- Capture ALL clubs, professional organizations, volunteer work, and extracurricular activities
+- Include leadership roles, committee memberships, and participation levels
+
+### Certifications and Recognition
+- List ALL professional certifications, licenses, awards, and honors
+- Include issuing organizations and dates when available
+
+### Career Transition Indicators
+- Identify career pivots, industry changes, or role transitions
+- Note aspirations that differ from current experience
+- Highlight skills gaps the candidate is working to fill
+
+## Data Quality Requirements
+
+### Completeness Standards
+- Include EVERY instance found across all timeframes: past, current, and confirmed future commitments
+- Never omit information due to perceived irrelevance or temporal status
+- Extract information from BOTH resume content AND stated career goals
+- Capture transition periods and confirmed future plans, but exclude uncertain applications or aspirations
+
+### Accuracy Standards
+- Use EXACT names and terminology as they appear in source documents
+- Maintain original spelling, capitalization, and formatting
+- Do not interpret or translate organization names
+
+### Consistency Standards
+- Return ALL schema fields, using empty arrays [] or empty strings "" when no data exists
+- Apply the same extraction standards throughout the entire document
+
+## Education Level Determination
+
+Classify current education level based on:
+- **"high_school"**: Currently in or recently completed secondary education
+- **"undergraduate"**: Currently pursuing or completed bachelor's degree
+- **"graduate"**: Currently pursuing or completed master's/PhD programs
+- Use contextual clues (work experience, age indicators) when education level is ambiguous
+
+# Reasoning Steps
+
+1. **Document Review**: Read through the entire resume and career goals comprehensively, taking notes on key themes
+2. **Information Mapping**: Think through which pieces of information fall into each extraction category and why they matter for networking
+3. **Context Analysis**: Consider the person's career stage, transition goals, and what connections would be most valuable
+4. **Verification**: Cross-reference career goals against resume experience to identify alignment, gaps, and opportunities
+   - **For work experience**: Pay special attention to role titles, responsibilities, and quantifiable impact metrics (team sizes, budgets, user numbers, revenue, etc.)
+   - **Capture scale indicators**: Look for numbers, metrics, and scope descriptors that show the magnitude of work
+5. **Classification**: Determine education level using the specified criteria, explaining your reasoning
+6. **Quality Check**: Ensure all required fields are populated and reflect on whether you've missed anything important
+
+**Important**: Think through each step and explain your reasoning before providing the final JSON output.
+
+# Context
+
+This analysis enables networking platforms and career services to:
+- Match candidates with relevant alumni and professionals
+- Identify shared experiences and backgrounds for conversation starters
+- Connect people with similar career transition paths
+- Facilitate introductions based on mutual interests and goals
+
+Resume Content:
+${text}
+
+# Final Instructions
+
+Analyze the provided resume content thoughtfully and systematically:
+
+1. **Think deeply**: Don't just extract information mechanically - consider the bigger picture of this person's career journey
+2. **Read completely**: Review all resume content and stated career goals with full attention
+3. **Analyze context**: What story does this resume tell? What are the networking implications?
+4. **Extract systematically**: Go through each category and extract ALL relevant information while explaining your reasoning
+5. **Cross-reference thoughtfully**: Compare career goals against current experience to identify meaningful transitions and growth areas
+6. **Validate completeness**: Ensure every piece of networking-relevant information is captured and explain why it matters
+7. **Present findings**: Share your analysis and reasoning, then provide the structured JSON output
+
+Remember: You're not just a data extraction tool - you're analyzing someone's career to help them build meaningful professional connections. Think about what would actually be valuable for networking and explain your thought process.
+
+# Output Format
+
+Return ONLY valid JSON matching this exact structure:
+
+\`\`\`json
+{
+  "education": [
+    {
+      "school_name": "string",
+      "clubs": ["string"],
+      "awards": ["string"], 
+      "gpa": "string or null",
+      "notable_coursework": ["string"]
+    }
+  ],
+  "skills": ["string"],
+  "personal_projects": [
+    {
+      "project_name": "string",
+      "description": "string",
+      "responsibilities": ["string"],
+      "recognition": "string or null",
+      "skills": ["string"]
+    }
+  ],
+  "workex": [
+    {
+      "workplace": "string",
+      "notable_projects": ["string"],
+      "role": "string",
+      "reference_email": "string or null",
+      "is_alumni": "boolean"
+    }
+  ],
+  "linkedin": "string or null",
+  "per_web": "string or null",
+  "connection_aspects": {
+    "education": {
+      "institutions": ["string"],
+      "graduation_years": ["string"],
+      "fields_of_study": ["string"],
+      "current_level": "high_school|undergraduate|graduate"
+    },
+    "work_experience": {
+      "detailed_experiences": [
+        {
+          "company": "string",
+          "role": "string",
+          "duration": "string", 
+          "responsibilities": ["string"],
+          "scale_and_impact": "string describing team size, budget, users, revenue, scope, etc.",
+          "key_achievements": ["string"]
+        }
+      ],
+      "companies": ["string"],
+      "startup_experience": ["string"],
+      "industry_transitions": {
+        "from_industries": ["string"],
+        "to_industries": ["string"],
+        "transition_context": "string"
+      }
+    },
+    "personal_projects": ["string"],
+    "activities": {
+      "clubs": ["string"],
+      "organizations": ["string"], 
+      "volunteer_work": ["string"]
+    },
+    "achievements": {
+      "certifications": ["string"],
+      "awards": ["string"],
+      "notable_projects": ["string"]
+    },
+    "growth_areas": {
+      "developing_skills": ["string"],
+      "target_roles": ["string"],
+      "learning_journey": "string"
+    }
+  }
+}
+\`\`\`
+`;
+
+      // First call: Let AI think and reason, then provide JSON
+      const rawResponse = await callClaude(analysisPrompt, {
+        maxTokens: 3000,
+        model: 'gpt-4.1-mini',
+      });
+
+      // Second call: Parse the JSON from the response using schema validation
+      const parsedResult = await callClaude(
+        'Parse the JSON put at the end of the following response: \n\n' + rawResponse,
+        {
+          model: 'gpt-4.1-nano',
+          maxTokens: 2000,
+          schema: CombinedResumeSchema,
+          schemaLabel: 'CombinedResumeAnalysis',
+        }
+      );
+      const structuredData = {
+        education: parsedResult.education || [],
+        skills: parsedResult.skills || [],
+        personal_projects: parsedResult.personal_projects || [],
+        workex: parsedResult.workex || [],
+        linkedin: parsedResult.linkedin || null,
+        per_web: parsedResult.per_web || null
+      };
+      
+      const analyzedAspects = parsedResult.connection_aspects || null;
 
       // Step 4: Uploading data
       currentStep = 4;

@@ -7,11 +7,10 @@ import {
   updateConnectionStatus,
   getUser,
   getResume,
-  updateUserConnections,
   createOrUpdateResume,
   createOrUpdateUser,
 } from '@/lib/firestoreHelpers';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc, arrayUnion } from 'firebase/firestore';
 import { onAuthStateChanged, User, signOut } from 'firebase/auth';
 import { MultiStepLoader } from '@/components/ui/MultiStepLoader';
 import { AnimatedTabs } from '@/components/ui/AnimatedTabs';
@@ -26,6 +25,7 @@ import { ConnectionFilters } from '@/components/dashboard/ConnectionFilters';
 import { ArchiveConnectionFilters } from '@/components/dashboard/ArchiveConnectionFilters';
 import { useRouter } from 'next/navigation';
 import { fetchUserData } from '@/lib/frontendUtils';
+import { Search, Sparkles, Upload, Clock } from 'lucide-react';
 
 interface Goal {
   title: string;
@@ -36,6 +36,12 @@ interface ProcessingStep {
   id: string;
   label: string;
   status?: 'pending' | 'in_progress' | 'completed' | 'failed';
+}
+
+interface PersonalizationSettings {
+  enabled: boolean;
+  professionalInterests: string;
+  personalInterests: string;
 }
 
 export default function Dashboard() {
@@ -64,6 +70,27 @@ export default function Dashboard() {
   ]);
   const [currentConnectionStepIndex, setCurrentConnectionStepIndex] =
     useState(0);
+  const [uploadingStepIndex, setUploadingStepIndex] = useState(0);
+
+  // New state for redesigned dashboard
+  const [searchMode, setSearchMode] = useState(false);
+  const [searchGoal, setSearchGoal] = useState('');
+  const [searchBarCentered, setSearchBarCentered] = useState(true);
+  const [personalizationModal, setPersonalizationModal] = useState(false);
+  const [personalizationSettings, setPersonalizationSettings] =
+    useState<PersonalizationSettings>({
+      enabled: false,
+      professionalInterests: '',
+      personalInterests: '',
+    });
+  const [showResumeModal, setShowResumeModal] = useState(false);
+  const [showPendingModal, setShowPendingModal] = useState(false);
+  const [pendingModalView, setPendingModalView] = useState<
+    'people' | 'programs'
+  >('people');
+  const [allPendingConnections, setAllPendingConnections] = useState<
+    Connection[]
+  >([]);
 
   // State for filters for main connections and archived connections
   const [filters, setFilters] = useState<{
@@ -274,6 +301,32 @@ export default function Dashboard() {
     return result;
   }, [connections, archiveFilters]);
 
+  // Pending connections from ALL searches (for modal)
+  const allPendingPeople = useMemo(() => {
+    return allPendingConnections.filter((c: Connection) => c.type === 'person');
+  }, [allPendingConnections]);
+
+  const allPendingPrograms = useMemo(() => {
+    return allPendingConnections.filter(
+      (c: Connection) => c.type === 'program'
+    );
+  }, [allPendingConnections]);
+
+  // Pending connections from current search only (for button count)
+  const pendingConnections = useMemo(() => {
+    return connections.filter(
+      (c: Connection) =>
+        c.type === 'person' && (c.status === 'not_contacted' || !c.status)
+    );
+  }, [connections]);
+
+  const pendingPrograms = useMemo(() => {
+    return connections.filter(
+      (c: Connection) =>
+        c.type === 'program' && (c.status === 'not_contacted' || !c.status)
+    );
+  }, [connections]);
+
   // Listen for Firebase Auth state changes
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
@@ -286,13 +339,35 @@ export default function Dashboard() {
     setLoading(true);
     if (!currentUser) return;
     try {
-      const { goals, connections } = await fetchUserData(currentUser);
+      const {
+        goals,
+        connections,
+        personalizationSettings: fetchedPersonalizationSettings,
+      } = await fetchUserData(currentUser);
       setGoals(goals);
       setConnections(connections);
+      setPersonalizationSettings(fetchedPersonalizationSettings);
     } catch (error) {
       console.error('Error fetching user data:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchAllPendingConnections = async () => {
+    if (!currentUser) return;
+    try {
+      const { connections: allConnections } = await fetchUserData(currentUser);
+      console.log('All connections:', allConnections);
+      const pending = allConnections.filter(
+        (c: Connection) => c.status === 'not_contacted' || !c.status
+      );
+      console.log('Pending connections:', pending);
+      const pendingPrograms = pending.filter((c: Connection) => c.type === 'program');
+      console.log('Pending programs:', pendingPrograms);
+      setAllPendingConnections(pending);
+    } catch (error) {
+      console.error('Error fetching all pending connections:', error);
     }
   };
 
@@ -443,6 +518,7 @@ export default function Dashboard() {
           location: userData?.location || '',
           resumeAspects: userData?.resumeAspects || {},
           rawResumeText: userData?.rawResumeText || '',
+          personalizationSettings,
         }),
       });
 
@@ -497,6 +573,8 @@ export default function Dashboard() {
                 case 'complete':
                   // This contains the final processed connections
                   finalConnections = data.data.connections || [];
+                  // Now that we have results, move the search bar to the top
+                  setSearchBarCentered(false);
                   break;
 
                 case 'error':
@@ -518,13 +596,24 @@ export default function Dashboard() {
           ...finalConnections.filter((c) => !existingIds.has(c.id)),
         ];
 
-        // Persist merged list back to Firestore
-        updateUserConnections(currentUser.uid, merged as any).catch((error) => {
-          console.error('❌ Technical error - Failed to save connections:', {
-            userId: currentUser.uid,
-            error: error instanceof Error ? error.message : String(error),
+        // Save only new connections to Firestore (don't replace existing ones)
+        const newConnections = finalConnections.filter((c) => !existingIds.has(c.id));
+        if (newConnections.length > 0) {
+          const connectionsWithDefaults = newConnections.map(conn => ({
+            ...conn,
+            status: conn.status || 'not_contacted',
+            lastUpdated: new Date().toISOString(),
+          }));
+          
+          updateDoc(doc(db, 'users', currentUser.uid), {
+            connections: arrayUnion(...connectionsWithDefaults)
+          }).catch((error) => {
+            console.error('❌ Technical error - Failed to save connections:', {
+              userId: currentUser.uid,
+              error: error instanceof Error ? error.message : String(error),
+            });
           });
-        });
+        }
 
         return merged;
       });
@@ -548,7 +637,11 @@ export default function Dashboard() {
     try {
       const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
       if (userDoc.exists()) {
-        setUserData(userDoc.data());
+        const userData = userDoc.data();
+        setUserData(userData);
+        if (userData.personalizationSettings) {
+          setPersonalizationSettings(userData.personalizationSettings);
+        }
       }
     } catch (error) {
       // ignore
@@ -565,6 +658,7 @@ export default function Dashboard() {
 
   // Resume upload handler
   const handleResumeUpload = async () => {
+    setUploading(true);
     setUploadError('');
     setUploadSuccess(false);
     setCurrentStatus('');
@@ -583,11 +677,12 @@ export default function Dashboard() {
       setUploadError('You must be signed in to upload a resume.');
       return;
     }
-    setUploading(true);
     try {
       // Prepare upload
       updateStep('prepare', 'in_progress');
       setCurrentStatus('Preparing to upload resume...');
+      setUploadingStepIndex(0);
+
       const formData = new FormData();
       formData.append('file', file);
       formData.append('userId', currentUser.uid); // Add user ID
@@ -595,6 +690,7 @@ export default function Dashboard() {
       updateStep('prepare', 'completed');
 
       // Upload file
+      setUploadingStepIndex(1);
       updateStep('upload', 'in_progress');
       setCurrentStatus('Uploading resume...');
       const response = await fetch('/api/resume-analysis', {
@@ -628,6 +724,7 @@ export default function Dashboard() {
       await new Promise((resolve) => setTimeout(resolve, 400));
 
       // Parse and analyze
+      setUploadingStepIndex(2);
       updateStep('parse', 'in_progress');
       setCurrentStatus('Reading resume content...');
       const data = await response.json();
@@ -639,6 +736,7 @@ export default function Dashboard() {
           updateStep('parse', 'completed');
           await new Promise((resolve) => setTimeout(resolve, 400));
           updateStep('analyze', 'in_progress');
+          setUploadingStepIndex(3);
           setCurrentStatus('AI analyzing resume...');
         }
         if (apiSteps.pdfParsed) {
@@ -648,6 +746,7 @@ export default function Dashboard() {
           updateStep('analyze', 'completed');
           await new Promise((resolve) => setTimeout(resolve, 400));
           updateStep('store', 'in_progress');
+          setUploadingStepIndex(4);
           setCurrentStatus('Processing analysis results...');
         }
         if (apiSteps.dataStored) {
@@ -671,6 +770,7 @@ export default function Dashboard() {
       setUploadSuccess(true);
       setFile(null); // Optionally clear file
       await refreshUserData();
+      window.location.reload();
     } catch (err) {
       setCurrentStatus('Error during upload');
       updateStep(
@@ -685,6 +785,67 @@ export default function Dashboard() {
     }
   };
 
+  // New handler functions for redesigned dashboard
+  const handleSearch = async () => {
+    if (!searchGoal.trim()) return;
+
+    // Don't move search bar yet - wait for results
+    setSearchMode(true);
+
+    // Clear existing connections before new search
+    setConnections([]);
+
+    // Use the search goal as the new goal and trigger connection finding
+    setGoals(searchGoal);
+
+    // Save the goal to database
+    if (currentUser) {
+      await setDoc(
+        doc(db, 'users', currentUser.uid),
+        { goals: searchGoal },
+        { merge: true }
+      );
+    }
+
+    // Trigger connection finding
+    await fetchMoreConnections();
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      handleSearch();
+    }
+  };
+
+  const savePersonalization = async () => {
+    if (!currentUser) return;
+
+    try {
+      await setDoc(
+        doc(db, 'users', currentUser.uid),
+        {
+          personalizationSettings: personalizationSettings,
+        },
+        { merge: true }
+      );
+      setPersonalizationModal(false);
+    } catch (error) {
+      console.error('Error saving personalization settings:', error);
+    }
+  };
+
+  const resetToHome = () => {
+    setSearchMode(false);
+    setSearchBarCentered(true);
+    setSearchGoal('');
+    setConnections([]);
+  };
+
+  useEffect(
+    () => console.log('Uploaded changed to: ' + uploading),
+    [uploading]
+  );
+
   return (
     <>
       {findingMore && (
@@ -692,7 +853,7 @@ export default function Dashboard() {
           loadingStates={[
             { text: 'Analyzing resume' },
             {
-              text: "Finding connections (this may take 50-60 seconds — we're searching the web for the best opportunities for you)",
+              text: "Finding connections (this may take 4-5 minutes — we're searching the entire internet for the best opportunities for you)",
             },
             { text: 'Processing connections for display' },
           ]}
@@ -701,19 +862,59 @@ export default function Dashboard() {
           loop={false}
         />
       )}
-      {/* Rest of your dashboard UI */}
+
+      {/* Show multistep loader during upload */}
+      {uploading && (
+        <MultiStepLoader
+          loadingStates={[
+            { text: 'Preparing upload' },
+            { text: 'Uploading file' },
+            { text: 'Parsing resume content' },
+            { text: 'AI analysis' },
+            { text: 'Processing results' },
+          ]}
+          loading={uploading}
+          progressIndex={uploadingStepIndex}
+          duration={2000}
+          loop={false}
+        />
+      )}
+
+      {/* NEW REDESIGNED DASHBOARD */}
       <div className='min-h-screen bg-[#0a0a0a] p-4'>
-        {/* Header */}
         <div className='flex justify-between items-center mb-8'>
-          <div className='bg-[#2a2a2a] inline-block p-4 rounded-xl'>
-            <h1 className='text-white text-2xl font-mono'>Refr ☕️</h1>
-          </div>
           <button
-            onClick={handleSignOut}
-            className='bg-[#2a2a2a] text-gray-300 hover:text-white px-4 py-2 rounded-lg text-sm'
+            onClick={resetToHome}
+            className='bg-[#2a2a2a] hover:bg-[#3a3a3a] inline-block p-4 rounded-xl transition-colors cursor-pointer'
           >
-            Sign Out
+            <h1 className='text-white text-2xl font-mono'>Refr ☕️</h1>
           </button>
+          <div className='flex items-center gap-4'>
+            <button
+              onClick={() => {
+                setShowPendingModal(true);
+                fetchAllPendingConnections();
+              }}
+              className='bg-[#2a2a2a] hover:bg-[#3a3a3a] text-gray-300 hover:text-white px-4 py-2 rounded-lg text-sm transition-colors flex items-center gap-2 border border-gray-700'
+            >
+              <Clock className='w-4 h-4' />
+              View {allPendingPeople.length + allPendingPrograms.length + ' '}
+              Pending Connections
+            </button>
+            <BorderMagicButton
+              onClick={() => setPersonalizationModal(true)}
+              className='flex items-center gap-2 font-medium rounded-lg'
+            >
+              <Sparkles className='w-4 h-4' />
+              Personalize Connection-Finding Agent
+            </BorderMagicButton>
+            <button
+              onClick={handleSignOut}
+              className='bg-[#2a2a2a] text-gray-300 hover:text-white px-4 py-2 rounded-lg text-sm'
+            >
+              Sign Out
+            </button>
+          </div>
         </div>
 
         {loading ? (
@@ -722,389 +923,353 @@ export default function Dashboard() {
           </div>
         ) : (
           <>
-            <div className='flex gap-6'>
-              {/* Main Content */}
-              <div className='flex-1 m-'>
-                <div className='bg-[#1a1a1a] p-6 rounded-2xl'>
-                  {/* View Selector */}
-                  <div className='mb-6'>
-                    <AnimatedTabs
-                      tabs={[
-                        { title: 'Current Goal', value: 'goal' },
-                        {
-                          title: 'Connections (For Cold Outreach)',
-                          value: 'connections',
-                        },
-                        { title: 'Programs', value: 'programs' },
-                      ]}
-                      containerClassName=''
-                      activeTabClassName='bg-accent/20'
-                      onChange={(id) =>
-                        setSelectedView(
-                          id as 'goal' | 'programs' | 'connections'
-                        )
+            {/* Search Section */}
+            <div
+              className={`transition-all duration-500 ${
+                searchBarCentered
+                  ? 'flex items-center justify-center min-h-[50vh]'
+                  : 'mb-8'
+              }`}
+            >
+              <div
+                className={`w-full ${
+                  searchBarCentered ? 'max-w-2xl text-center' : ''
+                }`}
+              >
+                {searchBarCentered && (
+                  <h2 className='text-white text-3xl font-bold mb-8'>
+                    What's your goal?
+                  </h2>
+                )}
+                <div className='relative'>
+                  <input
+                    type='text'
+                    value={searchGoal}
+                    onChange={(e) => setSearchGoal(e.target.value)}
+                    onKeyDown={handleKeyDown}
+                    placeholder='Enter your career goal to find relevant connections...'
+                    className='w-full px-6 py-4 bg-[#1a1a1a] border border-gray-700 rounded-2xl text-white placeholder-gray-400 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 text-lg'
+                  />
+                  <button
+                    onClick={handleSearch}
+                    disabled={!searchGoal.trim() || findingMore}
+                    className='absolute right-2 top-1/2 transform -translate-y-1/2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white p-3 rounded-xl transition-colors'
+                  >
+                    <Search className='w-5 h-5' />
+                  </button>
+                </div>
+
+                {/* Preferences Checkboxes */}
+                <div className='flex justify-center gap-6 mt-4'>
+                  <label className='flex items-center gap-2 text-gray-300 cursor-pointer'>
+                    <input
+                      type='checkbox'
+                      checked={preferences.connections}
+                      onChange={(e) =>
+                        setPreferences((prev: any) => ({
+                          ...prev,
+                          connections: e.target.checked,
+                        }))
                       }
+                      className='w-4 h-4 rounded border-gray-600 bg-[#1a1a1a] text-blue-600 focus:ring-blue-500 focus:ring-2'
                     />
-                  </div>
-
-                  {/* Content Sections */}
-                  {selectedView === 'goal' && (
-                    <div className='space-y-4'>
-                      <div className='bg-[#2a2a2a] p-4 rounded-lg'>
-                        <h3 className='text-white font-medium mb-2'>
-                          Current Goal (What do you want to do? Be as clear and
-                          precise in your goals as possible)
-                        </h3>
-                        <textarea
-                          className='w-full h-24 px-3 py-2 text-gray-300 bg-[#1a1a1a] rounded-lg focus:outline-none'
-                          value={typeof goals === 'string' ? goals : ''}
-                          onChange={(e) => setGoals(e.target.value)}
-                          placeholder='Describe your current career goal...'
-                        />
-                        <BorderMagicButton
-                          onClick={saveGoal}
-                          disabled={saving}
-                          className='mt-2'
-                        >
-                          {saving ? 'Saving...' : 'Save Goal'}
-                        </BorderMagicButton>
-                      </div>
-                    </div>
-                  )}
-
-                  {selectedView === 'programs' && (
-                    <div className='space-y-4'>
-                      <div className='bg-[#2a2a2a] p-4 rounded-lg'>
-                        <ConnectionFilters
-                          connections={
-                            selectedView === 'programs'
-                              ? connections.filter(
-                                  (c: Connection) => c.type === 'program'
-                                )
-                              : connections.filter(
-                                  (c: Connection) => c.type === 'person'
-                                )
-                          }
-                          isArchive={false}
-                          onFilterChange={handleFilterChange}
-                          initialFilters={filters}
-                        />
-                        <div className='grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4'>
-                          {activeFilteredConnections.filter(
-                            (c: Connection) => c.type === 'program'
-                          ).length > 0 ? (
-                            activeFilteredConnections
-                              .filter((c: Connection) => c.type === 'program')
-                              .map((connection: Connection) => (
-                                <ProgramConnectionCard
-                                  key={connection.id}
-                                  connection={connection}
-                                  onStatusChange={handleStatusChange}
-                                />
-                              ))
-                          ) : (
-                            <div className='col-span-full text-center py-10 text-gray-400'>
-                              No programs match your current filters.
-                            </div>
-                          )}
-                        </div>
-                        <div className='pt-4 flex flex-col items-center space-y-3'>
-                          <div className='flex justify-center space-x-6'>
-                            <label className='flex items-center space-x-2 cursor-pointer'>
-                              <input
-                                type='checkbox'
-                                checked={connectionTypePrefs.connections}
-                                onChange={() =>
-                                  toggleConnectionType('connections')
-                                }
-                                className='form-checkbox h-4 w-4 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500'
-                              />
-                              <span className='text-gray-300'>Connections</span>
-                            </label>
-                            <label className='flex items-center space-x-2 cursor-pointer'>
-                              <input
-                                type='checkbox'
-                                checked={connectionTypePrefs.programs}
-                                onChange={() =>
-                                  toggleConnectionType('programs')
-                                }
-                                className='form-checkbox h-4 w-4 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500'
-                              />
-                              <span className='text-gray-300'>Programs</span>
-                            </label>
-                          </div>
-                          <div className='flex flex-col items-center'>
-                            <BorderMagicButton
-                              onClick={fetchMoreConnections}
-                              disabled={
-                                findingMore ||
-                                (!connectionTypePrefs.connections &&
-                                  !connectionTypePrefs.programs)
-                              }
-                              className='w-full md:w-auto'
-                            >
-                              Find more connections
-                            </BorderMagicButton>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                  {selectedView === 'connections' && (
-                    <div className='space-y-4'>
-                      <div className='bg-[#2a2a2a] p-4 rounded-lg'>
-                        <ConnectionFilters
-                          connections={connections.filter(
-                            (c: Connection) => c.type === 'person'
-                          )}
-                          isArchive={false}
-                          onFilterChange={handleFilterChange}
-                          initialFilters={filters}
-                        />
-                        <div className='grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4'>
-                          {activeFilteredConnections.filter(
-                            (c: Connection) => c.type === 'person'
-                          ).length > 0 ? (
-                            activeFilteredConnections
-                              .filter((c: Connection) => c.type === 'person')
-                              .map((connection: Connection) => (
-                                <PersonConnectionCard
-                                  key={connection.id}
-                                  connection={connection}
-                                  onStatusChange={handleStatusChange}
-                                />
-                              ))
-                          ) : (
-                            <div className='col-span-full text-center py-10 text-gray-400'>
-                              'No connections match your current filters.'
-                            </div>
-                          )}
-                        </div>
-                        <div className='pt-4 flex flex-col items-center space-y-3'>
-                          <div className='flex justify-center space-x-6'>
-                            <label className='flex items-center space-x-2 cursor-pointer'>
-                              <input
-                                type='checkbox'
-                                checked={connectionTypePrefs.connections}
-                                onChange={() =>
-                                  toggleConnectionType('connections')
-                                }
-                                className='form-checkbox h-4 w-4 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500'
-                              />
-                              <span className='text-gray-300'>Connections</span>
-                            </label>
-                            <label className='flex items-center space-x-2 cursor-pointer'>
-                              <input
-                                type='checkbox'
-                                checked={connectionTypePrefs.programs}
-                                onChange={() =>
-                                  toggleConnectionType('programs')
-                                }
-                                className='form-checkbox h-4 w-4 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500'
-                              />
-                              <span className='text-gray-300'>Programs</span>
-                            </label>
-                          </div>
-                          <div className='flex flex-col items-center'>
-                            <BorderMagicButton
-                              onClick={fetchMoreConnections}
-                              disabled={
-                                findingMore ||
-                                (!connectionTypePrefs.connections &&
-                                  !connectionTypePrefs.programs)
-                              }
-                              className='w-full md:w-auto'
-                            >
-                              Find 5 more connections
-                            </BorderMagicButton>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* Resume Upload Section */}
-                <div className='mt-3'>
-                  <div className='bg-[#1a1a1a] p-6 rounded-2xl'>
-                    <FileUpload
-                      onChange={(files) => {
-                        if (files && files.length) {
-                          setFile(files[0]);
-                          setUploadError('');
-                        }
-                      }}
-                      title='Update Resume'
-                      description='Update your resume to tailor your connection finding algorithm to your latest experience and skills'
+                    People
+                  </label>
+                  <label className='flex items-center gap-2 text-gray-300 cursor-pointer'>
+                    <input
+                      type='checkbox'
+                      checked={preferences.programs}
+                      onChange={(e) =>
+                        setPreferences((prev: any) => ({
+                          ...prev,
+                          programs: e.target.checked,
+                        }))
+                      }
+                      className='w-4 h-4 rounded border-gray-600 bg-[#1a1a1a] text-blue-600 focus:ring-blue-500 focus:ring-2'
                     />
-                    {/* Upload button and feedback */}
-                    <div className='mt-4 flex flex-col items-center'>
-                      {(uploading ||
-                        steps.some((step) => step.status === 'completed')) &&
-                        (() => {
-                          const inProgressIndex = steps.findIndex(
-                            (step) => step.status === 'in_progress'
-                          );
-                          return (
-                            <MultiStepLoader
-                              loadingStates={steps.map((s) => ({
-                                text: s.label,
-                              }))}
-                              loading={uploading}
-                              progressIndex={inProgressIndex}
-                              loop={false}
-                            />
-                          );
-                        })()}
-                      <BorderMagicButton
-                        onClick={handleResumeUpload}
-                        disabled={uploading || !file}
-                        className='mt-2'
-                      >
-                        {uploading ? 'Updating...' : 'Update Resume'}
-                      </BorderMagicButton>
-                      {uploadError && (
-                        <div className='mt-2 text-red-500 text-sm'>
-                          {uploadError}
-                        </div>
-                      )}
-                      {uploadSuccess && (
-                        <div className='mt-2 text-green-500 text-sm'>
-                          Resume updated and analyzed successfully!
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </div>
-              <div className='space-y-4'>
-                {/* Outreach strategy side panel */}
-                <div className='w-64 lg:w-72 bg-[#1a1a1a] p-4 rounded-2xl h-fit'>
-                  <h3 className='text-white font-medium mb-2'>
-                    Outreach strategy
-                  </h3>
-                  <p className='text-gray-400 text-sm mb-2'>
-                    In the messages (emails, LinkedIn messages, etc) you send to
-                    these people, use the following strategy:
-                  </p>
-                  <ol className='list-decimal list-inside space-y-1 text-gray-400 text-sm'>
-                    <li>Introduce yourself with your and explain your goals</li>
-                    <li>
-                      Connect with the other person based on how their work
-                      resonates with / links to yours (shared background)
-                    </li>
-                    <li>Share your request for an internship</li>
-                  </ol>
-                </div>
-
-                {/* Archive side panel */}
-                <div className='w-64 lg:w-72 bg-[#1a1a1a] p-4 rounded-2xl h-fit'>
-                  <div className='flex justify-between items-center mb-2'>
-                    <h3 className='text-white font-medium'>Archive</h3>
-                    <button
-                      onClick={() => setShowArchive(!showArchive)}
-                      className='text-gray-400 hover:text-white text-sm focus:outline-none'
-                    >
-                      {showArchive
-                        ? 'Hide'
-                        : `Show (${archivedFilteredConnections.length})`}
-                    </button>
-                  </div>
-
-                  {showArchive && (
-                    <div className='mt-2'>
-                      <ArchiveConnectionFilters
-                        connections={
-                          selectedView === 'programs'
-                            ? connections.filter(
-                                (c: Connection) => c.type === 'program'
-                              )
-                            : connections.filter(
-                                (c: Connection) => c.type === 'person'
-                              )
-                        }
-                        onFilterChange={(filters) =>
-                          handleFilterChange(filters, true)
-                        }
-                        initialFilters={archiveFilters}
-                      />
-                      {archivedFilteredConnections.length > 0 ? (
-                        <div className='grid grid-cols-1 gap-4 max-h-96 overflow-y-auto pr-2'>
-                          {archivedFilteredConnections.map(
-                            (connection: Connection) => (
-                              <div
-                                key={connection.id}
-                                className='bg-[#2a2a2a] p-4 rounded-xl flex items-start gap-3 h-full min-w-0'
-                              >
-                                <div className='relative'>
-                                  <div
-                                    className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-medium ${getBackgroundColor(
-                                      connection.name
-                                    )}`}
-                                  >
-                                    {getInitials(connection.name)}
-                                  </div>
-                                </div>
-                                <div className='flex-1 overflow-auto'>
-                                  <div className='flex flex-wrap items-center justify-between gap-2 mb-1'>
-                                    <h4 className='text-white font-medium text-sm truncate'>
-                                      {connection.name}
-                                    </h4>
-                                  </div>
-                                  <p className='text-gray-400 text-xs'>
-                                    {connection.current_role}
-                                    {connection.company &&
-                                      ` at ${connection.company}`}
-                                  </p>
-                                  {connection.description && (
-                                    <p className='text-gray-500 text-xs mt-1 line-clamp-2'>
-                                      {connection.description}
-                                    </p>
-                                  )}
-                                  <div className='mt-2 flex justify-end'>
-                                    <select
-                                      value={
-                                        connection.status ||
-                                        'internship_acquired'
-                                      }
-                                      onChange={(e) =>
-                                        handleStatusChange(
-                                          connection.id,
-                                          e.target.value as Connection['status']
-                                        )
-                                      }
-                                      className='bg-[#3a3a3a] text-gray-200 text-xs px-2 py-1 rounded-md focus:outline-none border border-gray-600'
-                                    >
-                                      <option value='internship_acquired'>
-                                        Archived
-                                      </option>
-                                      <option value='not_contacted'>
-                                        Not Contacted
-                                      </option>
-                                      <option value='email_sent'>
-                                        Email/Message Sent
-                                      </option>
-                                      <option value='response_received'>
-                                        Responded
-                                      </option>
-                                    </select>
-                                  </div>
-                                </div>
-                              </div>
-                            )
-                          )}
-                        </div>
-                      ) : (
-                        <p className='text-gray-400 text-sm'>
-                          No archived connections.
-                        </p>
-                      )}
-                    </div>
-                  )}
+                    Programs
+                  </label>
                 </div>
               </div>
             </div>
+
+            {/* Connections Grid */}
+            {searchMode && !searchBarCentered && (
+              <div className='grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6'>
+                {activeFilteredConnections.map((connection: Connection) =>
+                  connection.type === 'person' ? (
+                    <PersonConnectionCard
+                      key={connection.id}
+                      connection={connection}
+                      onStatusChange={handleStatusChange}
+                    />
+                  ) : (
+                    <ProgramConnectionCard
+                      key={connection.id}
+                      connection={connection}
+                      onStatusChange={handleStatusChange}
+                    />
+                  )
+                )}
+              </div>
+            )}
           </>
+        )}
+
+        {/* Update Resume Button - Bottom Right */}
+        <div className='fixed bottom-6 right-6'>
+          <button
+            onClick={() => setShowResumeModal(true)}
+            className='bg-[#2a2a2a] hover:bg-[#3a3a3a] text-gray-300 hover:text-white px-4 py-2 rounded-lg text-sm transition-colors flex items-center gap-2 shadow-lg border border-gray-700'
+          >
+            <Upload className='w-4 h-4' />
+            Update Resume
+          </button>
+        </div>
+
+        {/* Resume Upload Modal */}
+        {showResumeModal && (
+          <div className='fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50'>
+            <div className='bg-[#1a1a1a] rounded-2xl p-6 w-full max-w-md border border-gray-700'>
+              <h3 className='text-white text-xl font-bold mb-6'>
+                Update Resume
+              </h3>
+
+              <div className='space-y-4'>
+                <FileUpload
+                  onChange={(files) => {
+                    if (files && files.length) {
+                      setFile(files[0]);
+                      setUploadError('');
+                    }
+                  }}
+                  title='Select Resume'
+                  description='Upload your updated resume to improve connection finding'
+                />
+
+                {uploadError && (
+                  <div className='text-red-500 text-sm'>{uploadError}</div>
+                )}
+
+                {uploadSuccess && (
+                  <div className='text-green-500 text-sm'>
+                    Resume updated successfully!
+                  </div>
+                )}
+              </div>
+
+              <div className='flex justify-end gap-3 mt-6'>
+                <button
+                  onClick={() => {
+                    setShowResumeModal(false);
+                    setFile(null);
+                    setUploadError('');
+                    setUploadSuccess(false);
+                  }}
+                  className='px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors'
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    handleResumeUpload();
+                  }}
+                  disabled={uploading || !file}
+                  className='px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-600 transition-colors'
+                >
+                  {uploading ? 'Uploading...' : 'Update Resume'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Pending Connections Modal */}
+        {showPendingModal && (
+          <div className='fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50'>
+            <div className='bg-[#1a1a1a] rounded-2xl p-6 w-full max-w-4xl max-h-[80vh] border border-gray-700 overflow-hidden'>
+              <div className='flex justify-between items-center mb-6'>
+                <h3 className='text-white text-xl font-bold'>
+                  Pending{' '}
+                  {pendingModalView === 'people'
+                    ? `People (${allPendingPeople.length})`
+                    : `Programs (${allPendingPrograms.length})`}
+                </h3>
+                <button
+                  onClick={() => setShowPendingModal(false)}
+                  className='text-gray-400 hover:text-white text-xl'
+                >
+                  ×
+                </button>
+              </div>
+
+              {/* Toggle */}
+              <div className='flex mb-6'>
+                <div className='bg-[#2a2a2a] rounded-lg p-1 flex'>
+                  <button
+                    onClick={() => setPendingModalView('people')}
+                    className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                      pendingModalView === 'people'
+                        ? 'bg-blue-600 text-white'
+                        : 'text-gray-400 hover:text-white'
+                    }`}
+                  >
+                    People
+                  </button>
+                  <button
+                    onClick={() => setPendingModalView('programs')}
+                    className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                      pendingModalView === 'programs'
+                        ? 'bg-blue-600 text-white'
+                        : 'text-gray-400 hover:text-white'
+                    }`}
+                  >
+                    Programs
+                  </button>
+                </div>
+              </div>
+
+              <div className='overflow-y-auto max-h-[60vh]'>
+                {pendingModalView === 'people' ? (
+                  allPendingPeople.length > 0 ? (
+                    <div className='grid grid-cols-1 md:grid-cols-2 gap-4'>
+                      {allPendingPeople.map((connection: Connection) => (
+                        <PersonConnectionCard
+                          key={connection.id}
+                          connection={connection}
+                          onStatusChange={handleStatusChange}
+                        />
+                      ))}
+                    </div>
+                  ) : (
+                    <div className='text-center py-10 text-gray-400'>
+                      No pending people connections. Try finding some
+                      connections first!
+                    </div>
+                  )
+                ) : allPendingPrograms.length > 0 ? (
+                  <div className='grid grid-cols-1 md:grid-cols-2 gap-4'>
+                    {allPendingPrograms.map((connection: Connection) => (
+                      <ProgramConnectionCard
+                        key={connection.id}
+                        connection={connection}
+                        onStatusChange={handleStatusChange}
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <div className='text-center py-10 text-gray-400'>
+                    No pending program connections. Try finding some programs
+                    first!
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Personalization Modal */}
+        {personalizationModal && (
+          <div className='fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50'>
+            <div className='bg-[#1a1a1a] rounded-2xl p-6 w-full max-w-md border border-gray-700'>
+              <h3 className='text-white text-xl font-bold mb-6'>
+                Personalize Your Connections
+              </h3>
+
+              <div className='space-y-4'>
+                <div className='flex items-center justify-between'>
+                  <span className='text-white font-medium'>
+                    Enable Personalization
+                  </span>
+                  <label className='relative inline-flex items-center cursor-pointer'>
+                    <input
+                      type='checkbox'
+                      checked={personalizationSettings.enabled}
+                      onChange={(e) =>
+                        setPersonalizationSettings((prev) => ({
+                          ...prev,
+                          enabled: e.target.checked,
+                        }))
+                      }
+                      className='sr-only peer'
+                    />
+                    <div className='w-11 h-6 bg-gray-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[""] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600'></div>
+                  </label>
+                </div>
+
+                <div>
+                  <label
+                    className={`block font-medium mb-2 ${
+                      personalizationSettings.enabled
+                        ? 'text-white'
+                        : 'text-gray-500'
+                    }`}
+                  >
+                    Professional Interests
+                  </label>
+                  <textarea
+                    value={personalizationSettings.professionalInterests}
+                    onChange={(e) =>
+                      setPersonalizationSettings((prev) => ({
+                        ...prev,
+                        professionalInterests: e.target.value,
+                      }))
+                    }
+                    disabled={!personalizationSettings.enabled}
+                    placeholder='Describe your professional interests...'
+                    className={`w-full h-24 px-3 py-2 border rounded-lg focus:outline-none ${
+                      personalizationSettings.enabled
+                        ? 'bg-[#2a2a2a] border-gray-600 text-white placeholder-gray-400 focus:border-blue-500'
+                        : 'bg-gray-800 border-gray-700 text-gray-500 placeholder-gray-600 cursor-not-allowed'
+                    }`}
+                  />
+                </div>
+
+                <div>
+                  <label
+                    className={`block font-medium mb-2 ${
+                      personalizationSettings.enabled
+                        ? 'text-white'
+                        : 'text-gray-500'
+                    }`}
+                  >
+                    Personal Interests & Hobbies
+                  </label>
+                  <textarea
+                    value={personalizationSettings.personalInterests}
+                    onChange={(e) =>
+                      setPersonalizationSettings((prev) => ({
+                        ...prev,
+                        personalInterests: e.target.value,
+                      }))
+                    }
+                    disabled={!personalizationSettings.enabled}
+                    placeholder='Describe your hobbies and personal interests...'
+                    className={`w-full h-24 px-3 py-2 border rounded-lg focus:outline-none ${
+                      personalizationSettings.enabled
+                        ? 'bg-[#2a2a2a] border-gray-600 text-white placeholder-gray-400 focus:border-blue-500'
+                        : 'bg-gray-800 border-gray-700 text-gray-500 placeholder-gray-600 cursor-not-allowed'
+                    }`}
+                  />
+                </div>
+              </div>
+
+              <div className='flex justify-end gap-3 mt-6'>
+                <button
+                  onClick={() => setPersonalizationModal(false)}
+                  className='px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors'
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={savePersonalization}
+                  className='px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors'
+                >
+                  Save
+                </button>
+              </div>
+            </div>
+          </div>
         )}
       </div>
     </>

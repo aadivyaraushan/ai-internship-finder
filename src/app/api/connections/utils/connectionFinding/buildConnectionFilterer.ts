@@ -1,5 +1,4 @@
-import { Role, Goal, ConnectionAspects } from '../utils';
-import { buildBackgroundInfoString } from './buildBackgroundInfoString';
+import { ConnectionAspects } from '../utils';
 
 export function buildConnectionFiltererPrompt({
   goalTitle,
@@ -16,8 +15,8 @@ export function buildConnectionFiltererPrompt({
   location?: string;
   preferences?: { programs: boolean; connections: boolean };
 }): string {
-  const backgroundInfo = buildBackgroundInfoString(connectionAspects);
-  console.log('Background info for connection finder:', backgroundInfo);
+  // Using structured data directly - no need for string conversion
+  console.log('Using structured connection aspects for filtering:', connectionAspects);
 
   // Determine rule 1 based on user preferences
   let ruleOne: string;
@@ -122,7 +121,11 @@ Accept ONLY direct matches from these categories:
 
 **Input Variables:**
 - List of potential connections from discovery agent: ${unfilteredRawResponse}
-- Background information for matching verification: ${backgroundInfo}
+- Background information for matching verification (structured JSON data):
+
+\`\`\`json
+${JSON.stringify(connectionAspects, null, 2)}
+\`\`\`
 - Education level: ${connectionAspects.education?.current_level || 'unknown'}
 - Candidate race/ethnicity: ${race} (if provided)
 - Candidate location: ${location} (if provided)

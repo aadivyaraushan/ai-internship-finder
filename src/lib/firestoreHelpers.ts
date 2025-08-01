@@ -94,6 +94,9 @@ export interface Connection {
   outreach_strategy?: string;
 
   shared_background_points?: string[] | null;
+  shared_professional_interests?: string[] | null;
+  shared_personal_interests?: string[] | null;
+  ai_outreach_message?: string | null;
   profile_data?: any;
   website_verified?: boolean;
 }
@@ -118,6 +121,7 @@ export async function updateUserConnections(
 ) {
   await setDoc(doc(db, 'users', userId), { connections }, { merge: true });
 }
+
 
 export async function addUserConnection(
   userId: string,

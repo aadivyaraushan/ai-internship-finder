@@ -12,6 +12,12 @@ import { getResume } from '@/lib/firestoreHelpers';
 // Create a global event emitter (consider using a request-specific emitter in production)
 const globalEmitter = new EventEmitter();
 
+type PersonalizationSettings = {
+  enabled: boolean;
+  professionalInterests: string;
+  personalInterests: string;
+};
+
 type ConnectionRequest = {
   goalTitle: string;
   preferences: ConnectionPreferences;
@@ -20,6 +26,7 @@ type ConnectionRequest = {
   userId: string;
   resumeAspects: ResumeAspects;
   rawResumeText: string;
+  personalizationSettings?: PersonalizationSettings;
 };
 
 export async function POST(req: Request) {
@@ -41,6 +48,7 @@ export async function POST(req: Request) {
           location,
           resumeAspects,
           rawResumeText,
+          personalizationSettings,
         } = body;
 
         // Helper to send SSE messages
@@ -70,7 +78,7 @@ export async function POST(req: Request) {
           step: 0,
           message: 'Processing resume aspects...',
         });
-        const aspects = resumeAspects as ResumeAspects;
+        const aspects = resumeAspects;
         if (!aspects) {
           sendSSE({ type: 'error', message: 'No resume aspects provided' });
           controller.close();
@@ -91,6 +99,7 @@ export async function POST(req: Request) {
           preferences,
           race,
           location,
+          personalizationSettings,
         });
 
         // Send found connections as they're discovered

@@ -1,8 +1,130 @@
 import OpenAI from 'openai';
-import { zodResponseFormat, zodTextFormat } from 'openai/helpers/zod';
+import { zodTextFormat } from 'openai/helpers/zod';
 import { z } from 'zod';
 import { ConnectionsResponse } from '../app/api/connections/utils/utils';
-import { scrapeLinkedInProfile } from '@/app/api/connections/utils/urlFinding/people/scrapeLinkedInProfile';
+
+// Helper function to handle Perplexity API calls
+async function callPerplexityAPI(query: string) {
+  // Check if API key exists
+  if (!process.env.PERPLEXITY_API_KEY) {
+    throw new Error('PERPLEXITY_API_KEY environment variable is not set');
+  }
+
+  console.log('🔍 Using Perplexity API for search:', { query });
+
+  // Calculate date from 6 months ago for filtering
+  const sixMonthsAgo = new Date();
+  sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+  const filterDate = `${
+    sixMonthsAgo.getMonth() + 1
+  }/${sixMonthsAgo.getDate()}/${sixMonthsAgo.getFullYear()}`;
+
+  const perplexityResponse = await fetch(
+    'https://api.perplexity.ai/chat/completions',
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${process.env.PERPLEXITY_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'sonar-pro',
+        messages: [
+          {
+            role: 'user',
+            content: `Find relevant sources and URLs for: ${query}. Focus on finding specific information about people, companies, programs, or opportunities. Include LinkedIn profiles, company websites, and program pages when available. Provide URLs and explain why each source is relevant for making professional connections.`,
+          },
+        ],
+        search_after_date_filter: filterDate,
+      }),
+    }
+  );
+
+  console.log('Perplexity response status:', perplexityResponse.status);
+  console.log(
+    'Perplexity response headers:',
+    Object.fromEntries(perplexityResponse.headers.entries())
+  );
+
+  if (!perplexityResponse.ok) {
+    const errorText = await perplexityResponse.text();
+    console.error('Perplexity API error response:', errorText);
+    throw new Error(
+      `Perplexity API error (${perplexityResponse.status}): ${errorText}`
+    );
+  }
+
+  const responseText = await perplexityResponse.text();
+  console.log(
+    'Perplexity raw response:',
+    responseText.substring(0, 500) + '...'
+  );
+
+  const perplexityData = JSON.parse(responseText);
+
+  // Check if we got actual search results
+  if (!perplexityData.search_results || perplexityData.search_results.length === 0) {
+    console.warn('⚠️ Perplexity returned no search results for query:', query);
+    return {
+      query,
+      answer: 'No search results found. Try alternative search terms like: removing specific keywords, using broader company names, searching for similar roles, or trying different combinations of the person/company name.',
+      search_results: [],
+      sources: [],
+      urls: [],
+      relevance_explanation: `No search results found for: ${query}. Suggest trying alternative search queries with different keywords or broader terms.`,
+    };
+  }
+
+  // Transform Perplexity response to include sources and explanations
+  const transformedData = {
+    query,
+    answer: perplexityData.choices?.[0]?.message?.content || 'No answer found',
+    search_results: perplexityData.search_results || [],
+    sources:
+      perplexityData.search_results?.map((result: any) => ({
+        title: result.title,
+        url: result.url,
+        date: result.date,
+        last_updated: result.last_updated,
+      })) || [],
+    urls:
+      perplexityData.search_results
+        ?.map((result: any) => result.url)
+        .filter(Boolean) || [],
+    relevance_explanation: `Search results for: ${query}. Found ${
+      perplexityData.search_results?.length || 0
+    } sources with URLs and explanations for connection-finding.`,
+  };
+
+  console.log('✅ Perplexity search completed');
+  return transformedData;
+}
+
+// Helper function to handle Perplexity errors consistently
+function handlePerplexityError(error: any, query: string, callId: string) {
+  console.error('Error with Perplexity API:', error);
+  console.error('API Key present:', !!process.env.PERPLEXITY_API_KEY);
+  console.error('API Key length:', process.env.PERPLEXITY_API_KEY?.length || 0);
+  console.error('Query:', query);
+
+  // If it's a JSON parsing error, it means we got HTML instead of JSON
+  if (error.message.includes('Unexpected token')) {
+    console.error(
+      '🚨 Received HTML instead of JSON - likely API key issue or endpoint problem'
+    );
+  }
+
+  return {
+    type: 'function_call_output',
+    call_id: callId,
+    output: JSON.stringify({
+      error: error.message,
+      query,
+      fallback_message: 'Unable to perform web search at this time',
+      debug_info: 'Check API key and endpoint configuration',
+    }),
+  };
+}
 
 // Singleton OpenAI client
 
@@ -169,65 +291,22 @@ export async function callClaude(
               hasToolCalls = true;
 
               // Handle different tool types
-              if (item.name === 'access_linkedin_url') {
-                console.log('🔗 Accessing LinkedIn URL...');
-                try {
-                  const args = JSON.parse(item.arguments);
-                  // Extract the URL from the arguments object
-                  const profileUrl = args.profile_url || args.url || args;
-                  const profileData = await scrapeLinkedInProfile(profileUrl);
-
-                  // Create function call output
-                  toolCallOutputs.push({
-                    type: 'function_call_output',
-                    call_id: item.call_id,
-                    output: JSON.stringify(profileData),
-                  });
-
-                  console.log('✅ LinkedIn profile data retrieved');
-                } catch (error: any) {
-                  console.error('Error calling LinkedIn function:', error);
-                  toolCallOutputs.push({
-                    type: 'function_call_output',
-                    call_id: item.call_id,
-                    output: JSON.stringify({ error: error.message }),
-                  });
-                }
-              }
+              // LinkedIn access removed - functionality not working reliably
               // Add other tool handlers here as needed
-              else if (
-                item.name === 'search_web' ||
-                item.name === 'web_search'
-              ) {
+              if (item.name === 'search_web' || item.name === 'web_search') {
                 const args = JSON.parse(item.arguments);
-                console.log('args used for search: ', args);
-                // getJson(
-                //   {
-                //     engine: 'google_light',
-                //     api_key: process.env.SERP_API_KEY,
-                //     q: args.query,
-                //     location:
-                //       args.location === 'NONE' ? undefined : args.location,
-                //   },
-                //   (json) => {
-                //     console.log('JSON output from search: ', json);
-                //     toolCallOutputs.push({
-                //       type: 'function_call_output',
-                //       call_id: item.call_id,
-                //       output: JSON.stringify(json),
-                //     });
-                //   }
-                // );
-                const response = await fetch(
-                  `https://api.avesapi.com/search?apikey=${process.env.NEXT_PUBLIC_AVES_API_KEY}&type=web&query=${args.query}&google_domain=google.ae&gl=ae&hl=en&device=desktop&output=json&num=10`
-                );
-
-                const data = await response.json();
-                toolCallOutputs.push({
-                  type: 'function_call_output',
-                  call_id: item.call_id,
-                  output: JSON.stringify(data),
-                });
+                try {
+                  const transformedData = await callPerplexityAPI(args.query);
+                  toolCallOutputs.push({
+                    type: 'function_call_output',
+                    call_id: item.call_id,
+                    output: JSON.stringify(transformedData),
+                  });
+                } catch (error: any) {
+                  toolCallOutputs.push(
+                    handlePerplexityError(error, args.query, item.call_id)
+                  );
+                }
               }
               // Add more tool handlers as needed
             }
@@ -304,46 +383,22 @@ export async function callClaude(
               hasToolCalls = true;
 
               // Handle different tool types
-              if (item.name === 'access_linkedin_url') {
-                console.log('🔗 Accessing LinkedIn URL...');
-                try {
-                  const args = JSON.parse(item.arguments);
-                  const profileData = await scrapeLinkedInProfile(args);
-
-                  // Create function call output
-                  toolCallOutputs.push({
-                    type: 'function_call_output',
-                    call_id: item.call_id,
-                    output: JSON.stringify(profileData),
-                  });
-
-                  console.log('✅ LinkedIn profile data retrieved');
-                } catch (error: any) {
-                  console.error('Error calling LinkedIn function:', error);
-                  toolCallOutputs.push({
-                    type: 'function_call_output',
-                    call_id: item.call_id,
-                    output: JSON.stringify({ error: error.message }),
-                  });
-                }
-              }
+              // LinkedIn access removed - functionality not working reliably
               // Add other tool handlers here as needed
-              else if (
-                item.name === 'search_web' ||
-                item.name === 'web_search'
-              ) {
+              if (item.name === 'search_web' || item.name === 'web_search') {
                 const args = JSON.parse(item.arguments);
-                console.log('args used for search: ', args);
-                const response = await fetch(
-                  `https://api.avesapi.com/search?apikey=${process.env.NEXT_PUBLIC_AVES_API_KEY}&type=web&query=${args.query}&google_domain=google.ae&gl=ae&hl=en&device=desktop&output=json&num=10`
-                );
-
-                const data = await response.json();
-                toolCallOutputs.push({
-                  type: 'function_call_output',
-                  call_id: item.call_id,
-                  output: JSON.stringify(data),
-                });
+                try {
+                  const transformedData = await callPerplexityAPI(args.query);
+                  toolCallOutputs.push({
+                    type: 'function_call_output',
+                    call_id: item.call_id,
+                    output: JSON.stringify(transformedData),
+                  });
+                } catch (error: any) {
+                  toolCallOutputs.push(
+                    handlePerplexityError(error, args.query, item.call_id)
+                  );
+                }
               }
               // Add more tool handlers as needed
             }
@@ -433,44 +488,22 @@ export async function callClaude(
             hasToolCalls = true;
 
             // Handle different tool types
-            if (item.name === 'access_linkedin_url') {
-              console.log('🔗 Accessing LinkedIn URL...');
-              try {
-                const args = JSON.parse(item.arguments);
-                // Extract the URL from the arguments object
-                const profileUrl = args.profile_url || args.url || args;
-                const profileData = await scrapeLinkedInProfile(profileUrl);
-
-                // Create function call output
-                toolCallOutputs.push({
-                  type: 'function_call_output',
-                  call_id: item.call_id,
-                  output: JSON.stringify(profileData),
-                });
-
-                console.log('✅ LinkedIn profile data retrieved');
-              } catch (error: any) {
-                console.error('Error calling LinkedIn function:', error);
-                toolCallOutputs.push({
-                  type: 'function_call_output',
-                  call_id: item.call_id,
-                  output: JSON.stringify({ error: error.message }),
-                });
-              }
-            }
+            // LinkedIn access removed - functionality not working reliably
             // Add other tool handlers here as needed
-            else if (item.name === 'search_web' || item.name === 'web_search') {
+            if (item.name === 'search_web' || item.name === 'web_search') {
               const args = JSON.parse(item.arguments);
-              console.log('args used for search: ', args);
-              const response = await fetch(
-                `https://api.avesapi.com/search?apikey=${process.env.NEXT_PUBLIC_AVES_API_KEY}&type=web&query=${args.query}&google_domain=google.ae&gl=ae&hl=en&device=desktop&output=json&num=10`
-              );
-              const data = await response.json();
-              toolCallOutputs.push({
-                type: 'function_call_output',
-                call_id: item.call_id,
-                output: JSON.stringify(data),
-              });
+              try {
+                const transformedData = await callPerplexityAPI(args.query);
+                toolCallOutputs.push({
+                  type: 'function_call_output',
+                  call_id: item.call_id,
+                  output: JSON.stringify(transformedData),
+                });
+              } catch (error: any) {
+                toolCallOutputs.push(
+                  handlePerplexityError(error, args.query, item.call_id)
+                );
+              }
             }
             // Add more tool handlers as needed
           }
