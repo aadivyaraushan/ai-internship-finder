@@ -126,6 +126,45 @@ function handlePerplexityError(error: any, query: string, callId: string) {
   };
 }
 
+// Exponential backoff retry utility
+async function withExponentialBackoff<T>(
+  operation: () => Promise<T>,
+  maxRetries: number = 3,
+  baseDelay: number = 1000
+): Promise<T> {
+  let lastError: any;
+  
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await operation();
+    } catch (error: any) {
+      lastError = error;
+      
+      // Check if it's a rate limit error
+      const isRateLimit = 
+        error?.status === 429 || 
+        error?.code === 'rate_limit_exceeded' ||
+        error?.message?.toLowerCase().includes('rate limit') ||
+        error?.message?.toLowerCase().includes('too many requests');
+      
+      // Don't retry non-rate-limit errors on final attempt
+      if (attempt === maxRetries || (!isRateLimit && attempt > 0)) {
+        console.error(`❌ Final attempt failed (${attempt + 1}/${maxRetries + 1}):`, error?.message || error);
+        throw error;
+      }
+      
+      // Calculate delay with exponential backoff + jitter
+      const delay = baseDelay * Math.pow(2, attempt) + Math.random() * 1000;
+      
+      console.warn(`⚠️ Rate limit hit, retrying in ${Math.round(delay)}ms (attempt ${attempt + 1}/${maxRetries + 1}):`, error?.message || error);
+      
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+  }
+  
+  throw lastError;
+}
+
 // Singleton OpenAI client
 
 export interface ClaudeCallOptions {
@@ -219,7 +258,9 @@ export async function callClaude(
       console.log('✅ Starting generation with reasoning!');
       let jsonString = '';
 
-      const response = await client.responses.create(completionOptions);
+      const response = await withExponentialBackoff(() =>
+        client.responses.create(completionOptions)
+      );
       const responseStream = response as any; // Cast to any to bypass TypeScript error
       for await (const event of responseStream) {
         console.log('Event:', event.type);
@@ -255,22 +296,24 @@ export async function callClaude(
         iterationCount++;
         console.log(`🔄 API call iteration ${iterationCount}`);
 
-        // Make API call
-        response = await client.responses.create({
-          model,
-          input: currentInput,
-          max_output_tokens: maxTokens,
-          text:
-            schema && schemaLabel
-              ? { format: zodTextFormat(schema, schemaLabel) }
-              : {},
-          tools,
-          tool_choice: 'auto',
-          reasoning: {
-            effort: effort,
-            summary: 'detailed',
-          },
-        });
+        // Make API call with retry logic
+        response = await withExponentialBackoff(() =>
+          client.responses.create({
+            model,
+            input: currentInput,
+            max_output_tokens: maxTokens,
+            text:
+              schema && schemaLabel
+                ? { format: zodTextFormat(schema, schemaLabel) }
+                : {},
+            tools,
+            tool_choice: 'auto',
+            reasoning: {
+              effort: effort,
+              summary: 'detailed',
+            },
+          })
+        );
 
         // Log chain of thought available
         console.log('🧠 Thinking processes:');
@@ -357,18 +400,20 @@ export async function callClaude(
         iterationCount++;
         console.log(`🔄 API call iteration ${iterationCount}`);
 
-        // Make API call
-        response = await client.responses.create({
-          model,
-          input: currentInput,
-          max_output_tokens: maxTokens,
-          text:
-            schema && schemaLabel
-              ? { format: zodTextFormat(schema, schemaLabel) }
-              : {},
-          tools,
-          tool_choice: 'auto',
-        });
+        // Make API call with retry logic
+        response = await withExponentialBackoff(() =>
+          client.responses.create({
+            model,
+            input: currentInput,
+            max_output_tokens: maxTokens,
+            text:
+              schema && schemaLabel
+                ? { format: zodTextFormat(schema, schemaLabel) }
+                : {},
+            tools,
+            tool_choice: 'auto',
+          })
+        );
 
         // Check if the model made any tool calls
         let hasToolCalls = false;
@@ -441,12 +486,16 @@ export async function callClaude(
       console.log('✅ Starting generation (non-reasoning, streaming)!');
       // Note: Function calls with streaming + schema is complex and may not be fully supported
       // This is a placeholder for future implementation if needed
-      const response = await client.responses.create(completionOptions);
+      const response = await withExponentialBackoff(() =>
+        client.responses.create(completionOptions)
+      );
       // Handle streaming response here
       return response;
     }
 
-    const response = await client.responses.parse(completionOptions);
+    const response = await withExponentialBackoff(() =>
+      client.responses.parse(completionOptions)
+    );
     console.log('Response data structure: ', response);
     return response.output_parsed as z.infer<typeof ConnectionsResponse>;
   }
@@ -466,14 +515,16 @@ export async function callClaude(
       iterationCount++;
       console.log(`🔄 API call iteration ${iterationCount}`);
 
-      // Make API call
-      response = await client.responses.create({
-        model,
-        input: currentInput,
-        max_output_tokens: maxTokens,
-        tools,
-        tool_choice: 'auto',
-      });
+      // Make API call with retry logic
+      response = await withExponentialBackoff(() =>
+        client.responses.create({
+          model,
+          input: currentInput,
+          max_output_tokens: maxTokens,
+          tools,
+          tool_choice: 'auto',
+        })
+      );
 
       // Check if the model made any tool calls
       let hasToolCalls = false;
@@ -535,6 +586,8 @@ export async function callClaude(
   }
 
   // Default case: no tools, just create response
-  const response = await client.responses.create(completionOptions);
+  const response = await withExponentialBackoff(() =>
+    client.responses.create(completionOptions)
+  );
   return response.output_text;
 }

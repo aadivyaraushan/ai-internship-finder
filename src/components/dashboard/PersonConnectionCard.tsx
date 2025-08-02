@@ -32,6 +32,23 @@ export function PersonConnectionCard({
     connection.shared_professional_interests || [];
   const sharedPersonalInterests = connection.shared_personal_interests || [];
 
+  // Debug connection data
+  console.log(`🎯 PersonConnectionCard - ${connection.name}:`);
+  console.log(
+    '  shared_professional_interests:',
+    JSON.stringify(connection.shared_professional_interests, null, 2)
+  );
+  console.log(
+    '  shared_personal_interests:',
+    JSON.stringify(connection.shared_personal_interests, null, 2)
+  );
+  console.log(
+    '  Array lengths - professional:',
+    connection.shared_professional_interests?.length,
+    'personal:',
+    connection.shared_personal_interests?.length
+  );
+
   return (
     <div
       className={`bg-[#1a1a1a] p-5 rounded-2xl flex items-start gap-4 h-full min-w-0 ${className}`}

@@ -6,7 +6,7 @@ export interface ProcessedConnection {
   name: string;
   imageUrl: string;
   matchPercentage: number;
-  verified_profile_url?: string;
+  verified_profile_url?: string | null;
   email?: string;
   status: string;
   current_role?: string;
@@ -20,6 +20,8 @@ export interface ProcessedConnection {
   hiring_power?: Connection['hiring_power'];
   exact_matches?: Connection['exact_matches'];
   shared_background_points?: string[] | null;
+  shared_professional_interests?: string[] | null;
+  shared_personal_interests?: string[] | null;
   ai_outreach_message?: string | null;
   description: string;
 }
@@ -98,6 +100,8 @@ export function postProcessConnections(
         (conn.outreach_strategy as any)?.shared_background_points
           ? (conn.outreach_strategy as any).shared_background_points
           : []),
+      shared_professional_interests: conn.shared_professional_interests || null,
+      shared_personal_interests: conn.shared_personal_interests || null,
       ai_outreach_message: conn.ai_outreach_message,
       description: description || 'No additional details available',
     };

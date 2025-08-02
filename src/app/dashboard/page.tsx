@@ -506,6 +506,13 @@ export default function Dashboard() {
         typeof userData?.goals === 'string' ? userData.goals : '';
       const rawResumeText = resumeData?.text || '';
 
+      // Debug personalization settings before sending
+      console.log('🎯 Frontend - Sending Personalization Settings:', {
+        enabled: personalizationSettings?.enabled,
+        professionalInterests: personalizationSettings?.professionalInterests,
+        personalInterests: personalizationSettings?.personalInterests,
+      });
+
       // Make the streaming request
       const response = await fetch('/api/connections', {
         method: 'POST',
@@ -560,6 +567,11 @@ export default function Dashboard() {
                   break;
 
                 case 'connection-found':
+                  // Debug what's received from SSE
+                  console.log(`🎯 Frontend SSE - Received connection: ${data.connection?.name}`);
+                  console.log('  shared_professional_interests:', JSON.stringify(data.connection?.shared_professional_interests, null, 2));
+                  console.log('  shared_personal_interests:', JSON.stringify(data.connection?.shared_personal_interests, null, 2));
+                  
                   // Add connections as they're found (optional - for real-time display)
                   streamedConnections.push(data.connection);
                   // You could update UI here to show connections as they arrive
@@ -640,7 +652,14 @@ export default function Dashboard() {
         const userData = userDoc.data();
         setUserData(userData);
         if (userData.personalizationSettings) {
+          console.log('🎯 Loading Personalization Settings from Firebase:', {
+            enabled: userData.personalizationSettings.enabled,
+            professionalInterests: userData.personalizationSettings.professionalInterests,
+            personalInterests: userData.personalizationSettings.personalInterests,
+          });
           setPersonalizationSettings(userData.personalizationSettings);
+        } else {
+          console.log('⚠️ No personalization settings found in Firebase - using defaults');
         }
       }
     } catch (error) {
@@ -820,6 +839,13 @@ export default function Dashboard() {
   const savePersonalization = async () => {
     if (!currentUser) return;
 
+    // Debug personalization form submission
+    console.log('🎯 Personalization Form - Saving Settings:', {
+      enabled: personalizationSettings.enabled,
+      professionalInterests: personalizationSettings.professionalInterests,
+      personalInterests: personalizationSettings.personalInterests,
+    });
+
     try {
       await setDoc(
         doc(db, 'users', currentUser.uid),
@@ -828,9 +854,10 @@ export default function Dashboard() {
         },
         { merge: true }
       );
+      console.log('✅ Personalization settings saved to Firebase successfully');
       setPersonalizationModal(false);
     } catch (error) {
-      console.error('Error saving personalization settings:', error);
+      console.error('❌ Error saving personalization settings:', error);
     }
   };
 

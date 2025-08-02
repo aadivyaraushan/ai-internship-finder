@@ -51,6 +51,13 @@ export async function POST(req: Request) {
           personalizationSettings,
         } = body;
 
+        // Debug personalization settings
+        console.log('🎯 Personalization Settings Received:', {
+          enabled: personalizationSettings?.enabled,
+          professionalInterests: personalizationSettings?.professionalInterests,
+          personalInterests: personalizationSettings?.personalInterests,
+        });
+
         // Helper to send SSE messages
         const sendSSE = (data: any) => {
           if (!streamClosed) {
@@ -104,12 +111,20 @@ export async function POST(req: Request) {
 
         // Send found connections as they're discovered
         found.forEach((connection, index) => {
-          sendSSE({
+          console.log(`🎯 Sending connection ${index + 1} to frontend - ${connection.name}:`);
+          console.log('  shared_professional_interests:', JSON.stringify(connection.shared_professional_interests, null, 2));
+          console.log('  shared_personal_interests:', JSON.stringify(connection.shared_personal_interests, null, 2));
+          
+          const sseMessage = {
             type: 'connection-found',
             connection,
             count: index + 1,
             total: found.length,
-          });
+          };
+          
+          console.log('🎯 Full SSE message being sent:', JSON.stringify(sseMessage, null, 2));
+          
+          sendSSE(sseMessage);
         });
 
         // // Process enrichment in batches to send updates
