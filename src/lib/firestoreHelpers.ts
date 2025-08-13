@@ -1,5 +1,5 @@
 import { onAuthStateChanged } from 'firebase/auth';
-import { doc, setDoc, updateDoc, getDoc } from 'firebase/firestore';
+import { doc, setDoc, updateDoc, getDoc, addDoc, collection } from 'firebase/firestore';
 import { db, auth } from './firebase';
 
 export interface Connection {
@@ -195,6 +195,11 @@ export async function updateConnectionStatus(
 export async function createOrUpdateResume(userId: string, data: any) {
   const resumeRef = doc(db, 'resume', `${userId}_resume`);
   await setDoc(resumeRef, data, { merge: true });
+}
+
+export async function addWaitlistEmail(email: string) {
+  const emailRef = doc(db, 'waitlist', email)
+  await setDoc(emailRef, {email: email})
 }
 
 // GETTERS
