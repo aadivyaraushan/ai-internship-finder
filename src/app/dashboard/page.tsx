@@ -23,7 +23,7 @@ import { getInitials } from '@/lib/utils';
 import { Connection } from '@/lib/firestoreHelpers';
 import { ConnectionFilters } from '@/components/dashboard/ConnectionFilters';
 import { ArchiveConnectionFilters } from '@/components/dashboard/ArchiveConnectionFilters';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { fetchUserData } from '@/lib/frontendUtils';
 import { Search, Sparkles, Upload, Clock } from 'lucide-react';
 
@@ -91,6 +91,7 @@ export default function Dashboard() {
   const [allPendingConnections, setAllPendingConnections] = useState<
     Connection[]
   >([]);
+  const [resumeError, setResumeError] = useState<string>('');
 
   // State for filters for main connections and archived connections
   const [filters, setFilters] = useState<{
@@ -118,6 +119,7 @@ export default function Dashboard() {
   });
 
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   const handleSignOut = async () => {
     try {
@@ -378,6 +380,43 @@ export default function Dashboard() {
     fetchUserDataLocal();
   }, [currentUser]);
 
+  // Auto-start connection search if coming from upload page
+  useEffect(() => {
+    const autoStart = searchParams.get('autoStart');
+    const goalFromUrl = searchParams.get('goal');
+    
+    if (autoStart === 'true' && goalFromUrl && currentUser && !findingMore && !searchMode) {
+      // Set the search goal from URL
+      setSearchGoal(goalFromUrl);
+      
+      // Start the search automatically after a brief delay to ensure UI is ready
+      const timeoutId = setTimeout(async () => {
+        // Manually trigger the search logic here to avoid dependency issues
+        setResumeError('');
+        setSearchMode(true);
+        setConnections([]);
+        setGoals(goalFromUrl);
+
+        // Save the goal to database
+        if (currentUser) {
+          await setDoc(
+            doc(db, 'users', currentUser.uid),
+            { goals: goalFromUrl },
+            { merge: true }
+          );
+        }
+
+        // Trigger connection finding
+        await fetchMoreConnections();
+      }, 1000);
+      
+      // Clean up URL parameters
+      router.replace('/dashboard');
+      
+      return () => clearTimeout(timeoutId);
+    }
+  }, [currentUser, searchParams, findingMore, searchMode]);
+
   const saveGoal = async () => {
     if (!currentUser) {
       console.error('No user logged in');
@@ -437,52 +476,40 @@ export default function Dashboard() {
   };
 
   // Fetch additional connections from the backend and merge with existing list
-  // State for connection type preferences
-  const [connectionTypePrefs, setConnectionTypePrefs] = useState({
-    connections: true,
-    programs: true,
-  });
-
-  // Toggle preference for connection types
-  const toggleConnectionType = (type: 'connections' | 'programs') => {
-    setConnectionTypePrefs((prev) => ({
-      ...prev,
-      [type]: !prev[type],
-    }));
-  };
-
   // Preferences state for what types of connections to search for using reusable component
-  const [preferences, setPreferences] = useState(() => {
-    if (typeof window === 'undefined')
-      return { connections: true, programs: true };
-    const stored = localStorage.getItem('connectionPreferences');
-    return stored ? JSON.parse(stored) : { connections: true, programs: true };
-  });
+  const [preferences, setPreferences] = useState({ connections: true, programs: true });
+  const [preferencesLoaded, setPreferencesLoaded] = useState(false);
 
-  // Persist prefs
+  // Load preferences from localStorage on mount (client-side only)
   useEffect(() => {
     if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('connectionPreferences');
+      if (stored) {
+        setPreferences(JSON.parse(stored));
+      }
+      setPreferencesLoaded(true);
+    }
+  }, []);
+
+  // Persist prefs (only after initial load to prevent hydration issues)
+  useEffect(() => {
+    if (typeof window !== 'undefined' && preferencesLoaded) {
       localStorage.setItem(
         'connectionPreferences',
         JSON.stringify(preferences)
       );
     }
-  }, [preferences]);
+  }, [preferences, preferencesLoaded]);
 
   const fetchMoreConnections = async () => {
     if (!currentUser) return;
     setFindingMore(true);
+    setResumeError(''); // Clear any previous errors
 
     try {
-      // Update preferences based on current checkbox state
-      setPreferences({
-        connections: connectionTypePrefs.connections,
-        programs: connectionTypePrefs.programs,
-      });
-
       // Refresh user + resume data to build the payload
-      const userData: any = await getUser(currentUser.uid);
-      if (!userData) {
+      const freshUserData: any = await getUser(currentUser.uid);
+      if (!freshUserData) {
         console.error('❌ Technical error - User data not found:', {
           userId: currentUser.uid,
         });
@@ -496,14 +523,42 @@ export default function Dashboard() {
         console.error('❌ Technical error - Resume data not found:', {
           userId: currentUser.uid,
         });
-        throw new Error(
-          'Please upload your resume to help us find relevant connections.'
-        );
+        setResumeError('Please upload your resume first to find relevant connections.');
+        return;
       }
+
+      // Log the data we're about to send for debugging
+      console.log('🎯 Fresh User Data:', {
+        hasResumeAspects: !!freshUserData?.resumeAspects,
+        resumeAspects: freshUserData?.resumeAspects ? 'Present' : 'Missing',
+        resumeAspectsKeys: freshUserData?.resumeAspects ? Object.keys(freshUserData.resumeAspects) : 'N/A',
+        race: freshUserData?.race,
+        raceConverted: Array.isArray(freshUserData?.race) ? freshUserData.race.join(', ') : (freshUserData?.race || ''),
+        location: freshUserData?.location,
+      });
+      
+      // Detailed logging of resumeAspects content
+      if (freshUserData?.resumeAspects) {
+        console.log('🎯 Resume Aspects Details:', JSON.stringify(freshUserData.resumeAspects, null, 2));
+      } else {
+        console.warn('⚠️ Frontend - resumeAspects is missing from user data, background info will not be included');
+      }
+
+      // Check if resumeAspects is missing or empty
+      if (!freshUserData?.resumeAspects || Object.keys(freshUserData.resumeAspects).length === 0) {
+        setResumeError(
+          'Your resume needs to be analyzed before we can find connections. Please upload or re-upload your resume to analyze it properly.'
+        );
+        return;
+      }
+      console.log('🎯 Resume Data:', {
+        hasText: !!resumeData?.text,
+        textLength: resumeData?.text?.length || 0,
+      });
 
       // Extract a single goal title for the API
       const goalTitle =
-        typeof userData?.goals === 'string' ? userData.goals : '';
+        typeof freshUserData?.goals === 'string' ? freshUserData.goals : '';
       const rawResumeText = resumeData?.text || '';
 
       // Debug personalization settings before sending
@@ -521,10 +576,10 @@ export default function Dashboard() {
           goalTitle: typeof goals === 'string' ? goals : goals[0]?.title,
           preferences,
           userId: currentUser.uid,
-          race: userData?.race || '',
-          location: userData?.location || '',
-          resumeAspects: userData?.resumeAspects || {},
-          rawResumeText: userData?.rawResumeText || '',
+          race: Array.isArray(freshUserData?.race) ? freshUserData.race.join(', ') : (freshUserData?.race || ''),
+          location: freshUserData?.location || '',
+          resumeAspects: freshUserData?.resumeAspects || {},
+          rawResumeText: resumeData?.text || '',
           personalizationSettings,
         }),
       });
@@ -572,9 +627,17 @@ export default function Dashboard() {
                   console.log('  shared_professional_interests:', JSON.stringify(data.connection?.shared_professional_interests, null, 2));
                   console.log('  shared_personal_interests:', JSON.stringify(data.connection?.shared_personal_interests, null, 2));
                   
-                  // Add connections as they're found (optional - for real-time display)
+                  // Add connections as they're found and update UI immediately
                   streamedConnections.push(data.connection);
-                  // You could update UI here to show connections as they arrive
+                  
+                  // Update UI to show connections as they arrive
+                  setConnections((prev) => {
+                    const existingIds = new Set(prev.map((c) => c.id));
+                    if (!existingIds.has(data.connection.id)) {
+                      return [...prev, data.connection];
+                    }
+                    return prev;
+                  });
                   break;
 
                 case 'enrichment-progress':
@@ -585,8 +648,7 @@ export default function Dashboard() {
                 case 'complete':
                   // This contains the final processed connections
                   finalConnections = data.data.connections || [];
-                  // Now that we have results, move the search bar to the top
-                  setSearchBarCentered(false);
+                  // Don't move search bar here since it's already moved when first connection arrives
                   break;
 
                 case 'error':
@@ -600,35 +662,23 @@ export default function Dashboard() {
         }
       }
 
-      // Use the final processed connections
-      setConnections((prev) => {
-        const existingIds = new Set(prev.map((c) => c.id));
-        const merged = [
-          ...prev,
-          ...finalConnections.filter((c) => !existingIds.has(c.id)),
-        ];
-
-        // Save only new connections to Firestore (don't replace existing ones)
-        const newConnections = finalConnections.filter((c) => !existingIds.has(c.id));
-        if (newConnections.length > 0) {
-          const connectionsWithDefaults = newConnections.map(conn => ({
-            ...conn,
-            status: conn.status || 'not_contacted',
-            lastUpdated: new Date().toISOString(),
-          }));
-          
-          updateDoc(doc(db, 'users', currentUser.uid), {
-            connections: arrayUnion(...connectionsWithDefaults)
-          }).catch((error) => {
-            console.error('❌ Technical error - Failed to save connections:', {
-              userId: currentUser.uid,
-              error: error instanceof Error ? error.message : String(error),
-            });
+      // Connections are already added during streaming, so just save them to Firestore
+      if (finalConnections.length > 0) {
+        const connectionsWithDefaults = finalConnections.map(conn => ({
+          ...conn,
+          status: conn.status || 'not_contacted',
+          lastUpdated: new Date().toISOString(),
+        }));
+        
+        updateDoc(doc(db, 'users', currentUser.uid), {
+          connections: arrayUnion(...connectionsWithDefaults)
+        }).catch((error) => {
+          console.error('❌ Technical error - Failed to save connections:', {
+            userId: currentUser.uid,
+            error: error instanceof Error ? error.message : String(error),
           });
-        }
-
-        return merged;
-      });
+        });
+      }
     } catch (error) {
       console.error('❌ Technical error - Failed to fetch connections:', {
         error: error instanceof Error ? error.message : String(error),
@@ -787,6 +837,7 @@ export default function Dashboard() {
         hasResume: true,
       });
       setUploadSuccess(true);
+      setResumeError(''); // Clear resume error on successful upload
       setFile(null); // Optionally clear file
       await refreshUserData();
       window.location.reload();
@@ -808,8 +859,12 @@ export default function Dashboard() {
   const handleSearch = async () => {
     if (!searchGoal.trim()) return;
 
-    // Don't move search bar yet - wait for results
+    // Clear any previous resume errors
+    setResumeError('');
+
+    // Move search bar to top and set search mode immediately
     setSearchMode(true);
+    setSearchBarCentered(false);
 
     // Clear existing connections before new search
     setConnections([]);
@@ -875,20 +930,6 @@ export default function Dashboard() {
 
   return (
     <>
-      {findingMore && (
-        <MultiStepLoader
-          loadingStates={[
-            { text: 'Analyzing resume' },
-            {
-              text: "Finding connections (this may take 4-5 minutes — we're searching the entire internet for the best opportunities for you)",
-            },
-            { text: 'Processing connections for display' },
-          ]}
-          loading={findingMore}
-          progressIndex={currentConnectionStepIndex}
-          loop={false}
-        />
-      )}
 
       {/* Show multistep loader during upload */}
       {uploading && (
@@ -1020,23 +1061,74 @@ export default function Dashboard() {
               </div>
             </div>
 
-            {/* Connections Grid */}
-            {searchMode && !searchBarCentered && (
-              <div className='grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6'>
-                {activeFilteredConnections.map((connection: Connection) =>
-                  connection.type === 'person' ? (
-                    <PersonConnectionCard
-                      key={connection.id}
-                      connection={connection}
-                      onStatusChange={handleStatusChange}
-                    />
-                  ) : (
-                    <ProgramConnectionCard
-                      key={connection.id}
-                      connection={connection}
-                      onStatusChange={handleStatusChange}
-                    />
-                  )
+            {/* Resume Error Message */}
+            {resumeError && (
+              <div className='max-w-2xl mx-auto mb-8'>
+                <div className='bg-red-900/20 border border-red-700 rounded-lg p-4'>
+                  <div className='flex items-start gap-3'>
+                    <div className='flex-shrink-0 mt-1'>
+                      <Upload className='w-5 h-5 text-red-400' />
+                    </div>
+                    <div>
+                      <h4 className='text-red-300 font-medium mb-1'>Resume Required</h4>
+                      <p className='text-red-200 text-sm mb-3'>{resumeError}</p>
+                      <button
+                        onClick={() => setShowResumeModal(true)}
+                        className='bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm transition-colors flex items-center gap-2'
+                      >
+                        <Upload className='w-4 h-4' />
+                        Upload Resume
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Connections Layout */}
+            {searchMode && !searchBarCentered && !resumeError && (
+              <div className={`${findingMore ? 'flex gap-8' : ''}`}>
+                {/* Connections Grid */}
+                <div className={`${findingMore ? 'flex-1' : ''} grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6`}>
+                  {activeFilteredConnections.map((connection: Connection) =>
+                    connection.type === 'person' ? (
+                      <PersonConnectionCard
+                        key={connection.id}
+                        connection={connection}
+                        onStatusChange={handleStatusChange}
+                      />
+                    ) : (
+                      <ProgramConnectionCard
+                        key={connection.id}
+                        connection={connection}
+                        onStatusChange={handleStatusChange}
+                      />
+                    )
+                  )}
+                </div>
+                
+                {/* Inline Connection Finder Loader */}
+                {findingMore && (
+                  <div className="w-80 flex-shrink-0">
+                    <div className="sticky top-8 bg-[#1a1a1a] rounded-lg p-6 border border-gray-700">
+                      <h3 className="text-white text-lg font-semibold mb-4">Finding Connections</h3>
+                      <MultiStepLoader
+                        loadingStates={[
+                          { text: 'Analyzing your background' },
+                          { text: 'Finding 1st connection' },
+                          { text: 'Finding 2nd connection' },
+                          { text: 'Finding 3rd connection' },
+                          { text: 'Finding 4th connection' },
+                          { text: 'Finding 5th connection' },
+                          { text: 'Processing results' },
+                        ]}
+                        loading={findingMore}
+                        progressIndex={currentConnectionStepIndex}
+                        loop={false}
+                        inline={true}
+                      />
+                    </div>
+                  </div>
                 )}
               </div>
             )}
@@ -1092,6 +1184,7 @@ export default function Dashboard() {
                     setFile(null);
                     setUploadError('');
                     setUploadSuccess(false);
+                    setResumeError(''); // Clear resume error when closing modal
                   }}
                   className='px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors'
                 >
@@ -1160,9 +1253,9 @@ export default function Dashboard() {
                 {pendingModalView === 'people' ? (
                   allPendingPeople.length > 0 ? (
                     <div className='grid grid-cols-1 md:grid-cols-2 gap-4'>
-                      {allPendingPeople.map((connection: Connection) => (
+                      {allPendingPeople.map((connection: Connection, index: number) => (
                         <PersonConnectionCard
-                          key={connection.id}
+                          key={`${connection.id}-${Math.random().toString().substring(2, 12)}-${index}`}
                           connection={connection}
                           onStatusChange={handleStatusChange}
                         />
@@ -1176,9 +1269,9 @@ export default function Dashboard() {
                   )
                 ) : allPendingPrograms.length > 0 ? (
                   <div className='grid grid-cols-1 md:grid-cols-2 gap-4'>
-                    {allPendingPrograms.map((connection: Connection) => (
+                    {allPendingPrograms.map((connection: Connection, index: number) => (
                       <ProgramConnectionCard
-                        key={connection.id}
+                        key={`${connection.id}-${Math.random().toString().substring(2, 12)}-${index}`}
                         connection={connection}
                         onStatusChange={handleStatusChange}
                       />

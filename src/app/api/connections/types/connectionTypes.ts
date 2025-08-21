@@ -20,7 +20,6 @@ export interface ConnectionRequest {
   resumeContext?: string;
   goalTitle?: string;
   race?: string;
-  location?: string;
   preferences?: {
     programs: boolean;
     connections: boolean;

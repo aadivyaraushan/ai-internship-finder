@@ -117,7 +117,7 @@ Provide your analysis in two parts:
 {
   "education": {
     "institutions": ["string"],
-    "level": "high_school|undergraduate|graduate",
+    "current_level": "high_school|undergraduate|graduate",
     "fields_of_study": ["string"],
     "graduation_years": ["string"]
   },
@@ -154,7 +154,7 @@ Provide your analysis in two parts:
 {
   "education": {
     "institutions": ["MIT", "Stanford"],
-    "level": "undergraduate", 
+    "current_level": "undergraduate", 
     "fields_of_study": ["Computer Science", "MBA"],
     "graduation_years": ["2020", "2028"]
   },

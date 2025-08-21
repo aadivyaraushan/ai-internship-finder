@@ -42,22 +42,27 @@ type LoadingState = {
 const LoaderCore = ({
   loadingStates,
   value = 0,
+  inline = false,
 }: {
   loadingStates: LoadingState[];
   value?: number;
+  inline?: boolean;
 }) => {
   return (
-    <div className='flex relative justify-start max-w-xl mx-auto flex-col mt-40'>
+    <div className={cn(
+      'flex relative justify-start flex-col',
+      inline ? 'mt-0 max-w-full' : 'max-w-xl mx-auto mt-40'
+    )}>
       {loadingStates.map((loadingState, index) => {
         const distance = Math.abs(index - value);
-        const opacity = Math.max(1 - distance * 0.2, 0);
+        const opacity = inline ? 1 : Math.max(1 - distance * 0.2, 0);
 
         return (
           <motion.div
             key={index}
             className={cn('text-left flex gap-2 mb-4')}
-            initial={{ opacity: 0, y: -(value * 40) }}
-            animate={{ opacity: opacity, y: -(value * 40) }}
+            initial={{ opacity: 0, y: inline ? 0 : -(value * 40) }}
+            animate={{ opacity: opacity, y: inline ? 0 : -(value * 40) }}
             transition={{ duration: 0.5 }}
           >
             <div>
@@ -92,6 +97,7 @@ export const MultiStepLoader = ({
   progressIndex,
   duration = 2000,
   loop = true,
+  inline = false,
 }: {
   loadingStates: LoadingState[];
   loading?: boolean;
@@ -99,6 +105,8 @@ export const MultiStepLoader = ({
   progressIndex?: number;
   duration?: number;
   loop?: boolean;
+  /** If true, renders inline instead of as a fullscreen overlay */
+  inline?: boolean;
 }) => {
   const [currentState, setCurrentState] = useState(progressIndex ?? 0);
 
@@ -127,6 +135,23 @@ export const MultiStepLoader = ({
 
     return () => clearTimeout(timeout);
   }, [currentState, loading, loop, loadingStates.length, duration, progressIndex]);
+  if (inline) {
+    return (
+      <AnimatePresence mode='wait'>
+        {loading && (
+          <motion.div
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -20 }}
+            className='w-full max-w-md'
+          >
+            <LoaderCore value={currentState} loadingStates={loadingStates} inline={true} />
+          </motion.div>
+        )}
+      </AnimatePresence>
+    );
+  }
+
   return (
     <AnimatePresence mode='wait'>
       {loading && (

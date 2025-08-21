@@ -1,0 +1,62 @@
+graph TB
+    subgraph "Frontend Layer"
+        UI[Next.js UI Components]
+        DASH[Dashboard Page]
+        AUTH[Auth Pages]
+        COMP[Reusable Components]
+    end
+    
+    subgraph "API Layer"
+        CON_API[Connections API]
+        RES_API[Resume Analysis API]
+        SERP_API[SERP API]
+        EVT_API[Events API]
+    end
+    
+    subgraph "Services Layer"
+        CON_SVC[Connection Finder Service]
+        ENR_SVC[Enrichment Services]
+        POST_SVC[Post-Processing Service]
+        RES_SVC[Resume Analysis Service]
+    end
+    
+    subgraph "AI/ML Layer"
+        CLAUDE[Anthropic Claude API]
+        OPENAI[OpenAI API]
+        SERP[Search Engine API]
+    end
+    
+    subgraph "Data Layer"
+        FIREBASE[Firebase Firestore]
+        FIREBASE_AUTH[Firebase Authentication]
+    end
+    
+    subgraph "External Services"
+        WEB_SEARCH[Web Search APIs]
+        EMAIL_SVC[Email Finding Services]
+        LINKEDIN[LinkedIn Integration]
+    end
+    
+    UI --> CON_API
+    UI --> RES_API
+    DASH --> AUTH
+    AUTH --> FIREBASE_AUTH
+    
+    CON_API --> CON_SVC
+    RES_API --> RES_SVC
+    
+    CON_SVC --> CLAUDE
+    RES_SVC --> CLAUDE
+    CON_SVC --> WEB_SEARCH
+    
+    ENR_SVC --> EMAIL_SVC
+    ENR_SVC --> LINKEDIN
+    
+    CON_API --> FIREBASE
+    RES_API --> FIREBASE
+    UI --> FIREBASE
+    
+    style UI fill:#e1f5fe
+    style CON_API fill:#f3e5f5
+    style CLAUDE fill:#fff3e0
+    style FIREBASE fill:#e8f5e8

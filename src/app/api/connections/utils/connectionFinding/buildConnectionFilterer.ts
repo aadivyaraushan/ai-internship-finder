@@ -5,14 +5,12 @@ export function buildConnectionFiltererPrompt({
   connectionAspects,
   unfilteredRawResponse,
   race,
-  location,
   preferences = { programs: true, connections: true },
 }: {
   goalTitle: string;
   connectionAspects: ConnectionAspects;
   unfilteredRawResponse: string;
   race?: string;
-  location?: string;
   preferences?: { programs: boolean; connections: boolean };
 }): string {
   // Using structured data directly - no need for string conversion
@@ -50,10 +48,10 @@ Accept ONLY direct matches from these categories:
 - Same educational institution (exact institution name match)  
 - Same specific organization/club (explicitly mentioned in background)
 - Same specific project (explicitly mentioned in background)
-- Same current country of residence as the user
+- Relevant geographic location based on user's university or work context
 
 ## Verification Standards
-- **LinkedIn URL requirement: Source URL MUST be a LinkedIn URL. If no LinkedIn profile exists, exclude the connection**
+- **Contact URL requirement: Source URL MUST include contact info (LinkedIn, personal website with contact details, university directory, company profiles with contact info, etc.). If no contactable profile exists, exclude the connection**
 - Verify the source URL actually exists from web search results
 - Specify the EXACT matching element from the background
 - Explain the nature of the connection clearly
@@ -128,7 +126,6 @@ ${JSON.stringify(connectionAspects, null, 2)}
 \`\`\`
 - Education level: ${connectionAspects.education?.current_level || 'unknown'}
 - Candidate race/ethnicity: ${race} (if provided)
-- Candidate location: ${location} (if provided)
 - Career goal for exact alignment checking: ${goalTitle}
 - Required connection types (people, programs, or both): ${ruleOne}
 

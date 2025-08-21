@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import pdfParse from 'pdf-parse/lib/pdf-parse.js';
-import { callClaude } from '../../../lib/anthropicClient';
+import { analyzeResumeWithAI, parseWithSchema } from '../../../lib/anthropicClient';
 import { z } from 'zod';
 import { writeFile, unlink } from 'fs/promises';
 import { join } from 'path';
@@ -431,20 +431,15 @@ Return ONLY valid JSON matching this exact structure:
 `;
 
       // First call: Let AI think and reason, then provide JSON
-      const rawResponse = await callClaude(analysisPrompt, {
-        maxTokens: 3000,
-        model: 'gpt-4.1-mini',
-      });
+      const rawResponse = await analyzeResumeWithAI(analysisPrompt, 'gpt-4.1-mini', 3000);
 
       // Second call: Parse the JSON from the response using schema validation
-      const parsedResult = await callClaude(
+      const parsedResult = await parseWithSchema(
         'Parse the JSON put at the end of the following response: \n\n' + rawResponse,
-        {
-          model: 'gpt-4.1-nano',
-          maxTokens: 2000,
-          schema: CombinedResumeSchema,
-          schemaLabel: 'CombinedResumeAnalysis',
-        }
+        CombinedResumeSchema,
+        'CombinedResumeAnalysis',
+        'gpt-4.1-nano',
+        2000
       );
       const structuredData = {
         education: parsedResult.education || [],

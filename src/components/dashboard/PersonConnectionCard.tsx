@@ -32,22 +32,24 @@ export function PersonConnectionCard({
     connection.shared_professional_interests || [];
   const sharedPersonalInterests = connection.shared_personal_interests || [];
 
-  // Debug connection data
-  console.log(`🎯 PersonConnectionCard - ${connection.name}:`);
-  console.log(
-    '  shared_professional_interests:',
-    JSON.stringify(connection.shared_professional_interests, null, 2)
-  );
-  console.log(
-    '  shared_personal_interests:',
-    JSON.stringify(connection.shared_personal_interests, null, 2)
-  );
-  console.log(
-    '  Array lengths - professional:',
-    connection.shared_professional_interests?.length,
-    'personal:',
-    connection.shared_personal_interests?.length
-  );
+  // Debug connection data (only on client side to prevent hydration issues)
+  if (typeof window !== 'undefined') {
+    console.log(`🎯 PersonConnectionCard - ${connection.name}:`);
+    console.log(
+      '  shared_professional_interests:',
+      JSON.stringify(connection.shared_professional_interests, null, 2)
+    );
+    console.log(
+      '  shared_personal_interests:',
+      JSON.stringify(connection.shared_personal_interests, null, 2)
+    );
+    console.log(
+      '  Array lengths - professional:',
+      connection.shared_professional_interests?.length,
+      'personal:',
+      connection.shared_personal_interests?.length
+    );
+  }
 
   return (
     <div
@@ -76,11 +78,7 @@ export function PersonConnectionCard({
               rel='noopener noreferrer'
               className='text-blue-500 text-xs'
             >
-              {connection.verified_profile_url?.includes('linkedin.com')
-                ? 'LinkedIn'
-                : connection.email
-                ? 'Email'
-                : 'Non-LinkedIn Contact'}
+              Contact
             </a>
           )}
         </div>

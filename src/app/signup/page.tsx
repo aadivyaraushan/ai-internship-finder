@@ -4,8 +4,8 @@ import { StatefulButton } from '@/components/ui/StatefulButton';
 import '../signup.css';
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { createUserWithEmailAndPassword } from 'firebase/auth';
-import { auth, checkAuth } from '@/lib/firebase';
+import { createUserWithEmailAndPassword, onAuthStateChanged } from 'firebase/auth';
+import { auth } from '@/lib/firebase';
 import { createOrUpdateUser } from '@/lib/firestoreHelpers';
 import { useRouter } from 'next/navigation';
 import { ShootingStars } from '@/components/ui/ShootingStars';
@@ -17,6 +17,7 @@ export default function Signup() {
   const [country, setCountry] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [authLoading, setAuthLoading] = useState(true);
   const router = useRouter();
 
   const raceOptions = [
@@ -255,10 +256,15 @@ export default function Signup() {
   ];
 
   useEffect(() => {
-    if (checkAuth()) {
-      console.log('User is already logged in');
-      router.push('/dashboard');
-    }
+    const unsubscribe = onAuthStateChanged(auth, (user: any) => {
+      setAuthLoading(false);
+      if (user) {
+        console.log('User is already logged in');
+        router.push('/dashboard');
+      }
+    });
+
+    return () => unsubscribe();
   }, [router]);
 
   const getErrorMessage = (errorCode: string) => {
@@ -313,6 +319,16 @@ export default function Signup() {
       setLoading(false);
     }
   };
+
+  // Show loading spinner while checking auth state
+  if (authLoading) {
+    return (
+      <div className='flex flex-col min-h-screen flex items-center justify-center bg-neutral-950 p-4'>
+        <div className='animate-spin rounded-full h-8 w-8 border-b-2 border-white'></div>
+        <p className='text-white mt-4'>Loading...</p>
+      </div>
+    );
+  }
 
   return (
     <div className='flex flex-col min-h-screen flex items-center justify-center bg-neutral-950 p-4'>

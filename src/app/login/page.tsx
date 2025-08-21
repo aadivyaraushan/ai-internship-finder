@@ -1,8 +1,8 @@
 'use client';
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { signInWithEmailAndPassword } from 'firebase/auth';
-import { auth, checkAuth } from '@/lib/firebase';
+import { signInWithEmailAndPassword, onAuthStateChanged } from 'firebase/auth';
+import { auth } from '@/lib/firebase';
 import { useRouter } from 'next/navigation';
 import { BackgroundGradient } from '@/components/ui/BackgroundGradient';
 import { StatefulButton } from '@/components/ui/StatefulButton';
@@ -12,13 +12,19 @@ export default function Login() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [authLoading, setAuthLoading] = useState(true);
   const router = useRouter();
 
   useEffect(() => {
-    if (checkAuth()) {
-      console.log('User is already logged in');
-      router.push('/dashboard');
-    }
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      setAuthLoading(false);
+      if (user) {
+        console.log('User is already logged in');
+        router.push('/dashboard');
+      }
+    });
+
+    return () => unsubscribe();
   }, [router]);
 
   const getErrorMessage = (errorCode: string) => {
@@ -54,6 +60,16 @@ export default function Login() {
       setLoading(false);
     }
   };
+
+  // Show loading spinner while checking auth state
+  if (authLoading) {
+    return (
+      <div className='flex flex-col min-h-screen flex items-center justify-center bg-neutral-950 p-4'>
+        <div className='animate-spin rounded-full h-8 w-8 border-b-2 border-white'></div>
+        <p className='text-white mt-4'>Loading...</p>
+      </div>
+    );
+  }
 
   return (
     <div className='flex flex-col min-h-screen flex items-center justify-center bg-neutral-950 p-4'>

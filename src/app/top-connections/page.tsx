@@ -1,16 +1,15 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { onAuthStateChanged } from 'firebase/auth';
 import { useRouter } from 'next/navigation';
-import { checkAuth, auth } from '@/lib/firebase';
+import { auth } from '@/lib/firebase';
 import {
   getUser,
   getResume,
   updateUserConnections,
 } from '@/lib/firestoreHelpers';
 import { Connection } from '@/lib/firestoreHelpers';
-import BorderMagicButton from '@/components/ui/BorderMagicButton';
-import { fetchUserData } from '@/lib/frontendUtils';
 import { MultiStepLoader } from '@/components/ui/MultiStepLoader';
 
 type ProcessingStep = {
@@ -109,7 +108,7 @@ export default function TopConnections() {
   const [connections, setConnections] = useState<Connection[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [currentStatus, setCurrentStatus] = useState<string>('');
+  const [authLoading, setAuthLoading] = useState(true);
   const [steps, setSteps] = useState<ProcessingStep[]>([
     { id: 'load', label: 'Loading profile data', status: 'pending' },
     { id: 'analyze', label: 'Analyzing profile', status: 'pending' },
@@ -118,10 +117,6 @@ export default function TopConnections() {
     { id: 'prepare', label: 'Preparing recommendations', status: 'pending' },
   ]);
 
-  const [connectionSteps, setConnectionSteps] = useState<ProcessingStep[]>([]);
-  const [currentConnectionStepIndex, setCurrentConnectionStepIndex] =
-    useState(0);
-  const [findingMore, setFindingMore] = useState(false);
 
   const updateStep = (stepId: string, status: ProcessingStep['status']) => {
     setSteps((prev) =>
@@ -129,36 +124,27 @@ export default function TopConnections() {
     );
   };
 
-  const updateConnectionStep = (
-    stepId: string,
-    status: ProcessingStep['status']
-  ) => {
-    setConnectionSteps((prev) =>
-      prev.map((step) => (step.id === stepId ? { ...step, status } : step))
-    );
-  };
 
   useEffect(() => {
-    const user = auth.currentUser;
-    if (!user) return;
+    const unsubscribe = onAuthStateChanged(auth, (user: any) => {
+      setAuthLoading(false);
+      if (!user) {
+        router.push('/signup');
+        return;
+      }
 
-    const storedPrefs =
-      typeof window !== 'undefined'
-        ? localStorage.getItem('connectionPreferences')
-        : null;
-    const parsedPrefs: { programs: boolean; connections: boolean } = storedPrefs
-      ? JSON.parse(storedPrefs)
-      : { programs: true, connections: true };
-    if (!checkAuth()) {
-      router.push('/signup');
-      return;
-    }
+      const storedPrefs =
+        typeof window !== 'undefined'
+          ? localStorage.getItem('connectionPreferences')
+          : null;
+      const parsedPrefs: { programs: boolean; connections: boolean } = storedPrefs
+        ? JSON.parse(storedPrefs)
+        : { programs: true, connections: true };
 
     const runConnectionSearch = async () => {
       try {
         // Load user + resume data
         updateStep('load', 'in_progress');
-        setCurrentStatus('Loading your profile data...');
 
         const user = auth.currentUser;
         if (!user) throw new Error('Not authenticated');
@@ -181,7 +167,6 @@ export default function TopConnections() {
 
         // Start the streaming connection search
         updateStep('analyze', 'in_progress');
-        setCurrentStatus('Analyzing your resume and goals...');
 
         const response = await fetch('/api/connections', {
           method: 'POST',
@@ -228,24 +213,16 @@ export default function TopConnections() {
                       case 0:
                         updateStep('analyze', 'completed');
                         updateStep('find', 'in_progress');
-                        setCurrentStatus(
-                          'Searching for potential connections...'
-                        );
                         break;
                       case 1:
-                        setCurrentStatus('Finding connections...');
                         break;
                       case 2:
                         updateStep('find', 'completed');
                         updateStep('score', 'in_progress');
-                        setCurrentStatus('Enriching and scoring matches...');
                         break;
                       case 3:
                         updateStep('score', 'completed');
                         updateStep('prepare', 'in_progress');
-                        setCurrentStatus(
-                          'Preparing your outreach strategies...'
-                        );
                         break;
                     }
                     break;
@@ -253,25 +230,26 @@ export default function TopConnections() {
                   case 'connection-found':
                     // Track connections as they're found
                     foundConnections.push(data.connection);
-                    setCurrentStatus(
-                      `Found ${data.count} of ${data.total} potential connections...`
-                    );
+                    
+                    // Immediately show this connection in the UI
+                    setConnections([...foundConnections]);
+                    
+                    // Hide the multistep loader after first connection
+                    if (data.count === 1) {
+                      setLoading(false);
+                    }
                     break;
 
                   case 'enrichment-progress':
                     // Update status with enrichment progress
-                    setCurrentStatus(
-                      `Scoring matches... ${Math.round(
-                        data.progress
-                      )}% complete`
-                    );
                     break;
 
                   case 'complete':
-                    // Final processed connections
+                    // Final processed connections - ensure all connections are shown
                     finalData = data.data;
                     updateStep('prepare', 'completed');
-                    setCurrentStatus('Your connections are ready!');
+                    // Make sure loading is false for final completion
+                    setLoading(false);
                     break;
 
                   case 'error':
@@ -285,11 +263,16 @@ export default function TopConnections() {
         }
 
         if (finalData) {
-          // Use the final processed connections
-          setConnections(finalData.connections);
+          // Use the final processed connections (may be same as foundConnections)
+          const finalConnections = finalData.connections.length > 0 ? finalData.connections : foundConnections;
+          setConnections(finalConnections);
 
           // Persist connections to Firestore
-          await updateUserConnections(user.uid, finalData.connections);
+          await updateUserConnections(user.uid, finalConnections);
+        } else if (foundConnections.length > 0) {
+          // Use found connections if no final data
+          setConnections(foundConnections);
+          await updateUserConnections(user.uid, foundConnections);
         } else {
           throw new Error('No data received from connection search');
         }
@@ -308,14 +291,25 @@ export default function TopConnections() {
       }
     };
 
-    runConnectionSearch();
+      runConnectionSearch();
+    });
 
-    runConnectionSearch();
+    return () => unsubscribe();
   }, [router]);
 
   // Helper to decide if we're mid-process
   const inProgress =
     loading || steps.some((step) => step.status === 'in_progress');
+
+  // Show loading spinner while checking auth state
+  if (authLoading) {
+    return (
+      <div className='min-h-screen flex items-center justify-center bg-[#0a0a0a] p-4'>
+        <div className='animate-spin rounded-full h-8 w-8 border-b-2 border-white'></div>
+        <p className='text-white mt-4'>Loading...</p>
+      </div>
+    );
+  }
 
   return (
     <div className='min-h-screen flex items-center justify-center bg-[#0a0a0a] p-4'>
@@ -340,7 +334,7 @@ export default function TopConnections() {
           </div>
         )}
 
-        {(loading || steps.some((step) => step.status === 'completed')) &&
+        {(loading && connections.length === 0) &&
           (() => {
             const inProgressIndex = steps.findIndex(
               (step) => step.status === 'in_progress'
@@ -355,40 +349,15 @@ export default function TopConnections() {
             return (
               <MultiStepLoader
                 loadingStates={steps.map((s) => ({ text: s.label }))}
-                loading={loading}
+                loading={loading && connections.length === 0}
                 progressIndex={progressIndex}
                 loop={false}
               />
             );
           })()}
 
-        {findingMore && (
-          <div className='w-full mb-6'>
-            <MultiStepLoader
-              loadingStates={connectionSteps.map((s) => ({ text: s.label }))}
-              loading={findingMore}
-              progressIndex={
-                connectionSteps.length > 0 ? currentConnectionStepIndex : 0
-              }
-              loop={false}
-            />
-          </div>
-        )}
 
-        {findingMore && (
-          <div className='w-full mb-6'>
-            <MultiStepLoader
-              loadingStates={connectionSteps.map((s) => ({ text: s.label }))}
-              loading={findingMore}
-              progressIndex={
-                connectionSteps.length > 0 ? currentConnectionStepIndex : 0
-              }
-              loop={false}
-            />
-          </div>
-        )}
-
-        {!inProgress && connections.length === 0 && (
+        {!loading && connections.length === 0 && (
           <div className='text-center'>
             <p className='text-gray-400 mb-6'>
               We couldn't find any relevant connections. Please try updating
@@ -403,8 +372,20 @@ export default function TopConnections() {
           </div>
         )}
 
-        {!inProgress && connections.length > 0 && (
-          <div className='grid grid-cols-1 md:grid-cols-2 gap-6'>
+        {/* Show connections as they're found, even while still loading */}
+        {connections.length > 0 && (
+          <>
+            {/* Progress indicator while finding more connections */}
+            {loading && connections.length < 5 && (
+              <div className='mb-4 text-center'>
+                <div className='inline-flex items-center gap-2 px-4 py-2 bg-blue-500/10 border border-blue-500/30 rounded-lg text-blue-400 text-sm'>
+                  <div className='animate-spin rounded-full h-4 w-4 border-b-2 border-blue-400'></div>
+                  Finding more connections... ({connections.length}/5)
+                </div>
+              </div>
+            )}
+            
+            <div className='grid grid-cols-1 md:grid-cols-2 gap-6'>
             {connections.map((connection) => (
               <div
                 key={connection.id}
@@ -466,7 +447,7 @@ export default function TopConnections() {
                             href={
                               connection.email
                                 ? `mailto:${connection.email}`
-                                : connection.verified_profile_url
+                                : connection.verified_profile_url || ''
                             }
                             target='_blank'
                             rel='noopener noreferrer'
@@ -482,16 +463,9 @@ export default function TopConnections() {
               </div>
             ))}
           </div>
+          </>
         )}
 
-        {/* Go to Dashboard button now at bottom */}
-        {!inProgress && (
-          <div className='flex justify-center mt-8'>
-            <BorderMagicButton onClick={() => router.push('/dashboard')}>
-              Go to Dashboard
-            </BorderMagicButton>
-          </div>
-        )}
       </div>
       {/* </BackgroundGradient> */}
     </div>

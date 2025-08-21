@@ -1,6 +1,6 @@
-import { callClaude } from '@/lib/anthropicClient';
+import { findConnectionsWithAI } from '@/lib/anthropicClient';
 import { buildConnectionFinderPrompt } from '../utils/connectionFinding/buildConnectionFinder';
-import { ConnectionsResponse, ConnectionAspects } from '../utils/utils';
+import { ConnectionAspects } from '../utils/utils';
 import { Connection } from '@/lib/firestoreHelpers';
 import { ConnectionPreferences } from '@/components/ui/ConnectionPreferencesSelector';
 interface FinderParams {
@@ -8,7 +8,6 @@ interface FinderParams {
   connectionAspects: ConnectionAspects;
   preferences?: ConnectionPreferences;
   race?: string;
-  location?: string;
   personalizationSettings?: {
     enabled: boolean;
     professionalInterests: string;
@@ -27,7 +26,208 @@ export async function findConnections({
   connectionAspects,
   preferences,
   race,
-  location,
+  personalizationSettings,
+}: FinderParams): Promise<Connection[]> {
+  // Implementation remains the same for backwards compatibility
+  return findConnectionsOriginal({
+    goalTitle,
+    connectionAspects,
+    preferences,
+    race,
+    personalizationSettings,
+  });
+}
+
+/**
+ * Generator function that yields connections one by one as they're found
+ */
+export async function* findConnectionsIteratively({
+  goalTitle,
+  connectionAspects,
+  preferences,
+  race,
+  personalizationSettings,
+}: FinderParams): AsyncGenerator<Connection, void, unknown> {
+  // Validate context same as original
+  if (connectionAspects.work_experience?.detailed_experiences?.length > 0) {
+    console.log(
+      `✅ Using detailed work experience context: ${connectionAspects.work_experience.detailed_experiences.length} experiences`
+    );
+    connectionAspects.work_experience.detailed_experiences.forEach((exp, i) => {
+      console.log(
+        `  ${i + 1}. ${exp.role} at ${
+          exp.company
+        } - ${exp.scale_and_impact?.slice(0, 50)}...`
+      );
+    });
+  } else {
+    console.warn(
+      '⚠️ No detailed work experiences available - connection matching may be less precise'
+    );
+  }
+
+  const contextSummary = {
+    education: connectionAspects.education?.institutions?.length || 0,
+    companies: connectionAspects.work_experience?.companies?.length || 0,
+    detailed_experiences:
+      connectionAspects.work_experience?.detailed_experiences?.length || 0,
+    activities: connectionAspects.activities?.organizations?.length || 0,
+    achievements: connectionAspects.achievements?.certifications?.length || 0,
+  };
+  console.log('📊 Context summary for connection finding:', contextSummary);
+
+  console.log('🎯 Connection Finder - Personalization Settings:', {
+    enabled: personalizationSettings?.enabled,
+    professionalInterests: personalizationSettings?.professionalInterests,
+    personalInterests: personalizationSettings?.personalInterests,
+  });
+
+  console.log('🎯 Connection Finder - Race Parameters:', {
+    race: race,
+    raceType: typeof race,
+    raceLength: race?.length,
+  });
+
+  const basePrompt = buildConnectionFinderPrompt({
+    goalTitle,
+    connectionAspects,
+    preferences,
+    race,
+    personalizationSettings,
+  });
+
+  console.log('📝 Base AI Prompt Being Used:');
+  console.log('='.repeat(80));
+  console.log(basePrompt);
+  console.log('='.repeat(80));
+
+  console.log('🔍 Base prompt character count:', basePrompt.length);
+  if (basePrompt.length < 5000) {
+    console.warn(
+      '⚠️ Prompt seems short - may not have comprehensive background context'
+    );
+  }
+
+  let previousConnections = '';
+  let previousReasoning = '';
+  const MAX_RETRIES = 2;
+
+  // Generate 5 connections iteratively
+  for (let i = 0; i < 5; i++) {
+    let retry = 0;
+
+    while (retry <= MAX_RETRIES) {
+      try {
+        console.log(`🔍 Finding connection ${i + 1}/5`);
+
+        console.log(`🔍 Finding connection ${i + 1} with accumulated context`);
+
+        // Build the iterative prompt with previous context
+        let enhancedPrompt = basePrompt;
+
+        if (i > 0 && previousConnections) {
+          enhancedPrompt += `\n\n--- Previous Connections Found ---\n${previousConnections}`;
+        }
+
+        if (previousReasoning) {
+          enhancedPrompt += `\n\n--- Previous Reasoning ---\n${previousReasoning}`;
+        }
+
+        enhancedPrompt += `\n\nPlease find connection #${
+          i + 1
+        } of 5. Focus on finding a different type of connection or from a different background than the previous ones. Return a single connection in valid JSON format.`;
+
+        const rawResponse = await findConnectionsWithAI(
+          enhancedPrompt,
+          'gpt-5-mini',
+          5000
+        );
+
+        console.log(`🎯 Raw AI Response for connection ${i + 1}:`, rawResponse);
+
+        const parsed = JSON.parse(rawResponse);
+        console.log(`🎯 Parsed response for connection ${i + 1}:`, parsed);
+
+        // Handle case where AI returns {connections: [...]} instead of single connection
+        const connection = parsed.connections?.[0] || parsed;
+
+        if (!connection?.name)
+          throw new Error(`Invalid connection ${i + 1} response`);
+
+        // Accumulate context for next connection
+        previousConnections += `\nConnection ${i + 1}: ${JSON.stringify(
+          connection,
+          null,
+          2
+        )}`;
+
+        // Extract reasoning from the response if available
+        if (connection.reasoning) {
+          previousReasoning += `\nConnection ${i + 1} Reasoning: ${
+            connection.reasoning
+          }`;
+        }
+
+        // Debug connection details
+        console.log(`🎯 Connection ${i + 1} - ${connection.name}:`);
+        console.log(
+          '  shared_professional_interests:',
+          JSON.stringify(connection.shared_professional_interests, null, 2)
+        );
+        console.log(
+          '  shared_personal_interests:',
+          JSON.stringify(connection.shared_personal_interests, null, 2)
+        );
+        console.log(
+          '  ai_outreach_message:',
+          connection.ai_outreach_message?.substring(0, 100) + '...'
+        );
+
+        // Validate connection has required fields
+        if (!connection.name) {
+          throw new Error(`Connection ${i + 1} missing name`);
+        }
+
+        // Add a temporary ID for streaming purposes
+        const connectionWithId = {
+          ...connection,
+          id: `temp-${connection.type || 'person'}-${
+            connection.name
+          }-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`
+            .replace(/\s+/g, '-')
+            .toLowerCase(),
+        };
+
+        // Yield the connection
+        yield connectionWithId as Connection;
+        break; // Success, move to next connection
+      } catch (err) {
+        console.error(
+          `❌ Connection ${i + 1} attempt ${retry + 1} failed:`,
+          err
+        );
+        if (retry === MAX_RETRIES) {
+          console.error(
+            `❌ Failed to find connection ${i + 1} after ${
+              MAX_RETRIES + 1
+            } attempts`
+          );
+          break; // Skip this connection and continue with next
+        }
+        retry++;
+      }
+    }
+  }
+}
+
+/**
+ * Original implementation kept for backwards compatibility
+ */
+async function findConnectionsOriginal({
+  goalTitle,
+  connectionAspects,
+  preferences,
+  race,
   personalizationSettings,
 }: FinderParams): Promise<Connection[]> {
   // Validate that we have detailed work experience context
@@ -66,12 +266,18 @@ export async function findConnections({
     personalInterests: personalizationSettings?.personalInterests,
   });
 
+  // Debug race parameters
+  console.log('🎯 Connection Finder - Race Parameters:', {
+    race: race,
+    raceType: typeof race,
+    raceLength: race?.length,
+  });
+
   const prompt = buildConnectionFinderPrompt({
     goalTitle,
     connectionAspects,
     preferences,
     race,
-    location,
     personalizationSettings,
   });
 
@@ -93,42 +299,11 @@ export async function findConnections({
 
   while (retry <= MAX_RETRIES) {
     try {
-      const rawResponse = await callClaude(prompt, {
-        tools: [
-          {
-            type: 'function',
-            name: 'search_web',
-            description:
-              'Search the internet using Perplexity AI to find relevant sources, URLs, and information',
-            parameters: {
-              type: 'object',
-              properties: {
-                query: {
-                  type: 'string',
-                  description:
-                    'The search query to find relevant information about people, companies, programs, or opportunities',
-                },
-              },
-              required: ['query'],
-            },
-          },
-        ],
-        maxTokens: 25000,
-        model: 'gpt-4.1',
-      });
+      const rawResponse = await findConnectionsWithAI(prompt, 'gpt-5', 25000);
 
       console.log('🎯 Raw AI Response before parsing:', rawResponse);
 
-      const parsed = await callClaude(
-        'Parse the following response and convert the JSON at the end to pure JSON: \n\n' +
-          rawResponse,
-        {
-          model: 'gpt-4.1-nano',
-          maxTokens: 2000,
-          schema: ConnectionsResponse,
-          schemaLabel: 'ConnectionsResponse',
-        }
-      );
+      const parsed = JSON.parse(rawResponse);
 
       console.log('🎯 Parsed response after schema validation:', parsed);
 

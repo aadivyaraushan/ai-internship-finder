@@ -1,4 +1,4 @@
-import { callClaude } from '../../../../lib/anthropicClient';
+import { analyzeResumeWithAI, parseWithSchema } from '../../../../lib/anthropicClient';
 import { buildResumeAspectAnalyzerPrompt } from '../utils/buildResumeAnalyzer';
 import { aspectSchema, ConnectionAspects, WorkExperienceDetail, Education, WorkExperience, Activities, Achievements, GrowthAreas } from '../utils/utils';
 
@@ -33,22 +33,17 @@ export async function analyzeResume(
       const prompt = buildResumeAspectAnalyzerPrompt(resumeContext);
       console.log('Resume analysis prompt:', prompt);
 
-      const rawResponse = await callClaude(prompt, {
-        maxTokens: 3000, // Increased for detailed context preservation
-        model: 'gpt-4.1-mini', // Upgraded for better analysis quality
-      });
+      const rawResponse = await analyzeResumeWithAI(prompt, 'gpt-4.1-mini', 3000);
 
       console.log('🧠 Thinking...', rawResponse);
 
-      const parsed = await callClaude(
+      const parsed = await parseWithSchema(
         'Parse the following response and convert the JSON at the end to pure JSON: \n\n' +
           rawResponse,
-        {
-          model: 'gpt-4.1-nano',
-          maxTokens: 2000,
-          schema: aspectSchema,
-          schemaLabel: 'ConnectionAspects',
-        }
+        aspectSchema,
+        'ConnectionAspects',
+        'gpt-4.1-nano',
+        2000
       );
       console.log('Parsed aspects response:', parsed, typeof parsed);
 
@@ -58,7 +53,10 @@ export async function analyzeResume(
         );
       }
 
-      const aspects = parsed.connection_aspects as ResumeAspects;
+      const aspects = {
+        ...parsed.connection_aspects,
+        connection_aspects: parsed.connection_aspects
+      } as ResumeAspects;
 
       // Ensure backward compatibility: populate companies array from detailed_experiences
       if (aspects.work_experience?.detailed_experiences?.length > 0 && 

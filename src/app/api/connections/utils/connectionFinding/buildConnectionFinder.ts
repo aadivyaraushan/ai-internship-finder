@@ -2,15 +2,133 @@ import { ConnectionAspects } from '../utils';
 export function buildConnectionFinderPrompt({
   goalTitle,
   connectionAspects,
+  preferences = { programs: true, connections: true },
+  personalizationSettings,
+}: {
+  goalTitle: string;
+  connectionAspects: ConnectionAspects;
+  preferences?: { programs: boolean; connections: boolean };
+  personalizationSettings?: {
+    enabled: boolean;
+    professionalInterests: string;
+    personalInterests: string;
+  };
+}): string {
+  // SIMPLIFIED VERSION - Original detailed prompt available below as buildConnectionFinderPromptDetailed
+
+  // Determine rule 1 based on user preferences
+  let ruleOne: string;
+  if (preferences.programs && preferences.connections) {
+    ruleOne =
+      'Return 5 best potential matches (people or programs) making sure to include AT LEAST one person and one program';
+  } else if (preferences.connections) {
+    ruleOne =
+      'Return 5 best potential person matches (do NOT include programs)';
+  } else {
+    ruleOne = 'Return 5 best potential program matches (do NOT include people)';
+  }
+
+  return `Find exactly 5 professional connections/programs for this career goal using web search.
+
+## Success Criteria
+${ruleOne}
+- Each must have: shared background + career goal match + contact URL
+- Find both professional AND personal interests (hobbies, sports, volunteer work - NOT work-related)
+${
+  personalizationSettings?.enabled
+    ? `- REQUIRED: Fill shared_professional_interests and shared_personal_interests for every person`
+    : ''
+}
+${
+  preferences.connections
+    ? `- Mix: 2-3 junior/mid-level, 1-2 senior professionals in exact target field`
+    : ''
+}
+${
+  preferences.programs
+    ? `- Programs: Future deadlines only (today: ${new Date().toDateString()})`
+    : ''
+}
+
+## Search Strategy
+1. Search "[Company] [Role] LinkedIn" and "[University] alumni [Target Company]"  
+2. Find shared experiences: same companies, schools, organizations
+3. Search personal interests separately: hobbies, sports, volunteer work
+4. Extract URLs from search results for contact info
+
+# Output Format
+
+\`\`\`json
+{
+  "connections": [
+    ${
+      preferences.connections
+        ? `{
+      "type": "person",
+      "name": "string",
+      "current_role": "string", 
+      "company": "string",
+      "verified_profile_url": "string",
+      "education_level": "undergraduate" | "graduate" | "postgraduate",
+      "direct_matches": ["string"],
+      "goal_alignment": "string",
+      "shared_background_points": ["string"],
+      "shared_professional_interests": ["string"]${
+        personalizationSettings?.enabled ? '' : ' | null'
+      },
+      "shared_personal_interests": ["string"]${
+        personalizationSettings?.enabled ? '' : ' | null'
+      },
+      "ai_outreach_message": "string",
+      "source": "string"
+    }`
+        : ''
+    },
+    ${
+      preferences.programs
+        ? `{
+      "type": "program",
+      "name": "string",
+      "organization": "string",
+      "program_type": "string", 
+      "website_url": "string",
+      "how_this_helps": "string",
+      "direct_matches": ["string"],
+      "goal_alignment": "string",
+      "shared_background_points": ["string"],
+      "source": "string"
+    }`
+        : ''
+    }
+  ]
+}
+\`\`\`
+
+## User Info
+- Goal: ${goalTitle}
+- Education: ${connectionAspects.education?.current_level || 'unknown'}
+- Background: ${JSON.stringify(connectionAspects, null, 2)}${
+    personalizationSettings?.enabled
+      ? `
+- Professional Interests: ${personalizationSettings.professionalInterests || 'Not specified'}
+- Personal Interests: ${personalizationSettings.personalInterests || 'Not specified'}`
+      : ''
+  }
+`;
+}
+
+// BACKUP: Original detailed prompt function - contains the full original implementation
+// To use the detailed version, simply replace buildConnectionFinderPrompt with buildConnectionFinderPromptDetailed in the import
+export function buildConnectionFinderPromptDetailed({
+  goalTitle,
+  connectionAspects,
   race,
-  location,
   preferences = { programs: true, connections: true },
   personalizationSettings,
 }: {
   goalTitle: string;
   connectionAspects: ConnectionAspects;
   race?: string;
-  location?: string;
   preferences?: { programs: boolean; connections: boolean };
   personalizationSettings?: {
     enabled: boolean;
@@ -81,9 +199,7 @@ Direct matches must be from these categories:
 **Search Strategy**: Prioritize people who have MOVED ON from shared background experiences rather than those currently in the same places, as they can provide insights into new opportunities and career transitions.
 
 **Geographic Targeting**: 
-- PRIORITY: Focus on opportunities in the country/region where the user is STUDYING or WORKING (based on their current university or job location)
-- If the user mentions attending university in a specific location (e.g., "University of Illinois" = US opportunities), prioritize that region
-- Only consider their country of origin if no clear study/work location is mentioned in their background
+- PRIORITY: Focus on opportunities based on the user's current university or job location (inferred from their background)
 - For students: prioritize opportunities in the same country as their university
 - For working professionals: prioritize opportunities in their current work location
 - The quality of connections is most important, but geographic relevance to their study/work location significantly improves usefulness
@@ -91,7 +207,7 @@ Direct matches must be from these categories:
 ${
   preferences.connections
     ? `## Connection Discovery Process
-- Use search_web with queries like "[Name] [Company]" or "[Name] [University]" to find relevant information
+- Use web searches with queries like "[Name] [Company]" or "[Name] [University]" to find relevant information
 - Look for professional profiles, company websites, and program information in search results
 - **Extract relevant information** from search results including:
   - Professional background, work experience, and career focus
@@ -133,7 +249,7 @@ ${
 }
 # 4-Step Search Strategy
 
-**CRITICAL**: You MUST ONLY use information from search_web results. NEVER create or invent connections. Only use connections found through actual web searches.
+**CRITICAL**: You MUST ONLY use information from web search results. NEVER create or invent connections. Only use connections found through actual web searches.
 
 ## Step 1: Goal Analysis and Background Prioritization
 1. **Analyze user's background to identify high-connection-potential experiences** - Prioritize experiences based on networking value:
@@ -185,7 +301,7 @@ ${
    - "[University name] alumni [target company]" - e.g., "UIUC alumni Google", "Harvard alumni Goldman Sachs"
    - "[University name] [industry] LinkedIn" - e.g., "University of Illinois AI LinkedIn", "Stanford finance LinkedIn"
    - "[University name] professor [field]" - e.g., "UIUC computer science professor", "MIT AI research professor"
-   - **IMPORTANT**: If user attends university in a specific country (e.g., UIUC = USA), focus searches on opportunities in that country, NOT their country of origin
+   - **IMPORTANT**: If user attends university in a specific country (e.g., UIUC = USA), focus searches on opportunities in that country
 4. **Search for specific programs with actual names and details**:
    - **Analyze program timing based on current date first**:
      * If it's August 2024 and user wants "winter internship" → Look for December 2024/January 2025 programs (deadlines typically September-October 2024)
@@ -204,7 +320,7 @@ ${
    - Search for specific person/program details: "[Person Name] [Company]"
    - Look for background matches with user's experience
    - Find shared interests, educational background, or work history
-3. **Validate through additional searches** - Use search_web to verify:
+3. **Validate through additional searches** - Use web search to verify:
    - Professional background and current role
    - Educational history and shared institutions
    - Personal interests and activities (if publicly available)
@@ -265,6 +381,7 @@ ${
 5. **MANDATORY PERSONALIZATION FIELDS** - For EVERY person connection when personalization is enabled:
    - **shared_professional_interests**: MUST contain at least 1-3 professional interests, passions, or work-related activities that align with the user's professional interests: ${personalizationSettings.professionalInterests}
    - **shared_personal_interests**: MUST contain at least 1-3 personal interests, hobbies, volunteer activities, or personal pursuits that align with the user's personal interests: ${personalizationSettings.personalInterests}
+   - **CRITICAL**: Personal interests must be COMPLETELY DISTINCT from professional interests. Examples: hobbies like hiking, cooking, sports, music, art, reading, travel, fitness, gaming, volunteering for causes unrelated to work, etc. Do NOT include work-related activities, industry interests, or career-focused pursuits in personal interests.
    - **NEVER leave these fields null or empty** - if you cannot find specific matches, use broader categories that still align with the user's interests
    - **Search thoroughly** for personal information through social media, personal websites, speaking engagements, volunteer work, etc.`
     : ''
@@ -272,9 +389,9 @@ ${
 
 ## How to use function / tool calls and extract URLs
 **CRITICAL PROCESS:**
-- **BEFORE each search_web call**: Write out your search strategy and what you hope to find
-- **AFTER each search_web call**: Analyze the results thoroughly. What contacts/programs did you find? Are they high-quality matches?
-- **EXTRACT URLs FROM SEARCH RESULTS**: Every search_web call returns \`sources\` with \`url\` fields. Use these URLs for:
+- **BEFORE each web search**: Write out your search strategy and what you hope to find
+- **AFTER each web search**: Analyze the results thoroughly. What contacts/programs did you find? Are they high-quality matches?
+- **EXTRACT URLs FROM SEARCH RESULTS**: Every web search returns sources with URL fields. Use these URLs for:
   - \`verified_profile_url\` for people connections (LinkedIn, company profiles, etc.)
   - \`website_url\` for program connections (official program pages, application links)
   - \`source\` field for all connections (cite which search result provided the information)
@@ -365,14 +482,13 @@ ${JSON.stringify(connectionAspects, null, 2)}
 
 - Education level: ${connectionAspects.education?.current_level || 'unknown'}
 - Candidate race/ethnicity: ${race} (if provided)
-- Candidate country of origin: ${location} (if provided) - NOTE: Use university/work location from background info instead if available
 - Career goal to consider for matching: ${goalTitle}${
     personalizationSettings?.enabled
       ? `
 - User's Professional Interests: ${
           personalizationSettings.professionalInterests || 'Not specified'
         }
-- User's Personal Interests: ${
+- User's Personal Interests (COMPLETELY SEPARATE from professional interests): ${
           personalizationSettings.personalInterests || 'Not specified'
         }`
       : ''

@@ -16,8 +16,24 @@ const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const db = getFirestore(app);
 
+// Deprecated: Use onAuthStateChanged instead to avoid hydration issues
 export const checkAuth = () => {
   const user = auth.currentUser;
   console.log('User is', user);
   return user !== null;
+};
+
+// Better auth utility that doesn't cause hydration issues
+export const getCurrentUser = () => {
+  return auth.currentUser;
+};
+
+// Promise-based auth state check
+export const waitForAuthInit = (): Promise<any> => {
+  return new Promise((resolve) => {
+    const unsubscribe = auth.onAuthStateChanged((user) => {
+      unsubscribe();
+      resolve(user);
+    });
+  });
 };

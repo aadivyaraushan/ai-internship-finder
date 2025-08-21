@@ -2,17 +2,16 @@
 
 import { useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { checkAuth, auth } from '@/lib/firebase';
+import { auth } from '@/lib/firebase';
 import {
   createOrUpdateResume,
   createOrUpdateUser,
 } from '@/lib/firestoreHelpers';
 import { useEffect } from 'react';
+import { onAuthStateChanged } from 'firebase/auth';
 import { MultiStepLoader } from '@/components/ui/MultiStepLoader';
 import { FileUpload } from '@/components/ui/FileUpload';
 import BorderMagicButton from '@/components/ui/BorderMagicButton';
-import { ShootingStars } from '@/components/ui/ShootingStars';
-import { StarsBackground } from '@/components/ui/StarsBackground';
 
 interface ProcessingStep {
   id: string;
@@ -36,6 +35,7 @@ export default function UploadResume() {
   });
   const [error, setError] = useState('');
   const [currentStatus, setCurrentStatus] = useState<string>('');
+  const [authLoading, setAuthLoading] = useState(true);
   const [steps, setSteps] = useState<ProcessingStep[]>([
     { id: 'prepare', label: 'Preparing upload', status: 'pending' },
     { id: 'upload', label: 'Uploading file', status: 'pending' },
@@ -47,10 +47,14 @@ export default function UploadResume() {
   const router = useRouter();
 
   useEffect(() => {
-    console.log('Checking auth', checkAuth());
-    if (!checkAuth()) {
-      router.push('/signup');
-    }
+    const unsubscribe = onAuthStateChanged(auth, (user: any) => {
+      setAuthLoading(false);
+      if (!user) {
+        router.push('/signup');
+      }
+    });
+
+    return () => unsubscribe();
   }, [router]);
 
   const updateStep = (stepId: string, status: ProcessingStep['status']) => {
@@ -59,9 +63,12 @@ export default function UploadResume() {
     );
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!file) return;
+  const handleSubmit = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!file) {
+      setError('Please upload a resume file before submitting.');
+      return;
+    }
 
     setLoading(true);
     setError('');
@@ -166,8 +173,10 @@ export default function UploadResume() {
       );
 
       await new Promise((resolve) => setTimeout(resolve, 1500));
-      // Directly move to connection-finding, passing no intermediate goal-analysis step
-      router.push('/top-connections');
+      // Redirect to dashboard and auto-start connection finding with the goals
+      router.push(
+        `/dashboard?autoStart=true&goal=${encodeURIComponent(goals.trim())}`
+      );
     } catch (err: any) {
       setError(err.message || 'Failed to process resume');
       setCurrentStatus('');
@@ -190,6 +199,16 @@ export default function UploadResume() {
     inProgressIndex !== -1
       ? inProgressIndex
       : Math.max(0, steps.filter((s) => s.status === 'completed').length - 1);
+
+  // Show loading spinner while checking auth state
+  if (authLoading) {
+    return (
+      <div className='min-h-screen flex items-center justify-center bg-[#0a0a0a] p-4'>
+        <div className='animate-spin rounded-full h-8 w-8 border-b-2 border-white'></div>
+        <p className='text-white mt-4'>Loading...</p>
+      </div>
+    );
+  }
 
   return (
     <div className='min-h-screen flex items-center justify-center bg-[#0a0a0a] p-4'>
@@ -216,47 +235,51 @@ export default function UploadResume() {
           />
         )}
 
-        <div className='mb-6'>
-          <FileUpload
-            onChange={(files) => {
-              if (files && files.length) {
-                setFile(files[0]);
-                setError('');
-              }
-            }}
-            title='Upload your resume (PDF)'
-            description="Drop your resume here or click to browse. We'll analyze it to find the best internship connections for you."
-          />
-        </div>
+        <form onSubmit={handleSubmit}>
+          <div className='mb-6'>
+            <FileUpload
+              onChange={(files) => {
+                if (files && files.length) {
+                  setFile(files[0]);
+                  setError('');
+                }
+              }}
+              title='Upload your resume (PDF)'
+              description="Drop your resume here or click to browse. We'll analyze it to find the best internship connections for you."
+            />
+          </div>
 
-        <div className='mb-6'>
-          <label htmlFor='goals' className='block text-white mb-2'>
-            Please tell us your goals
-          </label>
-          <textarea
-            id='goals'
-            value={goals}
-            onChange={(e) => setGoals(e.target.value)}
-            placeholder='For example: if you wish to pivot into tech, or if you want to find an internship. Any information helps.'
-            className='w-full h-24 px-3 py-2 text-gray-300 bg-[#2a2a2a] rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500'
-          />
-        </div>
+          <div className='mb-6'>
+            <label htmlFor='goals' className='block text-white mb-2'>
+              Please tell us your goals
+            </label>
+            <textarea
+              id='goals'
+              value={goals}
+              onChange={(e) => setGoals(e.target.value)}
+              placeholder='For example: if you wish to pivot into tech, or if you want to find an internship. Any information helps.'
+              className='w-full h-24 px-3 py-2 text-gray-300 bg-[#2a2a2a] rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 relative z-10'
+              disabled={loading}
+            />
+          </div>
 
-        <div className='flex justify-between gap-4'>
-          <BorderMagicButton
-            onClick={() => console.log('Save as draft')}
-            disabled={loading}
-            className='!bg-[#2a2a2a] hover:!bg-[#3a3a3a] !border-[#2a2a2a] before:!hidden [&>span:first-child]:!hidden'
-          >
-            Save as Draft
-          </BorderMagicButton>
-          <BorderMagicButton onClick={handleSubmit} disabled={loading}>
-            {loading ? 'Processing...' : 'Submit'}
-          </BorderMagicButton>
-        </div>
+          <div className='flex justify-between gap-4'>
+            <BorderMagicButton
+              onClick={() => console.log('Save as draft')}
+              disabled={loading}
+              className='!bg-[#2a2a2a] hover:!bg-[#3a3a3a] !border-[#2a2a2a] before:!hidden [&>span:first-child]:!hidden'
+            >
+              Save as Draft
+            </BorderMagicButton>
+            <BorderMagicButton
+              onClick={handleSubmit}
+              disabled={loading || !file}
+            >
+              {loading ? 'Processing...' : 'Submit'}
+            </BorderMagicButton>
+          </div>
+        </form>
       </div>
-      <ShootingStars />
-      <StarsBackground />
     </div>
   );
 }
