@@ -40,7 +40,7 @@ export interface LinkedInApiResponse {
 
     country: string;
 
-    courses: Array<any>; // Empty array in response, type unknown
+    courses: Array<unknown>; // Empty array in response, type unknown
 
     current_company_join_month: number | null;
 
@@ -170,7 +170,7 @@ export interface LinkedInApiResponse {
       name: string;
     }>;
 
-    patents: Array<any>; // Empty array in response, type unknown
+    patents: Array<unknown>; // Empty array in response, type unknown
 
     phone: string;
 
@@ -254,9 +254,9 @@ export async function fetchFromLinkedInAPI(
     if (attempt > 1) {
       // More reasonable exponential backoff: 500ms, 1s, 2s (capped at 3s)
       const delayMs = Math.min(500 * Math.pow(2, attempt - 2), 3000);
-      console.log(
-        `⏳ Adding retry delay of ${delayMs}ms before LinkedIn API request (attempt ${attempt}/${maxAttempts})`
-      );
+      // console.log(
+      //   `⏳ Adding retry delay of ${delayMs}ms before LinkedIn API request (attempt ${attempt}/${maxAttempts})`
+      // );
       await new Promise((resolve) => setTimeout(resolve, delayMs));
     }
 
@@ -276,9 +276,9 @@ export async function fetchFromLinkedInAPI(
     // Handle rate limiting
     if (response.status === 429) {
       if (attempt < maxAttempts) {
-        console.log(
-          `⚠️ Rate limited (429). Retrying (${attempt + 1}/${maxAttempts})...`
-        );
+        // console.log(
+        //   `⚠️ Rate limited (429). Retrying (${attempt + 1}/${maxAttempts})...`
+        // );
         return fetchFromLinkedInAPI(profileUrl, attempt + 1, maxAttempts);
       }
       throw new Error(
@@ -297,11 +297,11 @@ export async function fetchFromLinkedInAPI(
 
     return apiData.data;
   } catch (error) {
-    console.error('Error in fetchFromLinkedInAPI:', error);
+    // console.error('Error in fetchFromLinkedInAPI:', error);
     if (attempt < maxAttempts) {
-      console.log(
-        `⚠️ Error occurred. Retrying (${attempt + 1}/${maxAttempts})...`
-      );
+      // console.log(
+      //   `⚠️ Error occurred. Retrying (${attempt + 1}/${maxAttempts})...`
+      // );
       return fetchFromLinkedInAPI(profileUrl, attempt + 1, maxAttempts);
     }
     throw error;

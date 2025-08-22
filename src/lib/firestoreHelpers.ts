@@ -1,5 +1,5 @@
 import { onAuthStateChanged } from 'firebase/auth';
-import { doc, setDoc, updateDoc, getDoc, addDoc, collection } from 'firebase/firestore';
+import { doc, setDoc, updateDoc, getDoc, collection } from 'firebase/firestore';
 import { db, auth } from './firebase';
 
 export interface Connection {
@@ -57,7 +57,7 @@ export interface Connection {
    */
   match_details?: {
     scoring_explanation?: string;
-    [key: string]: any;
+    [key: string]: unknown;
   };
 
   /**
@@ -77,7 +77,7 @@ export interface Connection {
   };
 
   /** Additional matching dimensions */
-  direct_matches?: any | null;
+  direct_matches?: unknown;
   goal_alignment?: string | null;
 
   /** Hiring-power metadata for person connections */
@@ -97,27 +97,27 @@ export interface Connection {
   shared_professional_interests?: string[] | null;
   shared_personal_interests?: string[] | null;
   ai_outreach_message?: string | null;
-  profile_data?: any;
+  profile_data?: unknown;
   website_verified?: boolean;
 }
 
 // USERS
-export async function createOrUpdateUser(userId: string, data: any) {
+export async function createOrUpdateUser(userId: string, data: Record<string, unknown>) {
   const userRef = doc(db, 'users', userId);
   await setDoc(userRef, data, { merge: true });
 }
 
-export async function updateUserGoals(userId: string, goals: any) {
+export async function updateUserGoals(userId: string, goals: unknown) {
   await setDoc(doc(db, 'users', userId), { goals }, { merge: true });
 }
 
-export async function updateUserRoles(userId: string, roles: any[]) {
+export async function updateUserRoles(userId: string, roles: unknown[]) {
   await setDoc(doc(db, 'users', userId), { roles }, { merge: true });
 }
 
 export async function updateUserConnections(
   userId: string,
-  connections: any[]
+  connections: unknown[]
 ) {
   await setDoc(doc(db, 'users', userId), { connections }, { merge: true });
 }
@@ -192,7 +192,7 @@ export async function updateConnectionStatus(
 }
 
 // RESUME
-export async function createOrUpdateResume(userId: string, data: any) {
+export async function createOrUpdateResume(userId: string, data: Record<string, unknown>) {
   const resumeRef = doc(db, 'resume', `${userId}_resume`);
   await setDoc(resumeRef, data, { merge: true });
 }
@@ -226,3 +226,97 @@ export const getCurrentUser = () => {
     });
   });
 };
+
+// PENDING CONNECTIONS - For connection finding process
+export interface PendingConnectionSession {
+  id: string;
+  userId: string;
+  goalTitle: string;
+  startedAt: string;
+  status: 'in_progress' | 'completed' | 'cancelled';
+  connections: Connection[];
+  totalExpected: number;
+}
+
+export async function createPendingConnectionSession(
+  userId: string,
+  goalTitle: string,
+  totalExpected: number = 5
+): Promise<string> {
+  const sessionId = `${userId}_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
+  const sessionRef = doc(db, 'pending_connections', sessionId);
+  
+  const session: PendingConnectionSession = {
+    id: sessionId,
+    userId,
+    goalTitle,
+    startedAt: new Date().toISOString(),
+    status: 'in_progress',
+    connections: [],
+    totalExpected
+  };
+  
+  await setDoc(sessionRef, session);
+  return sessionId;
+}
+
+export async function addPendingConnection(
+  sessionId: string,
+  connection: Connection
+) {
+  const sessionRef = doc(db, 'pending_connections', sessionId);
+  const sessionDoc = await getDoc(sessionRef);
+  
+  if (!sessionDoc.exists()) {
+    throw new Error('Pending connection session not found');
+  }
+  
+  const session = sessionDoc.data() as PendingConnectionSession;
+  const updatedConnections = [...session.connections, connection];
+  
+  await updateDoc(sessionRef, { 
+    connections: updatedConnections,
+    lastUpdated: new Date().toISOString()
+  });
+}
+
+export async function completePendingConnectionSession(
+  sessionId: string,
+  userId: string
+) {
+  const sessionRef = doc(db, 'pending_connections', sessionId);
+  const sessionDoc = await getDoc(sessionRef);
+  
+  if (!sessionDoc.exists()) {
+    return;
+  }
+  
+  const session = sessionDoc.data() as PendingConnectionSession;
+  
+  // Move connections to user's main connections
+  for (const connection of session.connections) {
+    await addUserConnection(userId, connection);
+  }
+  
+  // Update session status to completed
+  await updateDoc(sessionRef, { 
+    status: 'completed',
+    completedAt: new Date().toISOString()
+  });
+}
+
+export async function getPendingConnectionSession(sessionId: string): Promise<PendingConnectionSession | null> {
+  const sessionRef = doc(db, 'pending_connections', sessionId);
+  const sessionDoc = await getDoc(sessionRef);
+  
+  return sessionDoc.exists() ? sessionDoc.data() as PendingConnectionSession : null;
+}
+
+export async function getUserPendingConnectionSessions(userId: string): Promise<PendingConnectionSession[]> {
+  const { getDocs, query, where } = await import('firebase/firestore');
+  const pendingRef = collection(db, 'pending_connections');
+  const q = query(pendingRef, where('userId', '==', userId), where('status', '==', 'in_progress'));
+  
+  const snapshot = await getDocs(q);
+  return snapshot.docs.map(doc => doc.data() as PendingConnectionSession);
+}

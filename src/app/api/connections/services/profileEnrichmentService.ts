@@ -1,8 +1,6 @@
 import { Connection } from '@/lib/firestoreHelpers';
 import { findAndVerifyLinkedInUrl } from '../utils/urlFinding/people/findAndVerifyLinkedinUrl';
-import { verifyNonLinkedInUrl } from '../utils/urlFinding/people/verifyNonLinkedInUrl';
 import { findEmailWithHunter } from '../utils/emailFinding/findEmailHunter';
-import { verifyLinkedInUrl } from '../utils/urlFinding/people/verifyLinkedInUrl';
 
 /**
  * Enriches a person connection with additional data:
@@ -16,24 +14,26 @@ import { verifyLinkedInUrl } from '../utils/urlFinding/people/verifyLinkedInUrl'
 export async function enrichPersonConnection(
   conn: Connection
 ): Promise<Connection> {
-  console.log(` Enriching person: ${conn.name}`);
+  // console.log(` Enriching person: ${conn.name}`);
 
   // 1. VERIFY EXISTING LINKEDIN URL (if linkedin URL)
   try {
-    const verification = await findAndVerifyLinkedInUrl(
-      conn,
-      conn.verified_profile_url
-    );
-    if (verification.valid) {
-      // Valid LinkedIn URL
-      conn.website_verified = true;
-      conn.profile_data = verification.profile_data;
-    } else {
-      // Invalid LinkedIn URL - clear it so we can search for a new one
-      // Should be impossible when FIND AND function is being used because replacement will be found.
+    if (conn.verified_profile_url) {
+      const verification = await findAndVerifyLinkedInUrl(
+        conn,
+        conn.verified_profile_url
+      );
+      if (verification.valid) {
+        // Valid LinkedIn URL
+        conn.website_verified = true;
+        conn.profile_data = verification.profile_data;
+      } else {
+        // Invalid LinkedIn URL - clear it so we can search for a new one
+        // Should be impossible when FIND AND function is being used because replacement will be found.
+      }
     }
-  } catch (err) {
-    console.warn('LinkedIn URL verification failed:', err);
+  } catch {
+    // console.warn('LinkedIn URL verification failed:', err);
     conn.verified_profile_url = null;
   }
   // // 2. VERIFY NON-LINKEDIN URL
@@ -49,7 +49,7 @@ export async function enrichPersonConnection(
   //       conn.website_verified = true;
   //       conn.profile_data = { ...(conn.profile_data || {}), ...verified };
   //     }
-  //   } catch (err) {
+  //   } catch {
   //     console.warn('URL verification failed:', err);
   //   }
   // }
@@ -68,7 +68,7 @@ export async function enrichPersonConnection(
   //       conn.profile_data = res.profile_data;
   //       conn.match_confidence = { overall: res.match_confidence };
   //     }
-  //   } catch (err) {
+  //   } catch {
   //     console.warn('LinkedIn search failed:', err);
   //   }
   // }
@@ -79,8 +79,8 @@ export async function enrichPersonConnection(
     try {
       const email = await findEmailWithHunter(conn);
       if (email) conn.email = email;
-    } catch (err) {
-      console.warn('Email enrichment failed:', err);
+    } catch {
+      // console.warn('Email enrichment failed:', err);
     }
   }
 

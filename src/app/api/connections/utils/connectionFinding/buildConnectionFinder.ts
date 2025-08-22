@@ -58,6 +58,8 @@ ${
 
 # Output Format
 
+**IMPORTANT: Provide actual working URLs for verified_profile_url and website_url fields. For other text fields, use plain text descriptions without hyperlinks.**
+
 \`\`\`json
 {
   "connections": [
@@ -417,6 +419,8 @@ ${
 2. **THEN: Stop making tool calls** - Do not continue searching or making any additional tool calls after outputting the JSON
 
 # Output Format
+
+**IMPORTANT: Provide actual working URLs for verified_profile_url and website_url fields. For other text fields, use plain text descriptions without hyperlinks.**
 
 \`\`\`json
 {

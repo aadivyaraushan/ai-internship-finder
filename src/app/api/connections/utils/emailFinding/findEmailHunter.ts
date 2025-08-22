@@ -47,8 +47,8 @@ export async function findEmailWithHunter(conn: Connection): Promise<string | nu
       console.warn('⚠️  Hunter.io request failed', response.status, response.statusText);
       return null;
     }
-    const json = (await response.json()) as any;
-    return json?.data?.email ?? null;
+    const json = (await response.json()) as Record<string, unknown>;
+    return (json?.data as Record<string, unknown>)?.email as string ?? null;
   } catch (err) {
     console.warn('❌  Hunter.io lookup error', err);
     return null;

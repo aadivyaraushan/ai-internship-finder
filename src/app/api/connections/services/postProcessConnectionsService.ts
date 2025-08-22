@@ -62,8 +62,8 @@ export function postProcessConnections(
 
   // 2. Sort by descending match percentage (falls back to 0)
   const sorted = [...filtered].sort((a, b) => {
-    const scoreB = b.match_details?.total_percentage ?? 0;
-    const scoreA = a.match_details?.total_percentage ?? 0;
+    const scoreB = typeof b.match_details?.total_percentage === 'number' ? b.match_details.total_percentage : 0;
+    const scoreA = typeof a.match_details?.total_percentage === 'number' ? a.match_details.total_percentage : 0;
     return scoreB - scoreA;
   });
 
@@ -80,7 +80,7 @@ export function postProcessConnections(
       type: (conn.type || 'person') as 'person' | 'program',
       name: conn.name,
       imageUrl: '', // kept for backward compatibility (TODO: supply real image)
-      matchPercentage: conn.match_details?.total_percentage || 0,
+      matchPercentage: typeof conn.match_details?.total_percentage === 'number' ? conn.match_details.total_percentage : 0,
       verified_profile_url: conn.verified_profile_url,
       email: conn.email,
       status: 'not_contacted',
@@ -97,8 +97,9 @@ export function postProcessConnections(
       shared_background_points:
         conn.shared_background_points ??
         (typeof conn.outreach_strategy === 'object' &&
-        (conn.outreach_strategy as any)?.shared_background_points
-          ? (conn.outreach_strategy as any).shared_background_points
+        (conn.outreach_strategy as Record<string, unknown>)?.shared_background_points &&
+        Array.isArray((conn.outreach_strategy as Record<string, unknown>).shared_background_points)
+          ? (conn.outreach_strategy as Record<string, unknown>).shared_background_points as string[]
           : []),
       shared_professional_interests: conn.shared_professional_interests || null,
       shared_personal_interests: conn.shared_personal_interests || null,
@@ -112,7 +113,7 @@ function buildDescription(conn: Connection): string {
   if (conn.type === 'person') {
     const matchPoints: string[] = [];
 
-    if (conn.direct_matches?.length) {
+    if (Array.isArray(conn.direct_matches) && conn.direct_matches.length) {
       matchPoints.push(`Direct matches: ${conn.direct_matches.join(', ')}`);
     }
     if (conn.goal_alignment) {
@@ -143,7 +144,7 @@ function buildDescription(conn: Connection): string {
 
   if (conn.type === 'program') {
     const programPoints: string[] = [];
-    if (conn.direct_matches?.length)
+    if (Array.isArray(conn.direct_matches) && conn.direct_matches.length)
       programPoints.push(
         `Matches your background: ${conn.direct_matches.join(', ')}`
       );

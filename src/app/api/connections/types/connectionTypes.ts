@@ -8,11 +8,11 @@ export interface SharedActivity {
 
 // Structure returned by resume analysis service
 export interface ResumeAnalysisResult {
-  education: any;
-  work_experience: any;
-  activities: any;
-  achievements: any;
-  growth_areas: any;
+  education: unknown;
+  work_experience: unknown;
+  activities: unknown;
+  achievements: unknown;
+  growth_areas: unknown;
 }
 
 export interface ConnectionRequest {

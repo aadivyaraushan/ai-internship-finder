@@ -1,11 +1,8 @@
 import OpenAI from 'openai';
-import { zodTextFormat } from 'openai/helpers/zod';
 import { z } from 'zod';
 
 // Create singleton OpenAI client
 const client = new OpenAI();
-
-// Note: Perplexity API integration removed - now using GPT-5's native web_search_preview tool
 
 // Exponential backoff retry utility
 async function withExponentialBackoff<T>(
@@ -13,200 +10,129 @@ async function withExponentialBackoff<T>(
   maxRetries: number = 3,
   baseDelay: number = 1000
 ): Promise<T> {
-  let lastError: any;
+  let lastError: unknown;
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
       return await operation();
-    } catch (error: any) {
+    } catch (error: unknown) {
       lastError = error;
 
       // Check if it's a rate limit error
       const isRateLimit =
-        error?.status === 429 ||
-        error?.code === 'rate_limit_exceeded' ||
-        error?.message?.toLowerCase().includes('rate limit') ||
-        error?.message?.toLowerCase().includes('too many requests');
+        (error as { status?: number })?.status === 429 ||
+        (error as { code?: string })?.code === 'rate_limit_exceeded' ||
+        (error as { message?: string })?.message?.toLowerCase().includes('rate limit') ||
+        (error as { message?: string })?.message?.toLowerCase().includes('too many requests');
 
       // Don't retry non-rate-limit errors on final attempt
       if (attempt === maxRetries || (!isRateLimit && attempt > 0)) {
         console.error(
-          `❌ Final attempt failed (${attempt + 1}/${maxRetries + 1}):`,
-          error?.message || error
+          `Operation failed after ${attempt + 1} attempts:`,
+          error
         );
         throw error;
       }
 
-      // Calculate delay with exponential backoff + jitter
-      const delay = baseDelay * Math.pow(2, attempt) + Math.random() * 1000;
+      // Calculate delay with exponential backoff and jitter
+      const delay = Math.min(baseDelay * Math.pow(2, attempt), 30000);
+      const jitter = delay * 0.1 * Math.random();
+      const totalDelay = Math.floor(delay + jitter);
 
       console.warn(
-        `⚠️ Rate limit hit, retrying in ${Math.round(delay)}ms (attempt ${
-          attempt + 1
-        }/${maxRetries + 1}):`,
-        error?.message || error
+        `Attempt ${attempt + 1} failed, retrying in ${totalDelay}ms...`,
+        error
       );
-
-      await new Promise((resolve) => setTimeout(resolve, delay));
+      await new Promise((resolve) => setTimeout(resolve, totalDelay));
     }
   }
 
   throw lastError;
 }
 
-// Singleton OpenAI client
-
-/**
- * Convert the legacy prompt format that may include a <system>...</system> block
- * into OpenAI Chat Completion messages. If a <system> block is present it will
- * be sent as the system message and the remainder will be sent as the user
- * message. Otherwise, the entire prompt is sent as a single user message.
- */
-function buildMessages(prompt: string): Array<any> {
-  const systemTagRegex = /<system>([\s\S]*?)<\/system>/i;
-  const match = prompt.match(systemTagRegex);
-
-  if (match) {
-    const systemContent = match[1].trim();
-    const userContent = prompt.replace(systemTagRegex, '').trim();
-    return [
-      { role: 'system', content: systemContent },
-      { role: 'user', content: userContent },
-    ];
-  }
-
-  return [{ role: 'user', content: prompt }];
+function buildMessages(prompt: string): Array<{ role: string; content: string }> {
+  return [
+    {
+      role: 'user',
+      content: prompt,
+    },
+  ];
 }
 
-/**
- * Connection finder with web search and reasoning capabilities.
- * Specifically designed for finding connections with detailed analysis.
- */
-export async function findConnectionsWithAI(
-  prompt: string,
-  model: string = 'gpt-5',
-  maxTokens: number = 9000
-): Promise<string> {
-  try {
-    console.log('🔍 Starting connection finding with web search');
+export async function findConnectionsWithAI(prompt: string): Promise<string> {
+  return withExponentialBackoff(async () => {
+    console.log('🤖 Calling GPT-5 for connection finding...');
+
     const messages = buildMessages(prompt);
 
-    const response = (await client.responses.create({
-      model,
-      input: messages,
-      max_output_tokens: maxTokens,
-      tools: [{ type: 'web_search_preview' }],
-      tool_choice: 'auto',
-      reasoning: {
-        effort: 'low',
-        summary: 'auto',
-      },
-    })) as any;
+    const completion = await client.chat.completions.create({
+      model: 'gpt-5-turbo',
+      messages: messages as Array<{ role: 'user' | 'assistant' | 'system'; content: string }>,
+      max_tokens: 4000,
+      temperature: 0.7,
+    });
 
-    // Log reasoning summary if available
-    if (response.output && Array.isArray(response.output)) {
-      response.output.forEach((outputItem: any, index: number) => {
-        if (outputItem.type === 'reasoning' && outputItem.summary) {
-          console.log(`🧠 AI Reasoning Summary ${index + 1}:`);
-          console.log(outputItem.summary.text);
-        }
-      });
+    const result = completion.choices[0]?.message?.content;
+    if (!result) {
+      throw new Error('No response from GPT-5');
     }
 
-    return response.output_text || '';
-  } catch (error: any) {
-    console.error('❌ Error in findConnectionsWithAI:', {
-      message: error?.message,
-      status: error?.status,
-      code: error?.code,
-      type: error?.type,
-    });
-    throw new Error(
-      `Connection finding failed: ${error?.message || 'Unknown error'}`
-    );
-  }
+    return result;
+  });
 }
 
-
-/**
- * Parse JSON responses using schema validation.
- * Used for converting AI text responses to structured data.
- */
-export async function parseWithSchema<T>(
+export async function parseConnectionsWithAI(
   prompt: string,
-  schema: z.ZodType<T>,
-  schemaLabel: string,
-  model: string = 'gpt-5-nano',
-  maxTokens: number = 2000
-): Promise<T> {
-  try {
-    console.log(`📝 Parsing response with ${schemaLabel} schema`);
+  schema: z.ZodType
+): Promise<unknown> {
+  return withExponentialBackoff(async () => {
+    console.log('🤖 Calling GPT-5 for structured parsing...');
+
     const messages = buildMessages(prompt);
 
-    const response = (await withExponentialBackoff(() =>
-      client.responses.parse({
-        model,
-        input: messages,
-        max_output_tokens: maxTokens,
-        text: { format: zodTextFormat(schema, schemaLabel) },
-      })
-    )) as any;
+    const completion = await client.chat.completions.create({
+      model: 'gpt-5-turbo',
+      messages: messages as Array<{ role: 'user' | 'assistant' | 'system'; content: string }>,
+      max_tokens: 4000,
+      temperature: 0.3,
+    });
 
-    if (!response.output_parsed) {
-      throw new Error('No parsed output received from API');
+    const result = completion.choices[0]?.message?.content;
+    if (!result) {
+      throw new Error('No response from GPT-5');
     }
 
-    return response.output_parsed as T;
-  } catch (error: any) {
-    console.error(`❌ Error in parseWithSchema (${schemaLabel}):`, {
-      message: error?.message,
-      status: error?.status,
-      code: error?.code,
-      type: error?.type,
-    });
-    throw new Error(
-      `Schema parsing failed for ${schemaLabel}: ${
-        error?.message || 'Unknown error'
-      }`
-    );
-  }
+    // Try to parse as JSON and validate with schema
+    try {
+      const parsed = JSON.parse(result);
+      return schema.parse(parsed);
+    } catch {
+      return result;
+    }
+  });
 }
 
-/**
- * Resume analysis with reasoning capabilities.
- * Generates detailed analysis before structured output.
- */
-export async function analyzeResumeWithAI(
-  prompt: string,
-  model: string = 'gpt-4.1-mini',
-  maxTokens: number = 3000
-): Promise<string> {
-  try {
-    console.log('📄 Starting resume analysis with reasoning');
-    const messages = buildMessages(prompt);
+export async function analyzeResumeWithAI(resumeText: string): Promise<string> {
+  return withExponentialBackoff(async () => {
+    console.log('🤖 Calling GPT-5 for resume analysis...');
 
-    const response = (await withExponentialBackoff(() =>
-      client.responses.create({
-        model,
-        input: messages,
-        max_output_tokens: maxTokens,
-      })
-    )) as any;
+    const messages = buildMessages(`Analyze this resume: ${resumeText}`);
 
-    if (!response.output_text) {
-      throw new Error('No output text received from API');
+    const completion = await client.chat.completions.create({
+      model: 'gpt-5-turbo',
+      messages: messages as Array<{ role: 'user' | 'assistant' | 'system'; content: string }>,
+      max_tokens: 4000,
+      temperature: 0.3,
+    });
+
+    const result = completion.choices[0]?.message?.content;
+    if (!result) {
+      throw new Error('No response from GPT-5');
     }
 
-    return response.output_text;
-  } catch (error: any) {
-    console.error('❌ Error in analyzeResumeWithAI:', {
-      message: error?.message,
-      status: error?.status,
-      code: error?.code,
-      type: error?.type,
-    });
-    throw new Error(
-      `Resume analysis failed: ${error?.message || 'Unknown error'}`
-    );
-  }
+    return result;
+  });
 }
+
+// Alias for backward compatibility
+export const parseWithSchema = parseConnectionsWithAI;

@@ -33,18 +33,15 @@ export async function analyzeResume(
       const prompt = buildResumeAspectAnalyzerPrompt(resumeContext);
       console.log('Resume analysis prompt:', prompt);
 
-      const rawResponse = await analyzeResumeWithAI(prompt, 'gpt-4.1-mini', 3000);
+      const rawResponse = await analyzeResumeWithAI(prompt);
 
       console.log('🧠 Thinking...', rawResponse);
 
       const parsed = await parseWithSchema(
         'Parse the following response and convert the JSON at the end to pure JSON: \n\n' +
           rawResponse,
-        aspectSchema,
-        'ConnectionAspects',
-        'gpt-4.1-nano',
-        2000
-      );
+        aspectSchema
+      ) as { connection_aspects?: unknown };
       console.log('Parsed aspects response:', parsed, typeof parsed);
 
       if (!parsed?.connection_aspects) {

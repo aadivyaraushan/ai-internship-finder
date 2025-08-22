@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { Suspense } from 'react';
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { auth, db } from '@/lib/firebase';
 import {
@@ -9,8 +9,9 @@ import {
   getResume,
   createOrUpdateResume,
   createOrUpdateUser,
+  addUserConnection,
 } from '@/lib/firestoreHelpers';
-import { doc, getDoc, setDoc, updateDoc, arrayUnion } from 'firebase/firestore';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { onAuthStateChanged, User, signOut } from 'firebase/auth';
 import { MultiStepLoader } from '@/components/ui/MultiStepLoader';
 import { AnimatedTabs } from '@/components/ui/AnimatedTabs';
@@ -44,7 +45,7 @@ interface PersonalizationSettings {
   personalInterests: string;
 }
 
-export default function Dashboard() {
+function DashboardContent() {
   const [file, setFile] = useState<File | null>(null);
   const [goals, setGoals] = useState<string | Goal[]>('');
   const [selectedView, setSelectedView] = useState<
@@ -91,7 +92,13 @@ export default function Dashboard() {
   const [allPendingConnections, setAllPendingConnections] = useState<
     Connection[]
   >([]);
+  const [pendingConnectionsLoaded, setPendingConnectionsLoaded] = useState(false);
   const [resumeError, setResumeError] = useState<string>('');
+
+  // Cache for performance optimization
+  const [cachedUserData, setCachedUserData] = useState<any>(null);
+  const [cachedResumeData, setCachedResumeData] = useState<any>(null);
+  const [prebuiltPromptBase, setPrebuiltPromptBase] = useState<string>('');
 
   // State for filters for main connections and archived connections
   const [filters, setFilters] = useState<{
@@ -329,26 +336,44 @@ export default function Dashboard() {
     );
   }, [connections]);
 
-  // Listen for Firebase Auth state changes
+  // Minimal auth setup - no blocking
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       setCurrentUser(user);
+      if (!user) {
+        // Redirect in background, don't block UI
+        setTimeout(() => router.push('/signup'), 100);
+      }
     });
+    
     return () => unsubscribe();
-  }, []);
+  }, [router]);
 
   const fetchUserDataLocal = async () => {
     setLoading(true);
     if (!currentUser) return;
     try {
+      // Fetch and cache user data
       const {
         goals,
         connections,
         personalizationSettings: fetchedPersonalizationSettings,
       } = await fetchUserData(currentUser);
+      
+      // Also fetch detailed user and resume data for caching
+      const freshUserData: any = await getUser(currentUser.uid);
+      const resumeData: any = await getResume(currentUser.uid);
+      
+      // Cache the data
+      setCachedUserData(freshUserData);
+      setCachedResumeData(resumeData);
+      
+      // Set UI state
       setGoals(goals);
       setConnections(connections);
       setPersonalizationSettings(fetchedPersonalizationSettings);
+      
+      // console.log('✅ Cached user data and resume for faster connection finding');
     } catch (error) {
       console.error('Error fetching user data:', error);
     } finally {
@@ -360,24 +385,32 @@ export default function Dashboard() {
     if (!currentUser) return;
     try {
       const { connections: allConnections } = await fetchUserData(currentUser);
-      console.log('All connections:', allConnections);
+      // console.log('All connections:', allConnections);
       const pending = allConnections.filter(
         (c: Connection) => c.status === 'not_contacted' || !c.status
       );
-      console.log('Pending connections:', pending);
+      // console.log('Pending connections:', pending);
       const pendingPrograms = pending.filter((c: Connection) => c.type === 'program');
-      console.log('Pending programs:', pendingPrograms);
+      // console.log('Pending programs:', pendingPrograms);
       setAllPendingConnections(pending);
+      setPendingConnectionsLoaded(true);
     } catch (error) {
       console.error('Error fetching all pending connections:', error);
+      setPendingConnectionsLoaded(true);
     }
   };
 
-  // Fetch user data when currentUser is available
+  // Fetch user data when currentUser is available (lazy loading)
   useEffect(() => {
     if (!currentUser) return;
-
-    fetchUserDataLocal();
+    
+    // Delay data fetching to not block initial render
+    const timer = setTimeout(() => {
+      fetchUserDataLocal().catch(console.error);
+      fetchAllPendingConnections().catch(console.error);
+    }, 100);
+    
+    return () => clearTimeout(timer);
   }, [currentUser]);
 
   // Auto-start connection search if coming from upload page
@@ -452,6 +485,19 @@ export default function Dashboard() {
           c.id === connectionId ? { ...c, status: newStatus } : c
         )
       );
+      
+      // Also update allPendingConnections to keep counts accurate
+      setAllPendingConnections((prev) => {
+        return prev.map((c) => {
+          if (c.id === connectionId) {
+            const updated = { ...c, status: newStatus };
+            // If status is no longer pending, it will be filtered out by the useMemo
+            return updated;
+          }
+          return c;
+        }).filter((c) => c.status === 'not_contacted' || !c.status); // Keep only pending
+      });
+      
       await updateConnectionStatus(
         currentUser.uid,
         connectionId,
@@ -466,6 +512,16 @@ export default function Dashboard() {
             : c
         )
       );
+      
+      // Revert allPendingConnections as well
+      setAllPendingConnections((prev) =>
+        prev.map((c) =>
+          c.id === connectionId
+            ? { ...c, status: c.status } // revert to original status
+            : c
+        )
+      );
+      
       console.error('Failed to update connection status:', {
         connectionId,
         newStatus,
@@ -507,8 +563,22 @@ export default function Dashboard() {
     setResumeError(''); // Clear any previous errors
 
     try {
-      // Refresh user + resume data to build the payload
-      const freshUserData: any = await getUser(currentUser.uid);
+      // Use cached data if available, otherwise fetch fresh data
+      let freshUserData = cachedUserData;
+      let resumeData = cachedResumeData;
+      
+      if (!freshUserData || !resumeData) {
+        // console.log('🔄 No cached data available, fetching fresh data');
+        freshUserData = await getUser(currentUser.uid);
+        resumeData = await getResume(currentUser.uid);
+        
+        // Update cache
+        setCachedUserData(freshUserData);
+        setCachedResumeData(resumeData);
+      } else {
+        // console.log('⚡ Using cached data for faster connection finding');
+      }
+
       if (!freshUserData) {
         console.error('❌ Technical error - User data not found:', {
           userId: currentUser.uid,
@@ -518,7 +588,6 @@ export default function Dashboard() {
         );
       }
 
-      const resumeData: any = await getResume(currentUser.uid);
       if (!resumeData) {
         console.error('❌ Technical error - Resume data not found:', {
           userId: currentUser.uid,
@@ -528,21 +597,21 @@ export default function Dashboard() {
       }
 
       // Log the data we're about to send for debugging
-      console.log('🎯 Fresh User Data:', {
-        hasResumeAspects: !!freshUserData?.resumeAspects,
-        resumeAspects: freshUserData?.resumeAspects ? 'Present' : 'Missing',
-        resumeAspectsKeys: freshUserData?.resumeAspects ? Object.keys(freshUserData.resumeAspects) : 'N/A',
-        race: freshUserData?.race,
-        raceConverted: Array.isArray(freshUserData?.race) ? freshUserData.race.join(', ') : (freshUserData?.race || ''),
-        location: freshUserData?.location,
-      });
+      // console.log('🎯 Fresh User Data:', {
+      //   hasResumeAspects: !!freshUserData?.resumeAspects,
+      //   resumeAspects: freshUserData?.resumeAspects ? 'Present' : 'Missing',
+      //   resumeAspectsKeys: freshUserData?.resumeAspects ? Object.keys(freshUserData.resumeAspects) : 'N/A',
+      //   race: freshUserData?.race,
+      //   raceConverted: Array.isArray(freshUserData?.race) ? freshUserData.race.join(', ') : (freshUserData?.race || ''),
+      //   location: freshUserData?.location,
+      // });
       
       // Detailed logging of resumeAspects content
-      if (freshUserData?.resumeAspects) {
-        console.log('🎯 Resume Aspects Details:', JSON.stringify(freshUserData.resumeAspects, null, 2));
-      } else {
-        console.warn('⚠️ Frontend - resumeAspects is missing from user data, background info will not be included');
-      }
+      // if (freshUserData?.resumeAspects) {
+      //   console.log('🎯 Resume Aspects Details:', JSON.stringify(freshUserData.resumeAspects, null, 2));
+      // } else {
+      //   console.warn('⚠️ Frontend - resumeAspects is missing from user data, background info will not be included');
+      // }
 
       // Check if resumeAspects is missing or empty
       if (!freshUserData?.resumeAspects || Object.keys(freshUserData.resumeAspects).length === 0) {
@@ -551,10 +620,10 @@ export default function Dashboard() {
         );
         return;
       }
-      console.log('🎯 Resume Data:', {
-        hasText: !!resumeData?.text,
-        textLength: resumeData?.text?.length || 0,
-      });
+      // console.log('🎯 Resume Data:', {
+      //   hasText: !!resumeData?.text,
+      //   textLength: resumeData?.text?.length || 0,
+      // });
 
       // Extract a single goal title for the API
       const goalTitle =
@@ -562,11 +631,11 @@ export default function Dashboard() {
       const rawResumeText = resumeData?.text || '';
 
       // Debug personalization settings before sending
-      console.log('🎯 Frontend - Sending Personalization Settings:', {
-        enabled: personalizationSettings?.enabled,
-        professionalInterests: personalizationSettings?.professionalInterests,
-        personalInterests: personalizationSettings?.personalInterests,
-      });
+      // console.log('🎯 Frontend - Sending Personalization Settings:', {
+      //   enabled: personalizationSettings?.enabled,
+      //   professionalInterests: personalizationSettings?.professionalInterests,
+      //   personalInterests: personalizationSettings?.personalInterests,
+      // });
 
       // Make the streaming request
       const response = await fetch('/api/connections', {
@@ -600,8 +669,7 @@ export default function Dashboard() {
       // Set up streaming
       const reader = response.body?.getReader();
       const decoder = new TextDecoder();
-      let streamedConnections: Connection[] = [];
-      let finalConnections: Connection[] = [];
+      const streamedConnections: Connection[] = [];
 
       while (reader) {
         const { done, value } = await reader.read();
@@ -623,12 +691,19 @@ export default function Dashboard() {
 
                 case 'connection-found':
                   // Debug what's received from SSE
-                  console.log(`🎯 Frontend SSE - Received connection: ${data.connection?.name}`);
-                  console.log('  shared_professional_interests:', JSON.stringify(data.connection?.shared_professional_interests, null, 2));
-                  console.log('  shared_personal_interests:', JSON.stringify(data.connection?.shared_personal_interests, null, 2));
+                  // console.log(`🎯 Frontend SSE - Received connection: ${data.connection?.name}`);
+                  // console.log('  shared_professional_interests:', JSON.stringify(data.connection?.shared_professional_interests, null, 2));
+                  // console.log('  shared_personal_interests:', JSON.stringify(data.connection?.shared_personal_interests, null, 2));
                   
                   // Add connections as they're found and update UI immediately
                   streamedConnections.push(data.connection);
+                  
+                  // Save to Firebase immediately as connection is found
+                  if (currentUser) {
+                    addUserConnection(currentUser.uid, data.connection).catch((error: any) => {
+                      console.error('Failed to save connection immediately:', error);
+                    });
+                  }
                   
                   // Update UI to show connections as they arrive
                   setConnections((prev) => {
@@ -638,17 +713,27 @@ export default function Dashboard() {
                     }
                     return prev;
                   });
+                  
+                  // Also update allPendingConnections if this is a pending connection
+                  if (data.connection.status === 'not_contacted' || !data.connection.status) {
+                    setAllPendingConnections((prev) => {
+                      const existingIds = new Set(prev.map((c) => c.id));
+                      if (!existingIds.has(data.connection.id)) {
+                        return [...prev, data.connection];
+                      }
+                      return prev;
+                    });
+                  }
                   break;
 
                 case 'enrichment-progress':
                   // Optional: show enrichment progress
-                  console.log(`Enriching connections: ${data.progress}%`);
+                  // console.log(`Enriching connections: ${data.progress}%`);
                   break;
 
                 case 'complete':
-                  // This contains the final processed connections
-                  finalConnections = data.data.connections || [];
-                  // Don't move search bar here since it's already moved when first connection arrives
+                  // Connection finding process is complete
+                  // Connections are already saved individually via SSE
                   break;
 
                 case 'error':
@@ -662,23 +747,8 @@ export default function Dashboard() {
         }
       }
 
-      // Connections are already added during streaming, so just save them to Firestore
-      if (finalConnections.length > 0) {
-        const connectionsWithDefaults = finalConnections.map(conn => ({
-          ...conn,
-          status: conn.status || 'not_contacted',
-          lastUpdated: new Date().toISOString(),
-        }));
-        
-        updateDoc(doc(db, 'users', currentUser.uid), {
-          connections: arrayUnion(...connectionsWithDefaults)
-        }).catch((error) => {
-          console.error('❌ Technical error - Failed to save connections:', {
-            userId: currentUser.uid,
-            error: error instanceof Error ? error.message : String(error),
-          });
-        });
-      }
+      // Connections are already saved individually during streaming via SSE
+      // No need to save them again here to avoid duplicates
     } catch (error) {
       console.error('❌ Technical error - Failed to fetch connections:', {
         error: error instanceof Error ? error.message : String(error),
@@ -701,15 +771,21 @@ export default function Dashboard() {
       if (userDoc.exists()) {
         const userData = userDoc.data();
         setUserData(userData);
+        
+        // Clear cache to force fresh data on next connection search
+        setCachedUserData(null);
+        setCachedResumeData(null);
+        // console.log('🔄 Cleared cache after resume update');
+        
         if (userData.personalizationSettings) {
-          console.log('🎯 Loading Personalization Settings from Firebase:', {
-            enabled: userData.personalizationSettings.enabled,
-            professionalInterests: userData.personalizationSettings.professionalInterests,
-            personalInterests: userData.personalizationSettings.personalInterests,
-          });
+          // console.log('🎯 Loading Personalization Settings from Firebase:', {
+          //   enabled: userData.personalizationSettings.enabled,
+          //   professionalInterests: userData.personalizationSettings.professionalInterests,
+          //   personalInterests: userData.personalizationSettings.personalInterests,
+          // });
           setPersonalizationSettings(userData.personalizationSettings);
         } else {
-          console.log('⚠️ No personalization settings found in Firebase - using defaults');
+          // console.log('⚠️ No personalization settings found in Firebase - using defaults');
         }
       }
     } catch (error) {
@@ -886,7 +962,8 @@ export default function Dashboard() {
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
       handleSearch();
     }
   };
@@ -895,11 +972,11 @@ export default function Dashboard() {
     if (!currentUser) return;
 
     // Debug personalization form submission
-    console.log('🎯 Personalization Form - Saving Settings:', {
-      enabled: personalizationSettings.enabled,
-      professionalInterests: personalizationSettings.professionalInterests,
-      personalInterests: personalizationSettings.personalInterests,
-    });
+    // console.log('🎯 Personalization Form - Saving Settings:', {
+    //   enabled: personalizationSettings.enabled,
+    //   professionalInterests: personalizationSettings.professionalInterests,
+    //   personalInterests: personalizationSettings.personalInterests,
+    // });
 
     try {
       await setDoc(
@@ -909,7 +986,7 @@ export default function Dashboard() {
         },
         { merge: true }
       );
-      console.log('✅ Personalization settings saved to Firebase successfully');
+      // console.log('✅ Personalization settings saved to Firebase successfully');
       setPersonalizationModal(false);
     } catch (error) {
       console.error('❌ Error saving personalization settings:', error);
@@ -923,10 +1000,12 @@ export default function Dashboard() {
     setConnections([]);
   };
 
-  useEffect(
-    () => console.log('Uploaded changed to: ' + uploading),
-    [uploading]
-  );
+  // useEffect(
+  //   () => console.log('Uploaded changed to: ' + uploading),
+  //   [uploading]
+  // );
+
+  // No auth blocking - just render dashboard
 
   return (
     <>
@@ -961,12 +1040,14 @@ export default function Dashboard() {
             <button
               onClick={() => {
                 setShowPendingModal(true);
-                fetchAllPendingConnections();
               }}
               className='bg-[#2a2a2a] hover:bg-[#3a3a3a] text-gray-300 hover:text-white px-4 py-2 rounded-lg text-sm transition-colors flex items-center gap-2 border border-gray-700'
             >
               <Clock className='w-4 h-4' />
-              View {allPendingPeople.length + allPendingPrograms.length + ' '}
+              View {pendingConnectionsLoaded 
+                ? `${allPendingPeople.length + allPendingPrograms.length} `
+                : ''
+              }
               Pending Connections
             </button>
             <BorderMagicButton
@@ -985,12 +1066,14 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {loading ? (
-          <div className='text-gray-400 text-center'>
+        {loading && (
+          <div className='text-gray-400 text-center mb-4'>
             Loading your profile...
           </div>
-        ) : (
-          <>
+        )}
+        
+        {/* Always show dashboard content */}
+        <>
             {/* Search Section */}
             <div
               className={`transition-all duration-500 ${
@@ -1010,13 +1093,22 @@ export default function Dashboard() {
                   </h2>
                 )}
                 <div className='relative'>
-                  <input
-                    type='text'
+                  <textarea
                     value={searchGoal}
                     onChange={(e) => setSearchGoal(e.target.value)}
                     onKeyDown={handleKeyDown}
                     placeholder='Enter your career goal to find relevant connections...'
-                    className='w-full px-6 py-4 bg-[#1a1a1a] border border-gray-700 rounded-2xl text-white placeholder-gray-400 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 text-lg'
+                    rows={1}
+                    className='w-full px-6 py-4 pr-16 bg-[#1a1a1a] border border-gray-700 rounded-2xl text-white placeholder-gray-400 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 text-lg resize-none overflow-hidden min-h-[56px]'
+                    style={{
+                      height: 'auto',
+                      minHeight: '56px',
+                    }}
+                    onInput={(e) => {
+                      const target = e.target as HTMLTextAreaElement;
+                      target.style.height = 'auto';
+                      target.style.height = Math.max(56, target.scrollHeight) + 'px';
+                    }}
                   />
                   <button
                     onClick={handleSearch}
@@ -1133,7 +1225,6 @@ export default function Dashboard() {
               </div>
             )}
           </>
-        )}
 
         {/* Update Resume Button - Bottom Right */}
         <div className='fixed bottom-6 right-6'>
@@ -1210,10 +1301,10 @@ export default function Dashboard() {
             <div className='bg-[#1a1a1a] rounded-2xl p-6 w-full max-w-4xl max-h-[80vh] border border-gray-700 overflow-hidden'>
               <div className='flex justify-between items-center mb-6'>
                 <h3 className='text-white text-xl font-bold'>
-                  Pending{' '}
-                  {pendingModalView === 'people'
-                    ? `People (${allPendingPeople.length})`
-                    : `Programs (${allPendingPrograms.length})`}
+                  Pending Connections ({allPendingPeople.length + allPendingPrograms.length})
+                  <span className='text-sm text-gray-400 ml-2'>
+                    {allPendingPeople.length} people, {allPendingPrograms.length} programs
+                  </span>
                 </h3>
                 <button
                   onClick={() => setShowPendingModal(false)}
@@ -1393,5 +1484,13 @@ export default function Dashboard() {
         )}
       </div>
     </>
+  );
+}
+
+export default function Dashboard() {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <DashboardContent />
+    </Suspense>
   );
 }

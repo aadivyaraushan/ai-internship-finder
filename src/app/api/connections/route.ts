@@ -1,13 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { findConnectionsIteratively } from './services/connectionFinderService';
-import { enrichPersonConnection } from './services/profileEnrichmentService';
-import { enrichProgramConnection } from './services/programEnrichmentService';
 import { postProcessConnections } from './services/postProcessConnectionsService';
 import { Connection } from '@/lib/firestoreHelpers';
 import { EventEmitter } from 'events';
 import { ConnectionPreferences } from '@/components/ui/ConnectionPreferencesSelector';
 import { ResumeAspects } from './services/resumeAnalysisService';
-import { getResume } from '@/lib/firestoreHelpers';
 
 // Create a global event emitter (consider using a request-specific emitter in production)
 const globalEmitter = new EventEmitter();
@@ -29,7 +26,7 @@ type ConnectionRequest = {
 };
 
 export async function POST(req: Request) {
-  console.log('\n🚀 Starting connection search process');
+  // console.log('\n🚀 Starting connection search process');
 
   const encoder = new TextEncoder();
   let streamClosed = false;
@@ -43,21 +40,20 @@ export async function POST(req: Request) {
           goalTitle,
           preferences,
           userId,
-          race,
           resumeAspects,
           rawResumeText,
           personalizationSettings,
         } = body;
 
         // Debug personalization settings
-        console.log('🎯 Personalization Settings Received:', {
-          enabled: personalizationSettings?.enabled,
-          professionalInterests: personalizationSettings?.professionalInterests,
-          personalInterests: personalizationSettings?.personalInterests,
-        });
+        // console.log('🎯 Personalization Settings Received:', {
+        //   enabled: personalizationSettings?.enabled,
+        //   professionalInterests: personalizationSettings?.professionalInterests,
+        //   personalInterests: personalizationSettings?.personalInterests,
+        // });
 
         // Helper to send SSE messages
-        const sendSSE = (data: any) => {
+        const sendSSE = (data: Record<string, unknown>) => {
           if (!streamClosed) {
             controller.enqueue(
               encoder.encode(`data: ${JSON.stringify(data)}\n\n`)
@@ -85,11 +81,11 @@ export async function POST(req: Request) {
         });
         const aspects = resumeAspects;
         
-        console.log('🎯 API - Raw resumeAspects received:', {
-          exists: !!aspects,
-          isEmpty: !aspects || Object.keys(aspects).length === 0,
-          keys: aspects ? Object.keys(aspects) : 'null',
-        });
+        // console.log('🎯 API - Raw resumeAspects received:', {
+        //   exists: !!aspects,
+        //   isEmpty: !aspects || Object.keys(aspects).length === 0,
+        //   keys: aspects ? Object.keys(aspects) : 'null',
+        // });
         
         if (!aspects) {
           sendSSE({ type: 'error', message: 'No resume aspects provided' });
@@ -99,13 +95,13 @@ export async function POST(req: Request) {
         
         // Check if aspects is empty object
         if (Object.keys(aspects).length === 0) {
-          console.warn('⚠️ API - resumeAspects is an empty object, background info will be missing');
+          // console.warn('⚠️ API - resumeAspects is an empty object, background info will be missing');
           sendSSE({ type: 'error', message: 'Resume aspects are empty. Please make sure your resume has been properly analyzed.' });
           controller.close();
           return;
         }
         
-        logAspects(aspects);
+        // logAspects(aspects);
 
         // Step 1: Start finding connections
         sendSSE({
@@ -113,7 +109,7 @@ export async function POST(req: Request) {
           step: 1,
           message: 'Finding 1st connection...',
         });
-        console.log('preferences: ', preferences);
+        // console.log('preferences: ', preferences);
         
         const found: Connection[] = [];
         let connectionCount = 0;
@@ -123,15 +119,14 @@ export async function POST(req: Request) {
           goalTitle,
           connectionAspects: aspects,
           preferences,
-          race,
           personalizationSettings,
         })) {
           connectionCount++;
           found.push(connection);
           
-          console.log(`🎯 Sending connection ${connectionCount} to frontend - ${connection.name}:`);
-          console.log('  shared_professional_interests:', JSON.stringify(connection.shared_professional_interests, null, 2));
-          console.log('  shared_personal_interests:', JSON.stringify(connection.shared_personal_interests, null, 2));
+          // console.log(`🎯 Sending connection ${connectionCount} to frontend - ${connection.name}:`);
+          // console.log('  shared_professional_interests:', JSON.stringify(connection.shared_professional_interests, null, 2));
+          // console.log('  shared_personal_interests:', JSON.stringify(connection.shared_personal_interests, null, 2));
           
           // Send connection found event
           const sseMessage = {
@@ -141,7 +136,7 @@ export async function POST(req: Request) {
             total: 5, // We generate 5 connections
           };
           
-          console.log('🎯 Full SSE message being sent:', JSON.stringify(sseMessage, null, 2));
+          // console.log('🎯 Full SSE message being sent:', JSON.stringify(sseMessage, null, 2));
           sendSSE(sseMessage);
           
           // Send step update for next connection (if not the last one)
@@ -205,15 +200,15 @@ export async function POST(req: Request) {
 
         // Close the stream
         controller.close();
-      } catch (err: any) {
-        console.error('❌ Critical error in connection search:', err);
+      } catch (err: unknown) {
+        // console.error('❌ Critical error in connection search:', err);
         if (!streamClosed) {
           controller.enqueue(
             encoder.encode(
               `data: ${JSON.stringify({
                 type: 'error',
                 message: 'Failed to fetch connections',
-                error: err.message,
+                error: err instanceof Error ? err.message : 'Unknown error',
               })}\n\n`
             )
           );
@@ -255,11 +250,11 @@ export async function GET(req: NextRequest) {
     Connection: 'keep-alive',
   });
 
-  const listener = (event: any) => {
+  const listener = (event: Record<string, unknown>) => {
     const eventName = event.type;
     const data = JSON.stringify(event);
     const sseMessage = `event: ${eventName}\ndata: ${data}\n\n`;
-    console.log('Sending SSE:', sseMessage); // Temporary debug
+    // console.log('Sending SSE:', sseMessage); // Temporary debug
     writer.write(encoder.encode(sseMessage));
   };
 
@@ -279,16 +274,4 @@ export async function GET(req: NextRequest) {
 }
 
 // ---------------------------------------------------------------------------
-function errorResponse(status: number, message: string, details?: string) {
-  return NextResponse.json(
-    { error: message, ...(details && { details }) },
-    { status, headers: { 'Content-Type': 'application/json' } }
-  );
-}
 
-function logAspects(aspects: any) {
-  console.log('Connection aspects details:');
-  for (const [k, v] of Object.entries(aspects)) {
-    console.log(`- ${k}:`, JSON.stringify(v, null, 2));
-  }
-}

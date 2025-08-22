@@ -431,16 +431,21 @@ Return ONLY valid JSON matching this exact structure:
 `;
 
       // First call: Let AI think and reason, then provide JSON
-      const rawResponse = await analyzeResumeWithAI(analysisPrompt, 'gpt-4.1-mini', 3000);
+      const rawResponse = await analyzeResumeWithAI(analysisPrompt);
 
       // Second call: Parse the JSON from the response using schema validation
       const parsedResult = await parseWithSchema(
         'Parse the JSON put at the end of the following response: \n\n' + rawResponse,
-        CombinedResumeSchema,
-        'CombinedResumeAnalysis',
-        'gpt-4.1-nano',
-        2000
-      );
+        CombinedResumeSchema
+      ) as {
+        education?: unknown[];
+        skills?: unknown[];
+        personal_projects?: unknown[];
+        workex?: unknown[];
+        linkedin?: unknown;
+        per_web?: unknown;
+        connection_aspects?: unknown;
+      };
       const structuredData = {
         education: parsedResult.education || [],
         skills: parsedResult.skills || [],

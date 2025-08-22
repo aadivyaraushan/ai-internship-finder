@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { signInWithEmailAndPassword, onAuthStateChanged } from 'firebase/auth';
 import { auth } from '@/lib/firebase';
+import { getUser } from '@/lib/firestoreHelpers';
 import { useRouter } from 'next/navigation';
 import { BackgroundGradient } from '@/components/ui/BackgroundGradient';
 import { StatefulButton } from '@/components/ui/StatefulButton';
@@ -16,12 +17,21 @@ export default function Login() {
   const router = useRouter();
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      setAuthLoading(false);
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
-        console.log('User is already logged in');
-        router.push('/dashboard');
+        try {
+          const userData = await getUser(user.uid);
+          if (userData && userData.hasResume) {
+            router.push('/dashboard');
+          } else {
+            router.push('/upload-resume');
+          }
+        } catch (error) {
+          console.error('Error checking user data:', error);
+          router.push('/upload-resume');
+        }
       }
+      setAuthLoading(false);
     });
 
     return () => unsubscribe();
@@ -52,8 +62,14 @@ export default function Login() {
     setLoading(true);
 
     try {
-      await signInWithEmailAndPassword(auth, email, password);
-      router.push('/dashboard'); // Redirect to dashboard after successful login
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      const userData = await getUser(userCredential.user.uid);
+      
+      if (userData && userData.hasResume) {
+        router.push('/dashboard');
+      } else {
+        router.push('/upload-resume');
+      }
     } catch (err: any) {
       setError(getErrorMessage(err.code));
     } finally {

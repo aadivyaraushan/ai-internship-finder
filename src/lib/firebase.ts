@@ -16,6 +16,13 @@ const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const db = getFirestore(app);
 
+// Add debug logging to see if Firebase is properly initialized
+console.log('Firebase initialized with config:', {
+  apiKey: firebaseConfig.apiKey ? 'present' : 'missing',
+  authDomain: firebaseConfig.authDomain ? 'present' : 'missing',
+  projectId: firebaseConfig.projectId ? 'present' : 'missing',
+});
+
 // Deprecated: Use onAuthStateChanged instead to avoid hydration issues
 export const checkAuth = () => {
   const user = auth.currentUser;
@@ -29,7 +36,7 @@ export const getCurrentUser = () => {
 };
 
 // Promise-based auth state check
-export const waitForAuthInit = (): Promise<any> => {
+export const waitForAuthInit = (): Promise<unknown> => {
   return new Promise((resolve) => {
     const unsubscribe = auth.onAuthStateChanged((user) => {
       unsubscribe();

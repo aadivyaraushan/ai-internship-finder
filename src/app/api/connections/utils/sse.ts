@@ -5,7 +5,7 @@ export class SSEService {
     const stream = new PassThrough();
     return {
       stream,
-      sendEvent(event: string, data: any) {
+      sendEvent(event: string, data: unknown) {
         stream.write(`event: ${event}\n`);
         stream.write(`data: ${JSON.stringify(data)}\n\n`);
       },

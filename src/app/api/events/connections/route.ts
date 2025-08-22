@@ -1,7 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-
-// Global array to hold all the clients
-let clients: any[] = [];
+import { addClient, removeClient } from './eventBroadcaster';
 
 export async function GET(req: NextRequest) {
   // Set headers for SSE
@@ -15,7 +13,7 @@ export async function GET(req: NextRequest) {
     start(controller) {
       // Send a comment to keep the connection alive
       const sendComment = () => {
-        controller.enqueue(`: ${Date.now()}\n\n`);
+        controller.enqueue(new TextEncoder().encode(`: ${Date.now()}\n\n`));
       };
       const intervalId = setInterval(sendComment, 30000);
 
@@ -25,23 +23,15 @@ export async function GET(req: NextRequest) {
         controller,
       };
 
-      clients.push(newClient);
+      addClient(newClient);
 
       // When the client closes the connection
       req.signal.addEventListener('abort', () => {
         clearInterval(intervalId);
-        clients = clients.filter(client => client.id !== clientId);
+        removeClient(clientId);
       });
     },
   });
 
   return new NextResponse(stream, { headers });
-}
-
-// Function to broadcast events to all clients
-export function broadcastEvent(data: any) {
-  clients.forEach(client => {
-    const message = `data: ${JSON.stringify(data)}\n\n`;
-    client.controller.enqueue(new TextEncoder().encode(message));
-  });
 }

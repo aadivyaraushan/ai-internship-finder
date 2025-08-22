@@ -14,7 +14,7 @@ import {
 export async function enrichProgramConnection(
   conn: Connection
 ): Promise<Connection> {
-  console.log(` Enriching program: ${conn.name}`);
+  // console.log(` Enriching program: ${conn.name}`);
 
   // Program website handling
   try {
@@ -31,8 +31,8 @@ export async function enrichProgramConnection(
         conn.website_verified = true;
       }
     }
-  } catch (err) {
-    console.warn('Program website enrichment failed:', err);
+  } catch {
+    // console.warn('Program website enrichment failed:', err);
   }
 
   return conn;
