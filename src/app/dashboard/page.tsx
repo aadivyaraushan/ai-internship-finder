@@ -27,6 +27,7 @@ import { ArchiveConnectionFilters } from '@/components/dashboard/ArchiveConnecti
 import { useRouter, useSearchParams } from 'next/navigation';
 import { fetchUserData } from '@/lib/frontendUtils';
 import { AdBlockerWarning } from '@/components/ui/AdBlockerWarning';
+import { analytics } from '@/lib/analytics';
 import { Search, Sparkles, Upload, Clock } from 'lucide-react';
 
 interface Goal {
@@ -131,6 +132,7 @@ function DashboardContent() {
 
   const handleSignOut = async () => {
     try {
+      analytics.trackLogout();
       await signOut(auth);
       router.push('/login');
     } catch (error) {
@@ -480,6 +482,21 @@ function DashboardContent() {
   ): Promise<void> => {
     if (!currentUser) return;
     try {
+      // Find the connection to get its current status and type
+      const connection = connections.find(c => c.id === connectionId);
+      const oldStatus = connection?.status || 'not_contacted';
+      const connectionType = connection?.type || 'person';
+      
+      // Track status change
+      analytics.trackConnectionStatusChange(oldStatus, newStatus || 'not_contacted', connectionType as 'person' | 'program');
+      
+      // Track conversion events
+      if (newStatus === 'internship_acquired') {
+        analytics.trackSuccessfulInternshipAcquisition();
+      } else if (oldStatus === 'not_contacted' && (newStatus === 'email_sent' || newStatus === 'response_received')) {
+        analytics.trackFirstConnectionContacted();
+      }
+      
       // Optimistic UI update
       setConnections((prev) =>
         prev.map((c) =>
@@ -562,6 +579,11 @@ function DashboardContent() {
     if (!currentUser) return;
     setFindingMore(true);
     setResumeError(''); // Clear any previous errors
+
+    // Track connection search start
+    const searchStartTime = Date.now();
+    const goalText = typeof goals === 'string' ? goals : (goals[0]?.title || '');
+    analytics.trackConnectionSearch(goalText, preferences);
 
     try {
       // Use cached data if available, otherwise fetch fresh data
@@ -696,6 +718,9 @@ function DashboardContent() {
                   // console.log('  shared_professional_interests:', JSON.stringify(data.connection?.shared_professional_interests, null, 2));
                   // console.log('  shared_personal_interests:', JSON.stringify(data.connection?.shared_personal_interests, null, 2));
                   
+                  // Track connection found
+                  analytics.trackConnectionFound(data.connection?.type || 'person', streamedConnections.length + 1);
+                  
                   // Add connections as they're found and update UI immediately
                   streamedConnections.push(data.connection);
                   
@@ -735,6 +760,8 @@ function DashboardContent() {
                 case 'complete':
                   // Connection finding process is complete
                   // Connections are already saved individually via SSE
+                  const searchDuration = Date.now() - searchStartTime;
+                  analytics.trackConnectionFindingTime(searchDuration);
                   break;
 
                 case 'error':
@@ -914,11 +941,15 @@ function DashboardContent() {
         hasResume: true,
       });
       setUploadSuccess(true);
+      analytics.trackResumeUpload(true);
+      analytics.trackResumeAnalysis(true);
       setResumeError(''); // Clear resume error on successful upload
       setFile(null); // Optionally clear file
       await refreshUserData();
       window.location.reload();
     } catch (err) {
+      analytics.trackResumeUpload(false);
+      analytics.trackError('resume_upload', err instanceof Error ? err.message : 'Unknown error');
       setCurrentStatus('Error during upload');
       updateStep(
         steps.find((step) => step.status === 'in_progress')?.id || 'prepare',
@@ -980,6 +1011,10 @@ function DashboardContent() {
     // });
 
     try {
+      if (personalizationSettings.enabled) {
+        analytics.trackPersonalizationEnabled();
+      }
+      
       await setDoc(
         doc(db, 'users', currentUser.uid),
         {
@@ -987,6 +1022,8 @@ function DashboardContent() {
         },
         { merge: true }
       );
+      
+      analytics.trackPersonalizationSaved();
       // console.log('✅ Personalization settings saved to Firebase successfully');
       setPersonalizationModal(false);
     } catch (error) {
@@ -1042,6 +1079,7 @@ function DashboardContent() {
           <div className='flex items-center gap-4'>
             <button
               onClick={() => {
+                analytics.trackModalOpened('pending_connections');
                 setShowPendingModal(true);
               }}
               className='bg-[#2a2a2a] hover:bg-[#3a3a3a] text-gray-300 hover:text-white px-4 py-2 rounded-lg text-sm transition-colors flex items-center gap-2 border border-gray-700'
@@ -1054,7 +1092,10 @@ function DashboardContent() {
               Pending Connections
             </button>
             <BorderMagicButton
-              onClick={() => setPersonalizationModal(true)}
+              onClick={() => {
+                analytics.trackModalOpened('personalization');
+                setPersonalizationModal(true);
+              }}
               className='flex items-center gap-2 font-medium rounded-lg'
             >
               <Sparkles className='w-4 h-4' />

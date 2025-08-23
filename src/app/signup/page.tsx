@@ -11,6 +11,7 @@ import { useRouter } from 'next/navigation';
 import { ShootingStars } from '@/components/ui/ShootingStars';
 import { StarsBackground } from '@/components/ui/StarsBackground';
 import { AdBlockerWarning } from '@/components/ui/AdBlockerWarning';
+import { analytics } from '@/lib/analytics';
 
 export default function Signup() {
   const [email, setEmail] = useState('');
@@ -299,6 +300,8 @@ export default function Signup() {
       );
       const user = userCredential.user;
 
+      analytics.trackSignup('email');
+      
       // Create initial Firestore document
       await createOrUpdateUser(user.uid, {
         email: email,
@@ -315,6 +318,7 @@ export default function Signup() {
 
       router.push('/upload-resume');
     } catch (err: any) {
+      analytics.trackError('signup', err.message || 'Signup failed');
       setError(getErrorMessage(err.code));
     } finally {
       setLoading(false);

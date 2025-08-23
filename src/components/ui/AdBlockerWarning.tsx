@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { AlertTriangle, X } from 'lucide-react';
+import { analytics } from '@/lib/analytics';
 
 export function AdBlockerWarning() {
   const [adBlockerDetected, setAdBlockerDetected] = useState(false);
@@ -49,6 +50,7 @@ export function AdBlockerWarning() {
           // Check localStorage for previous dismissal
           const wasDismissed = localStorage.getItem('adBlockerWarningDismissed');
           if (isBlocked && !wasDismissed) {
+            analytics.trackAdBlockerDetected();
             setAdBlockerDetected(true);
           }
         }, 100);
@@ -60,6 +62,7 @@ export function AdBlockerWarning() {
   }, []);
 
   const handleDismiss = () => {
+    analytics.trackAdBlockerWarningDismissed();
     setDismissed(true);
     setAdBlockerDetected(false);
     // Remember dismissal for 1 hour

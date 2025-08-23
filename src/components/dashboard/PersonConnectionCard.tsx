@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { getBackgroundColor, getInitials } from '@/lib/utils';
 import { Connection } from '@/lib/firestoreHelpers';
+import { analytics } from '@/lib/analytics';
 
 interface PersonConnectionCardProps {
   connection: Connection;
@@ -77,6 +78,10 @@ export function PersonConnectionCard({
               target='_blank'
               rel='noopener noreferrer'
               className='text-blue-500 text-xs'
+              onClick={() => {
+                const contactType = connection.verified_profile_url ? 'linkedin' : 'email';
+                analytics.trackContactClicked(contactType, 'person');
+              }}
             >
               Contact
             </a>
@@ -146,7 +151,10 @@ export function PersonConnectionCard({
         {/* AI Outreach Message Button */}
         <div className='mt-4'>
           <button
-            onClick={() => setShowOutreach(!showOutreach)}
+            onClick={() => {
+              analytics.trackOutreachMessageViewed('person');
+              setShowOutreach(!showOutreach);
+            }}
             className='w-full bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white text-xs py-2 px-3 rounded-lg transition-all duration-200 flex items-center justify-center gap-2 font-medium'
           >
             <MessageSquare className='w-3 h-3' />

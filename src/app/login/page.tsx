@@ -8,6 +8,7 @@ import { useRouter } from 'next/navigation';
 import { BackgroundGradient } from '@/components/ui/BackgroundGradient';
 import { StatefulButton } from '@/components/ui/StatefulButton';
 import { AdBlockerWarning } from '@/components/ui/AdBlockerWarning';
+import { analytics } from '@/lib/analytics';
 
 export default function Login() {
   const [email, setEmail] = useState('');
@@ -64,6 +65,7 @@ export default function Login() {
 
     try {
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      analytics.trackLogin('email');
       const userData = await getUser(userCredential.user.uid);
       
       if (userData && userData.hasResume) {
@@ -72,6 +74,7 @@ export default function Login() {
         router.push('/upload-resume');
       }
     } catch (err: any) {
+      analytics.trackError('login', err.message || 'Login failed');
       setError(getErrorMessage(err.code));
     } finally {
       setLoading(false);
