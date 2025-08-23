@@ -10,6 +10,7 @@ import { createOrUpdateUser } from '@/lib/firestoreHelpers';
 import { useRouter } from 'next/navigation';
 import { ShootingStars } from '@/components/ui/ShootingStars';
 import { StarsBackground } from '@/components/ui/StarsBackground';
+import { AdBlockerWarning } from '@/components/ui/AdBlockerWarning';
 
 export default function Signup() {
   const [email, setEmail] = useState('');
@@ -331,7 +332,9 @@ export default function Signup() {
   }
 
   return (
-    <div className='flex flex-col min-h-screen flex items-center justify-center bg-neutral-950 p-4'>
+    <>
+      <AdBlockerWarning />
+      <div className='flex flex-col min-h-screen flex items-center justify-center bg-neutral-950 p-4'>
       {/* <BackgroundGradient className='w-full max-w-lg bg-neutral-900 p-8 rounded-3xl'> */}
       <h1 className='heading text-white text-2xl font-bold text-center mb-6'>
         Sign Up
@@ -503,6 +506,7 @@ export default function Signup() {
           Log in
         </Link>
       </p>
-    </div>
+      </div>
+    </>
   );
 }

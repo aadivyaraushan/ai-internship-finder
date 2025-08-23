@@ -25,12 +25,12 @@ export function PersonConnectionCard({
   const [showBackground, setShowBackground] = useState(false);
   const [showOutreach, setShowOutreach] = useState(false);
 
-  // Use actual data from connection object
+  // Use actual data from connection object - with null safety
   const sharedProfessionalBackground =
-    connection.shared_background_points || [];
+    connection?.shared_background_points || [];
   const sharedProfessionalInterests =
-    connection.shared_professional_interests || [];
-  const sharedPersonalInterests = connection.shared_personal_interests || [];
+    connection?.shared_professional_interests || [];
+  const sharedPersonalInterests = connection?.shared_personal_interests || [];
 
   // Debug connection data (only on client side to prevent hydration issues)
   if (typeof window !== 'undefined') {

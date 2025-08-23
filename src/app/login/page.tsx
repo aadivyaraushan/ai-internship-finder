@@ -7,6 +7,7 @@ import { getUser } from '@/lib/firestoreHelpers';
 import { useRouter } from 'next/navigation';
 import { BackgroundGradient } from '@/components/ui/BackgroundGradient';
 import { StatefulButton } from '@/components/ui/StatefulButton';
+import { AdBlockerWarning } from '@/components/ui/AdBlockerWarning';
 
 export default function Login() {
   const [email, setEmail] = useState('');
@@ -88,7 +89,9 @@ export default function Login() {
   }
 
   return (
-    <div className='flex flex-col min-h-screen flex items-center justify-center bg-neutral-950 p-4'>
+    <>
+      <AdBlockerWarning />
+      <div className='flex flex-col min-h-screen flex items-center justify-center bg-neutral-950 p-4'>
       {/* <BackgroundGradient className='w-full max-w-md bg-neutral-900 p-8 rounded-3xl'> */}
       <h1 className='text-2xl font-bold text-white mb-6 text-center'>Login</h1>
       {error && (
@@ -124,6 +127,7 @@ export default function Login() {
         </Link>
       </p>
       {/* </BackgroundGradient> */}
-    </div>
+      </div>
+    </>
   );
 }

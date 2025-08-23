@@ -26,6 +26,7 @@ import { ConnectionFilters } from '@/components/dashboard/ConnectionFilters';
 import { ArchiveConnectionFilters } from '@/components/dashboard/ArchiveConnectionFilters';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { fetchUserData } from '@/lib/frontendUtils';
+import { AdBlockerWarning } from '@/components/ui/AdBlockerWarning';
 import { Search, Sparkles, Upload, Clock } from 'lucide-react';
 
 interface Goal {
@@ -1009,6 +1010,8 @@ function DashboardContent() {
 
   return (
     <>
+      {/* Ad Blocker Warning */}
+      <AdBlockerWarning />
 
       {/* Show multistep loader during upload */}
       {uploading && (
