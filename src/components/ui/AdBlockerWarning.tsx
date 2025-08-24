@@ -9,84 +9,31 @@ export function AdBlockerWarning() {
   const [dismissed, setDismissed] = useState(false);
 
   useEffect(() => {
-    // Multiple detection methods for better accuracy
-    const detectAdBlocker = async () => {
-      let detectionResults = {
-        gaBlocked: false,
-        elementBlocked: false,
-        firebaseBlocked: false
-      };
+    const detectAdBlocker = () => {
+      // Simple and reliable ad blocker detection using common blocked elements
+      const testElement = document.createElement('div');
+      testElement.innerHTML = '&nbsp;';
+      testElement.className = 'adsbox';
+      testElement.style.position = 'absolute';
+      testElement.style.left = '-9999px';
+      testElement.style.height = '1px';
+      testElement.style.width = '1px';
+      document.body.appendChild(testElement);
 
-      // Method 1: Try to make a request to Google Analytics (commonly blocked)
-      const testGoogleAnalytics = () => {
-        return new Promise<boolean>((resolve) => {
-          const testImg = new Image();
-          testImg.onload = () => resolve(false);
-          testImg.onerror = () => resolve(true);
-          testImg.src = 'https://www.google-analytics.com/analytics.js?' + Math.random();
-          // Timeout to avoid hanging
-          setTimeout(() => resolve(false), 3000);
-        });
-      };
+      setTimeout(() => {
+        const isBlocked = testElement.offsetHeight === 0;
+        document.body.removeChild(testElement);
 
-      // Method 2: Check for common ad blocker patterns
-      const testElementBlocking = () => {
-        return new Promise<boolean>((resolve) => {
-          const testElement = document.createElement('div');
-          testElement.innerHTML = '&nbsp;';
-          testElement.className = 'adsbox';
-          testElement.style.position = 'absolute';
-          testElement.style.left = '-9999px';
-          document.body.appendChild(testElement);
-
-          setTimeout(() => {
-            const isBlocked = testElement.offsetHeight === 0 || testElement.offsetWidth === 0;
-            document.body.removeChild(testElement);
-            resolve(isBlocked);
-          }, 100);
-        });
-      };
-
-      // Method 3: Try to detect if Firebase requests might be blocked
-      const testFirebaseAccess = () => {
-        return new Promise<boolean>((resolve) => {
-          const firestoreTest = document.createElement('script');
-          firestoreTest.onload = () => resolve(false);
-          firestoreTest.onerror = () => resolve(true);
-          firestoreTest.src = 'https://www.gstatic.com/firebasejs/9.0.0/firebase-app.js';
-          document.head.appendChild(firestoreTest);
-          
-          // Timeout and cleanup
-          setTimeout(() => {
-            document.head.removeChild(firestoreTest);
-            resolve(false);
-          }, 3000);
-        });
-      };
-
-      // Run all tests
-      try {
-        detectionResults.gaBlocked = await testGoogleAnalytics();
-        detectionResults.elementBlocked = await testElementBlocking();
-        detectionResults.firebaseBlocked = await testFirebaseAccess();
-      } catch (error) {
-        console.log('Ad blocker detection error:', error);
-        return;
-      }
-
-      // Only show warning if at least 2 out of 3 methods detect blocking
-      const blockingCount = Object.values(detectionResults).filter(Boolean).length;
-      const isBlocked = blockingCount >= 2;
-
-      // Check localStorage for previous dismissal
-      const wasDismissed = localStorage.getItem('adBlockerWarningDismissed');
-      const dismissTime = wasDismissed ? parseInt(wasDismissed) : 0;
-      const oneHourAgo = Date.now() - (60 * 60 * 1000);
-      
-      if (isBlocked && (!wasDismissed || dismissTime < oneHourAgo)) {
-        analytics.trackAdBlockerDetected();
-        setAdBlockerDetected(true);
-      }
+        // Check localStorage for previous dismissal
+        const wasDismissed = localStorage.getItem('adBlockerWarningDismissed');
+        const dismissTime = wasDismissed ? parseInt(wasDismissed) : 0;
+        const oneHourAgo = Date.now() - (60 * 60 * 1000);
+        
+        if (isBlocked && (!wasDismissed || dismissTime < oneHourAgo)) {
+          analytics.trackAdBlockerDetected();
+          setAdBlockerDetected(true);
+        }
+      }, 100);
     };
 
     // Small delay to ensure DOM is ready
