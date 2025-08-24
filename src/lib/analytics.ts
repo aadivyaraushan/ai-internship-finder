@@ -1,24 +1,39 @@
-import { getAnalytics, logEvent, setUserId, setUserProperties } from 'firebase/analytics';
-import { app } from './firebase';
+// Import fallback analytics
+import { 
+  simpleAnalytics, 
+  initializeSimpleAnalytics,
+  setSimpleAnalyticsUserId,
+  setSimpleAnalyticsUserProperties 
+} from './analytics-simple';
 
-// Initialize Firebase Analytics
+// Firebase Analytics - only import on client side
+let Analytics: any = null;
 let firebaseAnalyticsInstance: any = null;
+let useFirebaseAnalytics = false;
 
-export const initializeAnalytics = () => {
-  if (typeof window !== 'undefined') {
+export const initializeAnalytics = async () => {
+  if (typeof window !== 'undefined' && !firebaseAnalyticsInstance) {
     try {
+      // Try to initialize Firebase Analytics
+      const { getAnalytics, logEvent, setUserId, setUserProperties } = await import('firebase/analytics');
+      const { app } = await import('./firebase');
+      
+      Analytics = { logEvent, setUserId, setUserProperties };
       firebaseAnalyticsInstance = getAnalytics(app);
-      console.log('Firebase Analytics initialized');
+      useFirebaseAnalytics = true;
+      console.log('✅ Firebase Analytics initialized');
     } catch (error) {
-      console.error('Failed to initialize Firebase Analytics:', error);
+      console.warn('Firebase Analytics failed, using simple analytics fallback:', error);
+      initializeSimpleAnalytics();
+      useFirebaseAnalytics = false;
     }
   }
 };
 
 // Set user ID for retention tracking (automatically links with Firebase Auth)
 export const setAnalyticsUserId = (userId: string) => {
-  if (firebaseAnalyticsInstance) {
-    setUserId(firebaseAnalyticsInstance, userId);
+  if (firebaseAnalyticsInstance && Analytics) {
+    Analytics.setUserId(firebaseAnalyticsInstance, userId);
   }
 };
 
@@ -30,15 +45,15 @@ export const setAnalyticsUserProperties = (properties: {
   first_search_date?: string;
   total_connections_found?: number;
 }) => {
-  if (firebaseAnalyticsInstance) {
-    setUserProperties(firebaseAnalyticsInstance, properties);
+  if (firebaseAnalyticsInstance && Analytics) {
+    Analytics.setUserProperties(firebaseAnalyticsInstance, properties);
   }
 };
 
 // Helper function to log events
 const trackEvent = (eventName: string, parameters?: { [key: string]: any }) => {
-  if (firebaseAnalyticsInstance) {
-    logEvent(firebaseAnalyticsInstance, eventName, parameters);
+  if (firebaseAnalyticsInstance && Analytics) {
+    Analytics.logEvent(firebaseAnalyticsInstance, eventName, parameters);
   }
 };
 

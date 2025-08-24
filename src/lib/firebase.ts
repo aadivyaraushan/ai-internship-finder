@@ -1,6 +1,7 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
+import { getAnalytics } from 'firebase/analytics';
 
 const firebaseConfig = {
   // Replace these with your Firebase config values
@@ -15,6 +16,9 @@ const firebaseConfig = {
 export const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const db = getFirestore(app);
+
+// Initialize Analytics - only on client side
+export const analytics = typeof window !== 'undefined' ? getAnalytics(app) : null;
 
 // Add debug logging to see if Firebase is properly initialized
 console.log('Firebase initialized with config:', {

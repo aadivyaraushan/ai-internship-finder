@@ -15,8 +15,11 @@ export function AnalyticsProvider({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
 
   useEffect(() => {
-    // Initialize Firebase Analytics on mount
-    initializeAnalytics();
+    // Initialize Firebase Analytics on mount (async)
+    const initAnalytics = async () => {
+      await initializeAnalytics();
+    };
+    initAnalytics();
     
     // Track session start time for active user metrics
     const sessionStart = Date.now();
