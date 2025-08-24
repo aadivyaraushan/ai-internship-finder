@@ -4,12 +4,16 @@ import { StatefulButton } from '@/components/ui/StatefulButton';
 import '../signup.css';
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { createUserWithEmailAndPassword, onAuthStateChanged } from 'firebase/auth';
+import {
+  createUserWithEmailAndPassword,
+  onAuthStateChanged,
+} from 'firebase/auth';
 import { auth } from '@/lib/firebase';
 import { createOrUpdateUser } from '@/lib/firestoreHelpers';
 import { useRouter } from 'next/navigation';
 import { ShootingStars } from '@/components/ui/ShootingStars';
 import { StarsBackground } from '@/components/ui/StarsBackground';
+import { CloudyBackground } from '@/components/ui/CloudyBackground';
 import { AdBlockerWarning } from '@/components/ui/AdBlockerWarning';
 import { analytics } from '@/lib/analytics';
 
@@ -223,7 +227,7 @@ export default function Signup() {
   useEffect(() => {
     // Set page title
     document.title = 'Sign Up | Refr';
-    
+
     const unsubscribe = onAuthStateChanged(auth, (user: any) => {
       setAuthLoading(false);
       if (user) {
@@ -237,7 +241,7 @@ export default function Signup() {
 
   const validatePassword = (password: string): string[] => {
     const warnings: string[] = [];
-    
+
     if (password.length < 8) {
       warnings.push('Password must be at least 8 characters long');
     }
@@ -253,7 +257,7 @@ export default function Signup() {
     if (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password)) {
       warnings.push('Password must contain at least one special character');
     }
-    
+
     return warnings;
   };
 
@@ -303,7 +307,7 @@ export default function Signup() {
       const user = userCredential.user;
 
       analytics.trackSignup('email');
-      
+
       // Create minimal initial Firestore document
       await createOrUpdateUser(user.uid, {
         email: email,
@@ -338,8 +342,9 @@ export default function Signup() {
     <>
       <AdBlockerWarning />
       <div className='flex flex-col min-h-screen items-center justify-center bg-neutral-950 p-4 relative'>
-        <ShootingStars />
         <StarsBackground />
+        <CloudyBackground />
+        <ShootingStars />
         <div className='relative z-10 flex flex-col items-center'>
           <h1 className='heading text-white text-2xl font-bold text-center mb-6'>
             Sign Up
@@ -366,19 +371,22 @@ export default function Signup() {
               required
               className='w-full px-4 py-2 rounded-lg bg-neutral-800 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500'
             />
-            
+
             {/* Password strength indicators */}
             {password && passwordWarnings.length > 0 && (
               <div className='mt-2 space-y-1'>
                 {passwordWarnings.map((warning, index) => (
-                  <div key={index} className='text-red-400 text-xs flex items-center'>
+                  <div
+                    key={index}
+                    className='text-red-400 text-xs flex items-center'
+                  >
                     <span className='w-2 h-2 bg-red-400 rounded-full mr-2'></span>
                     {warning}
                   </div>
                 ))}
               </div>
             )}
-            
+
             {/* Password strength success indicators */}
             {password && passwordWarnings.length === 0 && (
               <div className='mt-2 text-green-400 text-xs flex items-center'>
@@ -386,9 +394,9 @@ export default function Signup() {
                 Password meets all requirements
               </div>
             )}
-            
+
             <StatefulButton type='submit' className='w-full'>
-              Continue to Background Info
+              Continue
             </StatefulButton>
           </form>
           <p className='text-gray-400 text-sm mt-4 text-center'>

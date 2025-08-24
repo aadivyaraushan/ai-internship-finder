@@ -111,9 +111,26 @@ export const StarsBackground: React.FC<StarBackgroundProps> = ({
     const render = () => {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       stars.forEach((star) => {
+        // Create stronger glow effect
+        const gradient = ctx.createRadialGradient(
+          star.x, star.y, 0,
+          star.x, star.y, star.radius * 4
+        );
+        gradient.addColorStop(0, `rgba(255, 255, 255, ${star.opacity})`);
+        gradient.addColorStop(0.3, `rgba(255, 255, 255, ${star.opacity * 0.6})`);
+        gradient.addColorStop(0.7, `rgba(255, 255, 255, ${star.opacity * 0.2})`);
+        gradient.addColorStop(1, `rgba(255, 255, 255, 0)`);
+
+        // Draw the glow
         ctx.beginPath();
-        ctx.arc(star.x, star.y, star.radius, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(255, 255, 255, ${star.opacity})`;
+        ctx.arc(star.x, star.y, star.radius * 4, 0, Math.PI * 2);
+        ctx.fillStyle = gradient;
+        ctx.fill();
+
+        // Draw the bright star core
+        ctx.beginPath();
+        ctx.arc(star.x, star.y, star.radius * 1.2, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(255, 255, 255, ${Math.min(star.opacity * 1.5, 1)})`;
         ctx.fill();
 
         if (star.twinkleSpeed !== null) {

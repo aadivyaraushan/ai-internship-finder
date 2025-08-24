@@ -7,6 +7,7 @@ import { createOrUpdateUser, getUser } from '@/lib/firestoreHelpers';
 import { StatefulButton } from '@/components/ui/StatefulButton';
 import { ShootingStars } from '@/components/ui/ShootingStars';
 import { StarsBackground } from '@/components/ui/StarsBackground';
+import { CloudyBackground } from '@/components/ui/CloudyBackground';
 import { AdBlockerWarning } from '@/components/ui/AdBlockerWarning';
 
 export default function BackgroundInfo() {
@@ -313,8 +314,9 @@ export default function BackgroundInfo() {
     <>
       <AdBlockerWarning />
       <div className='flex flex-col min-h-screen items-center justify-center bg-neutral-950 p-4 relative'>
-        <ShootingStars />
         <StarsBackground />
+        <CloudyBackground />
+        <ShootingStars />
         <div className='relative z-10 flex flex-col items-center'>
           <h1 className='text-2xl font-bold text-white mb-6 text-center'>
             Background Information

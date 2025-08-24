@@ -19,6 +19,7 @@ import BorderMagicButton from '@/components/ui/BorderMagicButton';
 import { FileUpload } from '@/components/ui/FileUpload';
 import { ShootingStars } from '@/components/ui/ShootingStars';
 import { StarsBackground } from '@/components/ui/StarsBackground';
+import { CloudyBackground } from '@/components/ui/CloudyBackground';
 import { ProgramConnectionCard } from '@/components/dashboard/ProgramConnectionCard';
 import { PersonConnectionCard } from '@/components/dashboard/PersonConnectionCard';
 import { getBackgroundColor } from '@/lib/utils';
@@ -1082,8 +1083,9 @@ function DashboardContent() {
 
       {/* NEW REDESIGNED DASHBOARD */}
       <div className='min-h-screen bg-[#0a0a0a] p-4 relative'>
-        <ShootingStars />
         <StarsBackground />
+        <CloudyBackground />
+        <ShootingStars />
         <div className='relative z-10'>
         <div className='flex justify-between items-center mb-8'>
           <button
