@@ -17,6 +17,7 @@ export default function Signup() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [passwordWarnings, setPasswordWarnings] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [authLoading, setAuthLoading] = useState(true);
   const router = useRouter();
@@ -234,6 +235,34 @@ export default function Signup() {
     return () => unsubscribe();
   }, [router]);
 
+  const validatePassword = (password: string): string[] => {
+    const warnings: string[] = [];
+    
+    if (password.length < 8) {
+      warnings.push('Password must be at least 8 characters long');
+    }
+    if (!/[A-Z]/.test(password)) {
+      warnings.push('Password must contain at least one uppercase letter');
+    }
+    if (!/[a-z]/.test(password)) {
+      warnings.push('Password must contain at least one lowercase letter');
+    }
+    if (!/\d/.test(password)) {
+      warnings.push('Password must contain at least one number');
+    }
+    if (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password)) {
+      warnings.push('Password must contain at least one special character');
+    }
+    
+    return warnings;
+  };
+
+  const handlePasswordChange = (newPassword: string) => {
+    setPassword(newPassword);
+    const warnings = validatePassword(newPassword);
+    setPasswordWarnings(warnings);
+  };
+
   const getErrorMessage = (errorCode: string) => {
     switch (errorCode) {
       case 'auth/email-already-in-use':
@@ -255,6 +284,14 @@ export default function Signup() {
     e.preventDefault();
     setError('');
     setLoading(true);
+
+    // Check password strength before submission
+    const warnings = validatePassword(password);
+    if (warnings.length > 0) {
+      setError('Please fix the password requirements before continuing.');
+      setLoading(false);
+      return;
+    }
 
     try {
       // Create Firebase Auth user
@@ -325,10 +362,30 @@ export default function Signup() {
               type='password'
               placeholder='Password'
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              onChange={(e) => handlePasswordChange(e.target.value)}
               required
               className='w-full px-4 py-2 rounded-lg bg-neutral-800 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500'
             />
+            
+            {/* Password strength indicators */}
+            {password && passwordWarnings.length > 0 && (
+              <div className='mt-2 space-y-1'>
+                {passwordWarnings.map((warning, index) => (
+                  <div key={index} className='text-red-400 text-xs flex items-center'>
+                    <span className='w-2 h-2 bg-red-400 rounded-full mr-2'></span>
+                    {warning}
+                  </div>
+                ))}
+              </div>
+            )}
+            
+            {/* Password strength success indicators */}
+            {password && passwordWarnings.length === 0 && (
+              <div className='mt-2 text-green-400 text-xs flex items-center'>
+                <span className='w-2 h-2 bg-green-400 rounded-full mr-2'></span>
+                Password meets all requirements
+              </div>
+            )}
             
             <StatefulButton type='submit' className='w-full'>
               Continue to Background Info
