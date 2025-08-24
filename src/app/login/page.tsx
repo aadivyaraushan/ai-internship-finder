@@ -7,6 +7,8 @@ import { getUser } from '@/lib/firestoreHelpers';
 import { useRouter } from 'next/navigation';
 import { BackgroundGradient } from '@/components/ui/BackgroundGradient';
 import { StatefulButton } from '@/components/ui/StatefulButton';
+import { ShootingStars } from '@/components/ui/ShootingStars';
+import { StarsBackground } from '@/components/ui/StarsBackground';
 import { AdBlockerWarning } from '@/components/ui/AdBlockerWarning';
 import { analytics } from '@/lib/analytics';
 
@@ -93,42 +95,44 @@ export default function Login() {
   return (
     <>
       <AdBlockerWarning />
-      <div className='flex flex-col min-h-screen flex items-center justify-center bg-neutral-950 p-4'>
-      {/* <BackgroundGradient className='w-full max-w-md bg-neutral-900 p-8 rounded-3xl'> */}
-      <h1 className='text-2xl font-bold text-white mb-6 text-center'>Login</h1>
-      {error && (
-        <div className='mb-4 p-3 bg-red-500/10 border border-red-500 rounded-lg text-red-500 text-sm'>
-          {error}
+      <div className='flex flex-col min-h-screen items-center justify-center bg-neutral-950 p-4 relative'>
+        <ShootingStars />
+        <StarsBackground />
+        <div className='relative z-10 flex flex-col items-center'>
+          <h1 className='text-2xl font-bold text-white mb-6 text-center'>Login</h1>
+          {error && (
+            <div className='mb-4 p-3 bg-red-500/10 border border-red-500 rounded-lg text-red-500 text-sm'>
+              {error}
+            </div>
+          )}
+          <form onSubmit={handleSubmit} className='space-y-4'>
+            <input
+              type='email'
+              placeholder='Email'
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+              className='w-full px-4 py-2 rounded-lg bg-neutral-800 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500'
+            />
+            <input
+              type='password'
+              placeholder='Password'
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              className='w-full px-4 py-2 rounded-lg bg-neutral-800 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500'
+            />
+            <StatefulButton type='submit' className='w-full'>
+              Login
+            </StatefulButton>
+          </form>
+          <p className='text-gray-400 text-sm mt-4 text-center'>
+            Don't have an account?{' '}
+            <Link href='/' className='text-blue-500 underline'>
+              Sign up
+            </Link>
+          </p>
         </div>
-      )}
-      <form onSubmit={handleSubmit} className='space-y-4'>
-        <input
-          type='email'
-          placeholder='Email'
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          required
-          className='w-full px-4 py-2 rounded-lg bg-neutral-800 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500'
-        />
-        <input
-          type='password'
-          placeholder='Password'
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          required
-          className='w-full px-4 py-2 rounded-lg bg-neutral-800 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500'
-        />
-        <StatefulButton type='submit' className='w-full'>
-          Login
-        </StatefulButton>
-      </form>
-      <p className='text-gray-400 text-sm mt-4 text-center'>
-        Don't have an account?{' '}
-        <Link href='/' className='text-blue-500 underline'>
-          Sign up
-        </Link>
-      </p>
-      {/* </BackgroundGradient> */}
       </div>
     </>
   );

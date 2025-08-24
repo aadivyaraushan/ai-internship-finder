@@ -17,6 +17,8 @@ import { MultiStepLoader } from '@/components/ui/MultiStepLoader';
 import { AnimatedTabs } from '@/components/ui/AnimatedTabs';
 import BorderMagicButton from '@/components/ui/BorderMagicButton';
 import { FileUpload } from '@/components/ui/FileUpload';
+import { ShootingStars } from '@/components/ui/ShootingStars';
+import { StarsBackground } from '@/components/ui/StarsBackground';
 import { ProgramConnectionCard } from '@/components/dashboard/ProgramConnectionCard';
 import { PersonConnectionCard } from '@/components/dashboard/PersonConnectionCard';
 import { getBackgroundColor } from '@/lib/utils';
@@ -1079,7 +1081,10 @@ function DashboardContent() {
       )}
 
       {/* NEW REDESIGNED DASHBOARD */}
-      <div className='min-h-screen bg-[#0a0a0a] p-4'>
+      <div className='min-h-screen bg-[#0a0a0a] p-4 relative'>
+        <ShootingStars />
+        <StarsBackground />
+        <div className='relative z-10'>
         <div className='flex justify-between items-center mb-8'>
           <button
             onClick={resetToHome}
@@ -1168,7 +1173,7 @@ function DashboardContent() {
                   <button
                     onClick={handleSearch}
                     disabled={!searchGoal.trim() || findingMore}
-                    className='absolute right-2 top-1/2 transform -translate-y-1/2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white p-3 rounded-xl transition-colors'
+                    className='absolute right-2 top-1/2 transform -translate-y-1/2 -translate-x-0.5 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white p-3 rounded-xl transition-colors'
                   >
                     <Search className='w-5 h-5' />
                   </button>
@@ -1539,6 +1544,7 @@ function DashboardContent() {
             </div>
           </div>
         )}
+        </div>
       </div>
     </>
   );
