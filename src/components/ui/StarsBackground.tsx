@@ -14,6 +14,7 @@ interface StarProps {
   radius: number;
   opacity: number;
   twinkleSpeed: number | null;
+  speed: number;
 }
 
 interface StarBackgroundProps {
@@ -52,6 +53,7 @@ export const StarsBackground: React.FC<StarBackgroundProps> = ({
             ? minTwinkleSpeed +
               Math.random() * (maxTwinkleSpeed - minTwinkleSpeed)
             : null,
+          speed: Math.random() * 0.2 + 0.1, // Slow rightward speed
         };
       });
     },
@@ -110,7 +112,17 @@ export const StarsBackground: React.FC<StarBackgroundProps> = ({
 
     const render = () => {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
+      
+      // Update star positions and render
       stars.forEach((star) => {
+        // Move star slowly to the right
+        star.x += star.speed;
+        
+        // Wrap around when star goes off screen
+        if (star.x > canvas.width + 10) {
+          star.x = -10;
+        }
+        
         // Create stronger glow effect
         const gradient = ctx.createRadialGradient(
           star.x, star.y, 0,
