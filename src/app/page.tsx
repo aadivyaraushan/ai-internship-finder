@@ -6,6 +6,9 @@ export default function Home() {
   const router = useRouter();
 
   useEffect(() => {
+    // Set page title
+    document.title = 'Home | Refr';
+    
     // Just redirect immediately to dashboard
     // Dashboard will handle all auth logic
     router.push('/dashboard');

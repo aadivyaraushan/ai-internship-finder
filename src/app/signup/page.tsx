@@ -258,6 +258,9 @@ export default function Signup() {
   ];
 
   useEffect(() => {
+    // Set page title
+    document.title = 'Sign Up | Refr';
+    
     const unsubscribe = onAuthStateChanged(auth, (user: any) => {
       setAuthLoading(false);
       if (user) {

@@ -1,5 +1,5 @@
 'use client';
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ShootingStars } from '@/components/ui/ShootingStars';
 import { StarsBackground } from '@/components/ui/StarsBackground';
 import { TextHoverEffect } from '@/components/ui/TextHover';
@@ -12,6 +12,11 @@ import { useRouter } from 'next/navigation';
 import { CardSpotlight } from '@/components/ui/CardSpotlight';
 
 export default function ShootingStarsAndStarsBackgroundDemo() {
+  useEffect(() => {
+    // Set page title
+    document.title = 'Landing | Refr';
+  }, []);
+
   const content = [
     {
       title: 'Real time changes',

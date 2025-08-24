@@ -126,6 +126,9 @@ export default function TopConnections() {
 
 
   useEffect(() => {
+    // Set page title
+    document.title = 'Top Connections | Refr';
+    
     const unsubscribe = onAuthStateChanged(auth, (user: any) => {
       setAuthLoading(false);
       if (!user) {

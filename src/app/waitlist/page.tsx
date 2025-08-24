@@ -62,6 +62,9 @@ export default function WaitlistPage() {
 
 
     useEffect(() => {
+        // Set page title
+        document.title = 'Waitlist | Refr';
+        
         const timer = setTimeout(() => {
             setShowEmail(true);
         }, 800);

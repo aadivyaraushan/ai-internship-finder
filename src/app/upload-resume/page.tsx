@@ -47,6 +47,9 @@ export default function UploadResume() {
   const router = useRouter();
 
   useEffect(() => {
+    // Set page title
+    document.title = 'Upload Resume | Refr';
+    
     const unsubscribe = onAuthStateChanged(auth, (user: any) => {
       setAuthLoading(false);
       if (!user) {

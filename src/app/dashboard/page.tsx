@@ -341,6 +341,11 @@ function DashboardContent() {
 
   // Minimal auth setup - no blocking
   useEffect(() => {
+    // Set page title (client-side only)
+    if (typeof document !== 'undefined') {
+      document.title = 'Dashboard | Refr';
+    }
+    
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       setCurrentUser(user);
       if (!user) {
@@ -559,7 +564,11 @@ function DashboardContent() {
     if (typeof window !== 'undefined') {
       const stored = localStorage.getItem('connectionPreferences');
       if (stored) {
-        setPreferences(JSON.parse(stored));
+        try {
+          setPreferences(JSON.parse(stored));
+        } catch (error) {
+          console.warn('Failed to parse stored preferences:', error);
+        }
       }
       setPreferencesLoaded(true);
     }
@@ -946,7 +955,9 @@ function DashboardContent() {
       setResumeError(''); // Clear resume error on successful upload
       setFile(null); // Optionally clear file
       await refreshUserData();
-      window.location.reload();
+      if (typeof window !== 'undefined') {
+        window.location.reload();
+      }
     } catch (err) {
       analytics.trackResumeUpload(false);
       analytics.trackError('resume_upload', err instanceof Error ? err.message : 'Unknown error');
@@ -1163,37 +1174,39 @@ function DashboardContent() {
                   </button>
                 </div>
 
-                {/* Preferences Checkboxes */}
-                <div className='flex justify-center gap-6 mt-4'>
-                  <label className='flex items-center gap-2 text-gray-300 cursor-pointer'>
-                    <input
-                      type='checkbox'
-                      checked={preferences.connections}
-                      onChange={(e) =>
-                        setPreferences((prev: any) => ({
-                          ...prev,
-                          connections: e.target.checked,
-                        }))
-                      }
-                      className='w-4 h-4 rounded border-gray-600 bg-[#1a1a1a] text-blue-600 focus:ring-blue-500 focus:ring-2'
-                    />
-                    People
-                  </label>
-                  <label className='flex items-center gap-2 text-gray-300 cursor-pointer'>
-                    <input
-                      type='checkbox'
-                      checked={preferences.programs}
-                      onChange={(e) =>
-                        setPreferences((prev: any) => ({
-                          ...prev,
-                          programs: e.target.checked,
-                        }))
-                      }
-                      className='w-4 h-4 rounded border-gray-600 bg-[#1a1a1a] text-blue-600 focus:ring-blue-500 focus:ring-2'
-                    />
-                    Programs
-                  </label>
-                </div>
+                {/* Preferences Checkboxes - Only render after client-side hydration */}
+                {preferencesLoaded && (
+                  <div className='flex justify-center gap-6 mt-4'>
+                    <label className='flex items-center gap-2 text-gray-300 cursor-pointer'>
+                      <input
+                        type='checkbox'
+                        checked={preferences.connections}
+                        onChange={(e) =>
+                          setPreferences((prev: any) => ({
+                            ...prev,
+                            connections: e.target.checked,
+                          }))
+                        }
+                        className='w-4 h-4 rounded border-gray-600 bg-[#1a1a1a] text-blue-600 focus:ring-blue-500 focus:ring-2'
+                      />
+                      People
+                    </label>
+                    <label className='flex items-center gap-2 text-gray-300 cursor-pointer'>
+                      <input
+                        type='checkbox'
+                        checked={preferences.programs}
+                        onChange={(e) =>
+                          setPreferences((prev: any) => ({
+                            ...prev,
+                            programs: e.target.checked,
+                          }))
+                        }
+                        className='w-4 h-4 rounded border-gray-600 bg-[#1a1a1a] text-blue-600 focus:ring-blue-500 focus:ring-2'
+                      />
+                      Programs
+                    </label>
+                  </div>
+                )}
               </div>
             </div>
 

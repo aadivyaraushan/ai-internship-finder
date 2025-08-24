@@ -19,6 +19,11 @@ export default function Login() {
   const router = useRouter();
 
   useEffect(() => {
+    // Set page title (client-side only)
+    if (typeof document !== 'undefined') {
+      document.title = 'Login | Refr';
+    }
+    
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
         try {
@@ -64,15 +69,9 @@ export default function Login() {
     setLoading(true);
 
     try {
-      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      await signInWithEmailAndPassword(auth, email, password);
       analytics.trackLogin('email');
-      const userData = await getUser(userCredential.user.uid);
-      
-      if (userData && userData.hasResume) {
-        router.push('/dashboard');
-      } else {
-        router.push('/upload-resume');
-      }
+      // Let onAuthStateChanged handle the redirect to avoid double redirects
     } catch (err: any) {
       analytics.trackError('login', err.message || 'Login failed');
       setError(getErrorMessage(err.code));
@@ -81,7 +80,7 @@ export default function Login() {
     }
   };
 
-  // Show loading spinner while checking auth state
+  // Always show loading until we confirm user is not logged in
   if (authLoading) {
     return (
       <div className='flex flex-col min-h-screen flex items-center justify-center bg-neutral-950 p-4'>

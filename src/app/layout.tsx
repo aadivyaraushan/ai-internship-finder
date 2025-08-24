@@ -6,7 +6,7 @@ import { AnalyticsProvider } from '@/components/providers/AnalyticsProvider';
 const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
-  title: 'AI Internship Finder',
+  title: 'Refr',
   description: 'Find your perfect internship match using AI',
 };
 
@@ -17,10 +17,11 @@ export default function RootLayout({
 }>) {
   return (
     <html lang='en' className={inter.className}>
+      <head>
+        <link rel="icon" href="/favicon.png" type="image/png" />
+      </head>
       <body>
-        <AnalyticsProvider>
-          {children}
-        </AnalyticsProvider>
+        <AnalyticsProvider>{children}</AnalyticsProvider>
       </body>
     </html>
   );
