@@ -22,15 +22,16 @@ async function withExponentialBackoff<T>(
       const isRateLimit =
         (error as { status?: number })?.status === 429 ||
         (error as { code?: string })?.code === 'rate_limit_exceeded' ||
-        (error as { message?: string })?.message?.toLowerCase().includes('rate limit') ||
-        (error as { message?: string })?.message?.toLowerCase().includes('too many requests');
+        (error as { message?: string })?.message
+          ?.toLowerCase()
+          .includes('rate limit') ||
+        (error as { message?: string })?.message
+          ?.toLowerCase()
+          .includes('too many requests');
 
       // Don't retry non-rate-limit errors on final attempt
       if (attempt === maxRetries || (!isRateLimit && attempt > 0)) {
-        console.error(
-          `Operation failed after ${attempt + 1} attempts:`,
-          error
-        );
+        console.error(`Operation failed after ${attempt + 1} attempts:`, error);
         throw error;
       }
 
@@ -50,7 +51,9 @@ async function withExponentialBackoff<T>(
   throw lastError;
 }
 
-function buildMessages(prompt: string): Array<{ role: string; content: string }> {
+function buildMessages(
+  prompt: string
+): Array<{ role: string; content: string }> {
   return [
     {
       role: 'user',
@@ -66,10 +69,12 @@ export async function findConnectionsWithAI(prompt: string): Promise<string> {
     const messages = buildMessages(prompt);
 
     const completion = await client.chat.completions.create({
-      model: 'gpt-5-turbo',
-      messages: messages as Array<{ role: 'user' | 'assistant' | 'system'; content: string }>,
-      max_tokens: 4000,
-      temperature: 0.7,
+      model: 'gpt-5-mini',
+      messages: messages as Array<{
+        role: 'user' | 'assistant' | 'system';
+        content: string;
+      }>,
+      max_completion_tokens: 4000,
     });
 
     const result = completion.choices[0]?.message?.content;
@@ -78,37 +83,6 @@ export async function findConnectionsWithAI(prompt: string): Promise<string> {
     }
 
     return result;
-  });
-}
-
-export async function parseConnectionsWithAI(
-  prompt: string,
-  schema: z.ZodType
-): Promise<unknown> {
-  return withExponentialBackoff(async () => {
-    console.log('🤖 Calling GPT-5 for structured parsing...');
-
-    const messages = buildMessages(prompt);
-
-    const completion = await client.chat.completions.create({
-      model: 'gpt-5-turbo',
-      messages: messages as Array<{ role: 'user' | 'assistant' | 'system'; content: string }>,
-      max_tokens: 4000,
-      temperature: 0.3,
-    });
-
-    const result = completion.choices[0]?.message?.content;
-    if (!result) {
-      throw new Error('No response from GPT-5');
-    }
-
-    // Try to parse as JSON and validate with schema
-    try {
-      const parsed = JSON.parse(result);
-      return schema.parse(parsed);
-    } catch {
-      return result;
-    }
   });
 }
 
@@ -119,10 +93,12 @@ export async function analyzeResumeWithAI(resumeText: string): Promise<string> {
     const messages = buildMessages(`Analyze this resume: ${resumeText}`);
 
     const completion = await client.chat.completions.create({
-      model: 'gpt-5-turbo',
-      messages: messages as Array<{ role: 'user' | 'assistant' | 'system'; content: string }>,
-      max_tokens: 4000,
-      temperature: 0.3,
+      model: 'gpt-5-nano',
+      messages: messages as Array<{
+        role: 'user' | 'assistant' | 'system';
+        content: string;
+      }>,
+      max_completion_tokens: 4000,
     });
 
     const result = completion.choices[0]?.message?.content;
@@ -133,6 +109,3 @@ export async function analyzeResumeWithAI(resumeText: string): Promise<string> {
     return result;
   });
 }
-
-// Alias for backward compatibility
-export const parseWithSchema = parseConnectionsWithAI;

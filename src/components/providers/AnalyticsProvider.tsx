@@ -15,11 +15,8 @@ export function AnalyticsProvider({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
 
   useEffect(() => {
-    // Initialize Firebase Analytics on mount (async)
-    const initAnalytics = async () => {
-      await initializeAnalytics();
-    };
-    initAnalytics();
+    // Initialize Firebase Analytics on mount
+    initializeAnalytics();
     
     // Track session start time for active user metrics
     const sessionStart = Date.now();
@@ -40,15 +37,17 @@ export function AnalyticsProvider({ children }: { children: React.ReactNode }) {
         // Track daily active user
         analytics.trackDailyActive();
         
-        // Track return visit if not first visit
-        const lastVisit = localStorage.getItem('lastVisit');
-        if (lastVisit) {
-          const daysSinceLastVisit = Math.floor((Date.now() - parseInt(lastVisit)) / (1000 * 60 * 60 * 24));
-          if (daysSinceLastVisit > 0) {
-            analytics.trackReturnVisit(daysSinceLastVisit);
+        // Track return visit if not first visit (client-side only)
+        if (typeof window !== 'undefined') {
+          const lastVisit = localStorage.getItem('lastVisit');
+          if (lastVisit) {
+            const daysSinceLastVisit = Math.floor((Date.now() - parseInt(lastVisit)) / (1000 * 60 * 60 * 24));
+            if (daysSinceLastVisit > 0) {
+              analytics.trackReturnVisit(daysSinceLastVisit);
+            }
           }
+          localStorage.setItem('lastVisit', Date.now().toString());
         }
-        localStorage.setItem('lastVisit', Date.now().toString());
       }
     });
     

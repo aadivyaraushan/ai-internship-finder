@@ -9,6 +9,9 @@ export function AdBlockerWarning() {
   const [dismissed, setDismissed] = useState(false);
 
   useEffect(() => {
+    // Only run on client side to prevent hydration mismatch
+    if (typeof window === 'undefined') return;
+
     const detectAdBlocker = () => {
       // Simple and reliable ad blocker detection using common blocked elements
       const testElement = document.createElement('div');
@@ -24,7 +27,7 @@ export function AdBlockerWarning() {
         const isBlocked = testElement.offsetHeight === 0;
         document.body.removeChild(testElement);
 
-        // Check localStorage for previous dismissal
+        // Check localStorage for previous dismissal (client-side only)
         const wasDismissed = localStorage.getItem('adBlockerWarningDismissed');
         const dismissTime = wasDismissed ? parseInt(wasDismissed) : 0;
         const oneHourAgo = Date.now() - (60 * 60 * 1000);
