@@ -158,7 +158,7 @@ export default function Signup() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
-              className='w-full px-4 py-3 rounded-lg bg-neutral-800 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500'
+              className='w-full px-4 py-3 rounded-lg bg-neutral-900 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500'
             />
 
             <div>
@@ -168,7 +168,7 @@ export default function Signup() {
                 value={password}
                 onChange={(e) => handlePasswordChange(e.target.value)}
                 required
-                className='w-full px-4 py-3 rounded-lg bg-neutral-800 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500'
+                className='w-full px-4 py-3 rounded-lg bg-neutral-900 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500'
               />
 
               {password && passwordWarnings.length > 0 && (
