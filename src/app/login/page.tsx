@@ -5,13 +5,12 @@ import { signInWithEmailAndPassword, onAuthStateChanged } from 'firebase/auth';
 import { auth } from '@/lib/firebase';
 import { getUser } from '@/lib/firestoreHelpers';
 import { useRouter } from 'next/navigation';
-import { BackgroundGradient } from '@/components/ui/BackgroundGradient';
-import { StatefulButton } from '@/components/ui/StatefulButton';
 import { ShootingStars } from '@/components/ui/ShootingStars';
 import { StarsBackground } from '@/components/ui/StarsBackground';
 import { CloudyBackground } from '@/components/ui/CloudyBackground';
 import { AdBlockerWarning } from '@/components/ui/AdBlockerWarning';
 import { analytics } from '@/lib/analytics';
+import BorderMagicButton from '@/components/ui/BorderMagicButton';
 
 export default function Login() {
   const [email, setEmail] = useState('');
@@ -22,11 +21,10 @@ export default function Login() {
   const router = useRouter();
 
   useEffect(() => {
-    // Set page title (client-side only)
     if (typeof document !== 'undefined') {
       document.title = 'Login | Refr';
     }
-    
+
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
         try {
@@ -74,7 +72,6 @@ export default function Login() {
     try {
       await signInWithEmailAndPassword(auth, email, password);
       analytics.trackLogin('email');
-      // Let onAuthStateChanged handle the redirect to avoid double redirects
     } catch (err: any) {
       analytics.trackError('login', err.message || 'Login failed');
       setError(getErrorMessage(err.code));
@@ -83,7 +80,6 @@ export default function Login() {
     }
   };
 
-  // Always show loading until we confirm user is not logged in
   if (authLoading) {
     return (
       <div className='flex flex-col min-h-screen flex items-center justify-center bg-neutral-950 p-4'>
@@ -100,37 +96,49 @@ export default function Login() {
         <StarsBackground />
         <CloudyBackground />
         <ShootingStars />
-        <div className='relative z-10 flex flex-col items-center'>
-          <h1 className='text-2xl font-bold text-white mb-6 text-center'>Login</h1>
+
+        <div className='relative z-10 w-full max-w-sm'>
+          <h1 className='text-3xl font-bold text-white mb-6 text-center'>
+            Login
+          </h1>
+
           {error && (
             <div className='mb-4 p-3 bg-red-500/10 border border-red-500 rounded-lg text-red-500 text-sm'>
               {error}
             </div>
           )}
-          <form onSubmit={handleSubmit} className='space-y-4'>
+
+          <div className='space-y-3'>
             <input
               type='email'
               placeholder='Email'
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
-              className='w-full px-4 py-2 rounded-lg bg-neutral-800 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500'
+              className='w-full px-4 py-3 rounded-lg bg-neutral-800 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500'
             />
+
             <input
               type='password'
               placeholder='Password'
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
-              className='w-full px-4 py-2 rounded-lg bg-neutral-800 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500'
+              className='w-full px-4 py-3 rounded-lg bg-neutral-800 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500'
             />
-            <StatefulButton type='submit' className='w-full'>
-              Login
-            </StatefulButton>
-          </form>
-          <p className='text-gray-400 text-sm mt-4 text-center'>
+
+            <BorderMagicButton
+              onClick={handleSubmit}
+              disabled={loading}
+              className='w-full'
+            >
+              {loading ? 'Signing in...' : 'Login'}
+            </BorderMagicButton>
+          </div>
+
+          <p className='text-gray-400 text-sm mt-6 text-center'>
             Don't have an account?{' '}
-            <Link href='/' className='text-blue-500 underline'>
+            <Link href='/signup' className='text-blue-400 hover:text-blue-300'>
               Sign up
             </Link>
           </p>

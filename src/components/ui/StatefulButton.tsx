@@ -35,7 +35,7 @@ export const StatefulButton = React.forwardRef<
     <button
       ref={ref}
       className={cn(
-        'relative inline-flex h-12 overflow-hidden rounded-full p-[1px] focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-offset-2 focus:ring-offset-slate-50',
+        'relative flex h-12 overflow-hidden rounded-full p-[1px] focus:outline-none m-0 border-0 outline-0',
         className
       )}
       onClick={handleClick}

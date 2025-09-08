@@ -1,7 +1,4 @@
 'use client';
-import { BackgroundGradient } from '@/components/ui/BackgroundGradient';
-import { StatefulButton } from '@/components/ui/StatefulButton';
-import '../signup.css';
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import {
@@ -16,6 +13,7 @@ import { StarsBackground } from '@/components/ui/StarsBackground';
 import { CloudyBackground } from '@/components/ui/CloudyBackground';
 import { AdBlockerWarning } from '@/components/ui/AdBlockerWarning';
 import { analytics } from '@/lib/analytics';
+import BorderMagicButton from '@/components/ui/BorderMagicButton';
 
 export default function Signup() {
   const [email, setEmail] = useState('');
@@ -26,206 +24,7 @@ export default function Signup() {
   const [authLoading, setAuthLoading] = useState(true);
   const router = useRouter();
 
-  // Full list of ISO country names for dropdown
-  const countryList = [
-    'Afghanistan',
-    'Albania',
-    'Algeria',
-    'Andorra',
-    'Angola',
-    'Antigua and Barbuda',
-    'Argentina',
-    'Armenia',
-    'Australia',
-    'Austria',
-    'Azerbaijan',
-    'Bahamas',
-    'Bahrain',
-    'Bangladesh',
-    'Barbados',
-    'Belarus',
-    'Belgium',
-    'Belize',
-    'Benin',
-    'Bhutan',
-    'Bolivia',
-    'Bosnia and Herzegovina',
-    'Botswana',
-    'Brazil',
-    'Brunei',
-    'Bulgaria',
-    'Burkina Faso',
-    'Burundi',
-    'Cabo Verde',
-    'Cambodia',
-    'Cameroon',
-    'Canada',
-    'Central African Republic',
-    'Chad',
-    'Chile',
-    'China',
-    'Colombia',
-    'Comoros',
-    'Congo (Congo-Brazzaville)',
-    'Costa Rica',
-    'Croatia',
-    'Cuba',
-    'Cyprus',
-    'Czechia',
-    'Democratic Republic of the Congo',
-    'Denmark',
-    'Djibouti',
-    'Dominica',
-    'Dominican Republic',
-    'Ecuador',
-    'Egypt',
-    'El Salvador',
-    'Equatorial Guinea',
-    'Eritrea',
-    'Estonia',
-    'Eswatini (fmr. "Swaziland")',
-    'Ethiopia',
-    'Fiji',
-    'Finland',
-    'France',
-    'Gabon',
-    'Gambia',
-    'Georgia',
-    'Germany',
-    'Ghana',
-    'Greece',
-    'Grenada',
-    'Guatemala',
-    'Guinea',
-    'Guinea-Bissau',
-    'Guyana',
-    'Haiti',
-    'Holy See',
-    'Honduras',
-    'Hungary',
-    'Iceland',
-    'India',
-    'Indonesia',
-    'Iran',
-    'Iraq',
-    'Ireland',
-    'Israel',
-    'Italy',
-    'Jamaica',
-    'Japan',
-    'Jordan',
-    'Kazakhstan',
-    'Kenya',
-    'Kiribati',
-    'Kuwait',
-    'Kyrgyzstan',
-    'Laos',
-    'Latvia',
-    'Lebanon',
-    'Lesotho',
-    'Liberia',
-    'Libya',
-    'Liechtenstein',
-    'Lithuania',
-    'Luxembourg',
-    'Madagascar',
-    'Malawi',
-    'Malaysia',
-    'Maldives',
-    'Mali',
-    'Malta',
-    'Marshall Islands',
-    'Mauritania',
-    'Mauritius',
-    'Mexico',
-    'Micronesia',
-    'Moldova',
-    'Monaco',
-    'Mongolia',
-    'Montenegro',
-    'Morocco',
-    'Mozambique',
-    'Myanmar (formerly Burma)',
-    'Namibia',
-    'Nauru',
-    'Nepal',
-    'Netherlands',
-    'New Zealand',
-    'Nicaragua',
-    'Niger',
-    'Nigeria',
-    'North Korea',
-    'North Macedonia',
-    'Norway',
-    'Oman',
-    'Pakistan',
-    'Palau',
-    'Palestine State',
-    'Panama',
-    'Papua New Guinea',
-    'Paraguay',
-    'Peru',
-    'Philippines',
-    'Poland',
-    'Portugal',
-    'Qatar',
-    'Romania',
-    'Russia',
-    'Rwanda',
-    'Saint Kitts and Nevis',
-    'Saint Lucia',
-    'Saint Vincent and the Grenadines',
-    'Samoa',
-    'San Marino',
-    'Sao Tome and Principe',
-    'Saudi Arabia',
-    'Senegal',
-    'Serbia',
-    'Seychelles',
-    'Sierra Leone',
-    'Singapore',
-    'Slovakia',
-    'Slovenia',
-    'Solomon Islands',
-    'Somalia',
-    'South Africa',
-    'South Korea',
-    'South Sudan',
-    'Spain',
-    'Sri Lanka',
-    'Sudan',
-    'Suriname',
-    'Sweden',
-    'Switzerland',
-    'Syria',
-    'Tajikistan',
-    'Tanzania',
-    'Thailand',
-    'Timor-Leste',
-    'Togo',
-    'Tonga',
-    'Trinidad and Tobago',
-    'Tunisia',
-    'Turkey',
-    'Turkmenistan',
-    'Tuvalu',
-    'Uganda',
-    'Ukraine',
-    'United Arab Emirates',
-    'United Kingdom',
-    'United States of America',
-    'Uruguay',
-    'Uzbekistan',
-    'Vanuatu',
-    'Venezuela',
-    'Vietnam',
-    'Yemen',
-    'Zambia',
-    'Zimbabwe',
-  ];
-
   useEffect(() => {
-    // Set page title
     document.title = 'Sign Up | Refr';
 
     const unsubscribe = onAuthStateChanged(auth, (user: any) => {
@@ -284,12 +83,10 @@ export default function Signup() {
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = async () => {
     setError('');
     setLoading(true);
 
-    // Check password strength before submission
     const warnings = validatePassword(password);
     if (warnings.length > 0) {
       setError('Please fix the password requirements before continuing.');
@@ -298,7 +95,6 @@ export default function Signup() {
     }
 
     try {
-      // Create Firebase Auth user
       const userCredential = await createUserWithEmailAndPassword(
         auth,
         email,
@@ -308,7 +104,6 @@ export default function Signup() {
 
       analytics.trackSignup('email');
 
-      // Create minimal initial Firestore document
       await createOrUpdateUser(user.uid, {
         email: email,
         createdAt: new Date().toISOString(),
@@ -328,7 +123,6 @@ export default function Signup() {
     }
   };
 
-  // Show loading spinner while checking auth state
   if (authLoading) {
     return (
       <div className='flex flex-col min-h-screen flex items-center justify-center bg-neutral-950 p-4'>
@@ -345,63 +139,72 @@ export default function Signup() {
         <StarsBackground />
         <CloudyBackground />
         <ShootingStars />
-        <div className='relative z-10 flex flex-col items-center'>
-          <h1 className='heading text-white text-2xl font-bold text-center mb-6'>
+
+        <div className='relative z-10 w-full max-w-sm'>
+          <h1 className='text-3xl font-bold text-white mb-6 text-center'>
             Sign Up
           </h1>
+
           {error && (
             <div className='mb-4 p-3 bg-red-500/10 border border-red-500 rounded-lg text-red-500 text-sm'>
               {error}
             </div>
           )}
-          <form onSubmit={handleSubmit} className='space-y-4 w-full max-w-md'>
+
+          <div className='space-y-3'>
             <input
               type='email'
               placeholder='Email'
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
-              className='w-full px-4 py-2 rounded-lg bg-neutral-800 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500'
-            />
-            <input
-              type='password'
-              placeholder='Password'
-              value={password}
-              onChange={(e) => handlePasswordChange(e.target.value)}
-              required
-              className='w-full px-4 py-2 rounded-lg bg-neutral-800 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500'
+              className='w-full px-4 py-3 rounded-lg bg-neutral-800 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500'
             />
 
-            {/* Password strength indicators */}
-            {password && passwordWarnings.length > 0 && (
-              <div className='mt-2 space-y-1'>
-                {passwordWarnings.map((warning, index) => (
-                  <div
-                    key={index}
-                    className='text-red-400 text-xs flex items-center'
-                  >
-                    <span className='w-2 h-2 bg-red-400 rounded-full mr-2'></span>
-                    {warning}
-                  </div>
-                ))}
-              </div>
-            )}
+            <div>
+              <input
+                type='password'
+                placeholder='Password'
+                value={password}
+                onChange={(e) => handlePasswordChange(e.target.value)}
+                required
+                className='w-full px-4 py-3 rounded-lg bg-neutral-800 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500'
+              />
 
-            {/* Password strength success indicators */}
-            {password && passwordWarnings.length === 0 && (
-              <div className='mt-2 text-green-400 text-xs flex items-center'>
-                <span className='w-2 h-2 bg-green-400 rounded-full mr-2'></span>
-                Password meets all requirements
-              </div>
-            )}
+              {password && passwordWarnings.length > 0 && (
+                <div className='mt-2 space-y-1'>
+                  {passwordWarnings.map((warning, index) => (
+                    <div
+                      key={index}
+                      className='text-red-400 text-xs flex items-center'
+                    >
+                      <span className='w-1.5 h-1.5 bg-red-400 rounded-full mr-2'></span>
+                      {warning}
+                    </div>
+                  ))}
+                </div>
+              )}
 
-            <StatefulButton type='submit' className='w-full'>
-              Continue
-            </StatefulButton>
-          </form>
-          <p className='text-gray-400 text-sm mt-4 text-center'>
+              {password && passwordWarnings.length === 0 && (
+                <div className='mt-2 text-green-400 text-xs flex items-center'>
+                  <span className='w-1.5 h-1.5 bg-green-400 rounded-full mr-2'></span>
+                  Password meets all requirements
+                </div>
+              )}
+            </div>
+
+            <BorderMagicButton
+              onClick={handleSubmit}
+              disabled={loading}
+              className='w-full'
+            >
+              {loading ? 'Creating account...' : 'Continue'}
+            </BorderMagicButton>
+          </div>
+
+          <p className='text-gray-400 text-sm mt-6 text-center'>
             Already have an account?{' '}
-            <Link href='/login' className='text-blue-500 underline'>
+            <Link href='/login' className='text-blue-400 hover:text-blue-300'>
               Log in
             </Link>
           </p>

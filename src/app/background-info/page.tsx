@@ -331,7 +331,7 @@ export default function BackgroundInfo() {
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className='space-y-4 w-full max-w-md'>
+        <form onSubmit={handleSubmit} className='space-y-3 w-full max-w-md'>
           <div>
             <label className='block text-gray-300 text-sm mb-2'>Race/Ethnicity</label>
             <select
