@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { randomInt } from "crypto";
 import { Resend } from 'resend'
 import { html } from "./helpers/email"
+import { confirmationHtml } from "./helpers/confirmationEmail"
 import { getFirestore } from 'firebase-admin/firestore';
 import { initializeApp, getApps } from 'firebase-admin/app';
 import '@/lib/firebase-admin'; // Initialize Firebase Admin first
@@ -98,6 +99,20 @@ export async function PUT(request: NextRequest) {
         if (sha256(otp) === otpData.pin_hash) {
             // Delete OTP document
             await otpRef.delete();
+            
+            // Send confirmation email
+            try {
+                const resend = new Resend(process.env.RESEND_API_KEY);
+                await resend.emails.send({
+                    from: "RefrAI <welcome@refrai.com>",
+                    to: [email],
+                    subject: "Welcome to the Refr Waitlist! 🎉",
+                    html: confirmationHtml(email),
+                });
+            } catch (emailError) {
+                console.error('Failed to send confirmation email:', emailError);
+                // Don't fail the verification if email fails
+            }
             
             return NextResponse.json({success: true, verified: true}, {status: 200});
         }
