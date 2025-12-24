@@ -5,27 +5,79 @@ import { addWaitlistEmail } from "@/lib/firestoreHelpers";
 import { CornerDownLeft } from "lucide-react";
 import React, { useEffect, useState } from "react";
 
+// Modular components
+interface InputFormProps {
+    value: string;
+    onChange: (value: string) => void;
+    onSubmit: () => void;
+    placeholder: string;
+    type?: 'email' | 'otp';
+    loading: boolean;
+    error: string;
+}
+
+const InputForm = ({ value, onChange, onSubmit, placeholder, type = 'email', loading, error }: InputFormProps) => {
+    const handleKeyDown = (e: React.KeyboardEvent) => {
+        if (e.key === 'Enter') onSubmit();
+    };
+
+    const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const newValue = type === 'otp' 
+            ? e.target.value.replace(/\D/g, '').slice(0, 4)
+            : e.target.value;
+        onChange(newValue);
+    };
+
+    return (
+        <div className="relative">
+            <input
+                type="text"
+                value={value}
+                onChange={handleChange}
+                onKeyDown={handleKeyDown}
+                placeholder={placeholder}
+                maxLength={type === 'otp' ? 4 : undefined}
+                className="w-full px-4 sm:px-6 py-3 sm:py-4 pr-14 sm:pr-16 bg-[#1a1a1a] border border-gray-700 rounded-2xl text-white placeholder-gray-400 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 text-base sm:text-lg"
+            />
+            <button
+                onClick={onSubmit}
+                disabled={loading}
+                className="absolute right-2 top-1/2 transform -translate-y-1/2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white p-2.5 sm:p-3 rounded-xl transition-colors"
+            >
+                <CornerDownLeft className="h-4 w-4 sm:h-5 sm:w-5"/>
+            </button>
+            {error && <p className="text-red-500 text-xs sm:text-sm mt-2 px-1">{error}</p>}
+        </div>
+    );
+};
+
+interface WaitlistScreenProps {
+    title: string;
+    visible: boolean;
+    children: React.ReactNode;
+}
+
+const WaitlistScreen = ({ title, visible, children }: WaitlistScreenProps) => (
+    <div className="h-screen relative flex flex-col items-center justify-center bg-neutral-900 px-4 sm:px-8">
+        <TextHoverEffect text={title} />
+        <div className="absolute inset-0 flex items-center justify-center px-4 sm:px-8">
+            <div className={`w-full max-w-2xl transition-opacity duration-300 transform ${visible ? 'opacity-100' : 'opacity-0'}`}>
+                {children}
+            </div>
+        </div>
+    </div>
+);
+
+// Main component
 export default function WaitlistPage() {
     const [email, setEmail] = useState('');
-    const [showEmail, setShowEmail] = useState(false);
+    const [showContent, setShowContent] = useState(false);
     const [showOTP, setShowOTP] = useState(false);
     const [OTP, setOTP] = useState('');
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
 
-    const handleKeyDown = (e: React.KeyboardEvent) => {
-        if (e.key === 'Enter') {
-            waitlist(email);
-        }
-    };
-
-    const handleKeyDownOTP = (e: React.KeyboardEvent) => {
-        if (e.key === 'Enter') {
-            otp_check();
-        }
-    };
-
-    const waitlist = async (email: string) => {
+    const handleEmailSubmit = async () => {
         setLoading(true);
         setError('');
         
@@ -33,7 +85,7 @@ export default function WaitlistPage() {
             const response = await fetch('/api/otp', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ email: email })
+                body: JSON.stringify({ email })
             });
             
             if (response.ok) {
@@ -41,7 +93,6 @@ export default function WaitlistPage() {
                 setOTP('');
             } else {
                 const data = await response.json().catch(() => ({}));
-                // Handle duplicate waitlist email (409)
                 if (response.status === 409) {
                     setError(data.error || 'This email is already on the waitlist.');
                 } else {
@@ -56,7 +107,7 @@ export default function WaitlistPage() {
         }
     };
 
-    const otp_check = async () => {
+    const handleOTPSubmit = async () => {
         if (OTP.length !== 4) {
             setError('OTP must be 4 digits');
             return;
@@ -75,9 +126,7 @@ export default function WaitlistPage() {
             const data = await response.json();
 
             if (response.ok && data.verified) {
-                // OTP verified successfully, add to waitlist
                 await addWaitlistEmail(email);
-                // Show success message
                 setShowOTP(false);
                 setEmail('');
                 setError('');
@@ -94,67 +143,34 @@ export default function WaitlistPage() {
     };
 
     useEffect(() => {
-        // Set page title
         document.title = 'Waitlist | Refr';
-        
-        const timer = setTimeout(() => {
-            setShowEmail(true);
-        }, 800);
+        const timer = setTimeout(() => setShowContent(true), 800);
         return () => clearTimeout(timer);
     }, []);
 
-    return (
-        (!showOTP ? 
-        <div className="h-screen relative flex flex-col items-center justify-center bg-neutral-900 margin px-8 ">
-            <TextHoverEffect text="WAITLIST" />
-            <div className='absolute w-screen px-64'>
-                <div className={`relative transition-opacity duration-300 transform ${showEmail ? 'opacity-100' : 'opacity-0'}`}>
-                    <input
-                        type='text'
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        onKeyDown={handleKeyDown}
-                        placeholder='email@gmail.com...'
-                        className='w-full px-6 py-4 bg-[#1a1a1a] border border-gray-700 rounded-2xl text-white placeholder-gray-400 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 text-lg'
-                    />
-                    <button
-                        onClick={() => waitlist(email)}
-                        disabled={loading}
-                        className='absolute right-2 top-1/2 transform -translate-y-1/2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white p-3 rounded-xl transition-colors'
-                    >
-                        <CornerDownLeft className='h-5 w-5'/>
-                    </button>
-                    {error && <p className='text-red-500 text-sm mt-2'>{error}</p>}
-                </div>
-            </div>
-        </div>
-        :
-        <div className="h-screen relative flex flex-col items-center justify-center bg-neutral-900 margin px-8 ">
-            <TextHoverEffect text="OTP" />
-            <div className='absolute w-screen px-64'>
-                <div className={`relative transition-opacity duration-300 transform ${showEmail ? 'opacity-100' : 'opacity-0'}`}>
-                    <input
-                        type='text'
-                        value={OTP}
-                        onChange={(e) => setOTP(e.target.value.replace(/\D/g, '').slice(0, 4))}
-                        onKeyDown={handleKeyDownOTP}
-                        placeholder='XXXX'
-                        maxLength={4}
-                        className='w-full px-6 py-4 bg-[#1a1a1a] border border-gray-700 rounded-2xl text-white placeholder-gray-400 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 text-lg'
-                    />
-                    <button
-                        onClick={() => otp_check()}
-                        disabled={loading}
-                        className='absolute right-2 top-1/2 transform -translate-y-1/2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white p-3 rounded-xl transition-colors'
-                    >
-                        <CornerDownLeft className='h-5 w-5'/>
-                    </button>
-                    {error && <p className='text-red-500 text-sm mt-2'>{error}</p>}
-                </div>
-            </div>
-        </div>  
-    
-    )
-        
-    )
+    return showOTP ? (
+        <WaitlistScreen title="OTP" visible={showContent}>
+            <InputForm
+                value={OTP}
+                onChange={setOTP}
+                onSubmit={handleOTPSubmit}
+                placeholder="XXXX"
+                type="otp"
+                loading={loading}
+                error={error}
+            />
+        </WaitlistScreen>
+    ) : (
+        <WaitlistScreen title="WAITLIST" visible={showContent}>
+            <InputForm
+                value={email}
+                onChange={setEmail}
+                onSubmit={handleEmailSubmit}
+                placeholder="email@gmail.com..."
+                type="email"
+                loading={loading}
+                error={error}
+            />
+        </WaitlistScreen>
+    );
 }
