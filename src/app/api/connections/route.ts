@@ -209,14 +209,16 @@ export async function POST(req: Request) {
         // Close the stream
         controller.close();
       } catch (err: unknown) {
-        // console.error('❌ Critical error in connection search:', err);
+        console.error('❌ Critical error in connection search:', err);
         if (!streamClosed) {
+          const errMessage =
+            err instanceof Error ? err.message : 'Unknown error';
           controller.enqueue(
             encoder.encode(
               `data: ${JSON.stringify({
                 type: 'error',
-                message: 'Failed to fetch connections',
-                error: err instanceof Error ? err.message : 'Unknown error',
+                message: `Failed to fetch connections: ${errMessage}`,
+                error: errMessage,
               })}\n\n`
             )
           );

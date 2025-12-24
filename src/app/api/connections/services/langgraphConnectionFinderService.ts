@@ -16,6 +16,50 @@ Return ONLY valid JSON that matches the schema in the user message.
 Do not invent facts. If missing/unknown, use null, empty arrays, or "unknown".
 No extra keys. No extra text.`;
 
+// -------------------------
+// Logging (opt-in)
+// -------------------------
+
+// Always-on structured logs for debugging.
+// NOTE: We keep raw previews opt-in to avoid leaking resume/page text into logs.
+const DEBUG_GRAPH = true;
+const DEBUG_GRAPH_SHOW_RAW_PREVIEW =
+  process.env.DEBUG_CONNECTION_GRAPH_SHOW_RAW_PREVIEW === '1';
+
+function logDebug(message: string, data?: Record<string, unknown>) {
+  if (!DEBUG_GRAPH) return;
+  if (data) console.log(`[connections:graph] ${message}`, data);
+  else console.log(`[connections:graph] ${message}`);
+}
+
+function logWarn(message: string, data?: Record<string, unknown>) {
+  if (data) console.warn(`[connections:graph] ${message}`, data);
+  else console.warn(`[connections:graph] ${message}`);
+}
+
+function logError(
+  message: string,
+  err?: unknown,
+  data?: Record<string, unknown>
+) {
+  const errorInfo =
+    err instanceof Error
+      ? { name: err.name, message: err.message, stack: err.stack }
+      : { error: String(err) };
+  if (data)
+    console.error(`[connections:graph] ${message}`, { ...data, ...errorInfo });
+  else console.error(`[connections:graph] ${message}`, errorInfo);
+}
+
+function safeLen(s: string | null | undefined) {
+  return typeof s === 'string' ? s.length : 0;
+}
+
+function safePreview(s: string, n = 180) {
+  // Avoid dumping user resume or full page text into logs.
+  return s.length > n ? `${s.slice(0, n)}…` : s;
+}
+
 function buildStep1Prompt(backgroundInfo: string) {
   return `Step 1 — Anchor extractor (from resume/background)
 
@@ -190,12 +234,12 @@ Select a final list that includes:
 Return JSON ONLY:
 
 {
-  "selected": [${JSON.stringify(candidatesArrayJson)}],
+  "selected": [/* candidate objects from Inputs.candidates */],
   "coverage": {
     "has_near_peer": true|false,
     "has_senior": true|false
   },
-  "missing": ["near_peer|senior"],
+  "missing": ["near_peer", "senior"],
   "selection_rationale": ["string"]
 }
 
@@ -447,7 +491,12 @@ async function webSearch(
   maxResults = 10
 ): Promise<SearchResult[]> {
   const key = process.env.NEXT_PUBLIC_AVES_API_KEY;
-  if (!key) return [];
+  if (!key) {
+    logWarn('Missing NEXT_PUBLIC_AVES_API_KEY; webSearch returns empty', {
+      query,
+    });
+    return [];
+  }
 
   const url = `https://api.avesapi.com/search?apikey=${encodeURIComponent(
     key
@@ -455,9 +504,25 @@ async function webSearch(
     query
   )}&google_domain=google.com&gl=us&hl=en&device=desktop&output=json&num=${maxResults}`;
 
-  const resp = await fetch(url);
-  if (!resp.ok) return [];
-  const data = (await resp.json()) as unknown;
+  let resp: Response;
+  try {
+    resp = await fetch(url);
+  } catch (err) {
+    logError('webSearch fetch failed', err, { query });
+    return [];
+  }
+  if (!resp.ok) {
+    logWarn('webSearch non-OK response', { query, status: resp.status });
+    return [];
+  }
+
+  let data: unknown;
+  try {
+    data = (await resp.json()) as unknown;
+  } catch (err) {
+    logError('webSearch JSON parse failed', err, { query });
+    return [];
+  }
   const obj =
     data && typeof data === 'object' ? (data as Record<string, unknown>) : {};
 
@@ -484,6 +549,7 @@ async function webSearch(
       snippet: String(rec.snippet ?? rec.description ?? rec.content ?? ''),
     });
   }
+  logDebug('webSearch results', { query, count: out.length });
   return out.slice(0, maxResults);
 }
 
@@ -498,7 +564,10 @@ async function fetchPageText(url: string, maxChars = 8000): Promise<string> {
           'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
       },
     });
-    if (!resp.ok) return '';
+    if (!resp.ok) {
+      logDebug('fetchPageText non-OK', { url, status: resp.status });
+      return '';
+    }
     const html = await resp.text();
     // quick & cheap tag strip
     const text = html
@@ -509,6 +578,7 @@ async function fetchPageText(url: string, maxChars = 8000): Promise<string> {
       .trim();
     return text.slice(0, maxChars);
   } catch {
+    logDebug('fetchPageText failed (likely blocked)', { url });
     return '';
   }
 }
@@ -581,50 +651,113 @@ export async function findConnectionsWithLangGraph(
     aspects?.education?.current_level
   );
 
+  logDebug('LangGraph start', {
+    goalTitle: params.goalTitle,
+    educationLevel,
+    preferences: params.preferences ?? { connections: true, programs: true },
+    rawResumeTextLen: safeLen(params.rawResumeText),
+    maxIterations: params.maxIterations ?? 2,
+    maxQueriesPerIteration: params.maxQueriesPerIteration ?? 6,
+    maxUrlsPerQuery: params.maxUrlsPerQuery ?? 6,
+  });
+
   const model = new ChatOpenAI({
     model: process.env.OPENAI_MODEL ?? 'gpt-4o-mini',
     temperature: 0,
   });
 
   const anchorNode = async (state: GraphState) => {
-    const prompt = buildStep1Prompt(state.backgroundInfo);
-    const resp = await model.invoke([
-      new SystemMessage(SHARED_SYSTEM_PROMPT),
-      new HumanMessage(prompt),
-    ]);
-    const parsed = safeParseJson(String(resp.content ?? ''), Step1Schema);
-    return { anchors: parsed };
+    try {
+      logDebug('Step1 anchorNode input', {
+        backgroundInfoLen: safeLen(state.backgroundInfo),
+      });
+      const prompt = buildStep1Prompt(state.backgroundInfo);
+      const resp = await model.invoke([
+        new SystemMessage(SHARED_SYSTEM_PROMPT),
+        new HumanMessage(prompt),
+      ]);
+      const raw = String(resp.content ?? '');
+      const parsed = safeParseJson(raw, Step1Schema);
+      logDebug('Step1 anchors parsed', {
+        companies: parsed.companies.length,
+        institutions: parsed.institutions.length,
+        organizations: parsed.organizations.length,
+        projects: parsed.projects.length,
+        locations: parsed.locations.length,
+        keywords: parsed.keywords.length,
+        rawPreview: DEBUG_GRAPH_SHOW_RAW_PREVIEW ? safePreview(raw) : undefined,
+      });
+      return { anchors: parsed };
+    } catch (err) {
+      logError('Step1 anchorNode failed', err);
+      throw err;
+    }
   };
 
   const goalNode = async (state: GraphState) => {
-    const prompt = buildStep2Prompt(state.goalTitle, state.educationLevel);
-    const resp = await model.invoke([
-      new SystemMessage(SHARED_SYSTEM_PROMPT),
-      new HumanMessage(prompt),
-    ]);
-    const parsed = safeParseJson(String(resp.content ?? ''), Step2Schema);
-    return { goal: parsed };
+    try {
+      logDebug('Step2 goalNode input', {
+        goalTitle: state.goalTitle,
+        educationLevel: state.educationLevel,
+      });
+      const prompt = buildStep2Prompt(state.goalTitle, state.educationLevel);
+      const resp = await model.invoke([
+        new SystemMessage(SHARED_SYSTEM_PROMPT),
+        new HumanMessage(prompt),
+      ]);
+      const raw = String(resp.content ?? '');
+      const parsed = safeParseJson(raw, Step2Schema);
+      logDebug('Step2 goal parsed', {
+        field: parsed.field,
+        target_companies: parsed.target_companies.length,
+        target_roles: parsed.target_roles.length,
+        help_needed: parsed.help_needed.length,
+        rawPreview: DEBUG_GRAPH_SHOW_RAW_PREVIEW ? safePreview(raw) : undefined,
+      });
+      return { goal: parsed };
+    } catch (err) {
+      logError('Step2 goalNode failed', err);
+      throw err;
+    }
   };
 
   const planQueriesNode = async (state: GraphState) => {
-    const prompt = buildStep3Prompt(state.anchors, state.goal);
-    const resp = await model.invoke([
-      new SystemMessage(SHARED_SYSTEM_PROMPT),
-      new HumanMessage(prompt),
-    ]);
-    const parsed = safeParseJson(String(resp.content ?? ''), Step3Schema);
+    try {
+      logDebug('Step3 planQueries input', {
+        haveAnchors: !!state.anchors,
+        haveGoal: !!state.goal,
+        iteration: state.iteration,
+      });
+      const prompt = buildStep3Prompt(state.anchors, state.goal);
+      const resp = await model.invoke([
+        new SystemMessage(SHARED_SYSTEM_PROMPT),
+        new HumanMessage(prompt),
+      ]);
+      const raw = String(resp.content ?? '');
+      const parsed = safeParseJson(raw, Step3Schema);
 
-    // Respect UI preferences: optionally drop one query type.
-    const person_queries = state.preferences.connections
-      ? parsed.person_queries
-      : [];
-    const program_queries = state.preferences.programs
-      ? parsed.program_queries
-      : [];
-    return {
-      queries: { ...parsed, person_queries, program_queries },
-      iteration: state.iteration + 1,
-    };
+      // Respect UI preferences: optionally drop one query type.
+      const person_queries = state.preferences.connections
+        ? parsed.person_queries
+        : [];
+      const program_queries = state.preferences.programs
+        ? parsed.program_queries
+        : [];
+      logDebug('Step3 queries parsed', {
+        person_queries: person_queries.length,
+        program_queries: program_queries.length,
+        required_anchor_terms: parsed.required_anchor_terms.length,
+        exclude_terms: parsed.exclude_terms.length,
+        rawPreview: DEBUG_GRAPH_SHOW_RAW_PREVIEW ? safePreview(raw) : undefined,
+      });
+      return {
+        queries: { ...parsed, person_queries, program_queries },
+        iteration: state.iteration + 1,
+      };
+    } catch (err) {
+      logError('Step3 planQueriesNode failed', err);
+      throw err;
+    }
   };
 
   const retrieveAndFilterNode = async (state: GraphState) => {
@@ -644,8 +777,17 @@ export async function findConnectionsWithLangGraph(
       ...state.queries.program_queries.slice(0, state.maxQueriesPerIteration),
     ];
 
+    logDebug('Retrieve loop start', {
+      iteration: state.iteration,
+      queries: queries.length,
+      existingCandidates: (state.candidates as CandidateRecord[]).length,
+      maxUrlsPerQuery: state.maxUrlsPerQuery,
+    });
+
     for (const q of queries) {
+      logDebug('Retrieve query', { q });
       const results = await webSearch(q, state.maxUrlsPerQuery);
+      logDebug('Retrieve query results', { q, results: results.length });
       for (const r of results.slice(0, state.maxUrlsPerQuery)) {
         if (existingByUrl.has(r.url)) continue;
 
@@ -657,18 +799,28 @@ export async function findConnectionsWithLangGraph(
 
         // Step 4 parse candidate
         const step4Prompt = buildStep4Prompt(r.url, pageText);
-        const step4Resp = await model.invoke([
-          new SystemMessage(SHARED_SYSTEM_PROMPT),
-          new HumanMessage(step4Prompt),
-        ]);
-
         let candidate: Candidate;
         try {
-          candidate = safeParseJson(
-            String(step4Resp.content ?? ''),
-            CandidateSchema
-          );
-        } catch {
+          const step4Resp = await model.invoke([
+            new SystemMessage(SHARED_SYSTEM_PROMPT),
+            new HumanMessage(step4Prompt),
+          ]);
+          const raw = String(step4Resp.content ?? '');
+          candidate = safeParseJson(raw, CandidateSchema);
+          logDebug('Step4 candidate parsed', {
+            url: r.url,
+            type: candidate.type,
+            name: candidate.name ?? null,
+            rawPreview: DEBUG_GRAPH_SHOW_RAW_PREVIEW
+              ? safePreview(raw)
+              : undefined,
+          });
+        } catch (err) {
+          logWarn('Step4 candidate parse failed; skipping URL', {
+            url: r.url,
+            q,
+          });
+          logError('Step4 parse error detail', err, { url: r.url });
           continue; // fail closed
         }
 
@@ -687,6 +839,13 @@ export async function findConnectionsWithLangGraph(
 
         const directMatches = computeDirectMatches(state.anchors, candidate);
         const validDirectMatch = directMatches.direct_matches.length > 0;
+        logDebug('Step5 direct-match gate', {
+          url: r.url,
+          q,
+          validDirectMatch,
+          direct_matches: directMatches.direct_matches,
+          match_category: directMatches.match_category,
+        });
 
         // Strict gate: only proceed to alignment/accessibility if direct match passes.
         if (!validDirectMatch) {
@@ -704,17 +863,29 @@ export async function findConnectionsWithLangGraph(
 
         // Step 6 alignment
         const step6Prompt = buildStep6Prompt(state.goal, candidate);
-        const step6Resp = await model.invoke([
-          new SystemMessage(SHARED_SYSTEM_PROMPT),
-          new HumanMessage(step6Prompt),
-        ]);
         let alignment: z.infer<typeof Step6Schema> | null = null;
         try {
-          alignment = safeParseJson(
-            String(step6Resp.content ?? ''),
-            Step6Schema
-          );
+          const step6Resp = await model.invoke([
+            new SystemMessage(SHARED_SYSTEM_PROMPT),
+            new HumanMessage(step6Prompt),
+          ]);
+          const raw = String(step6Resp.content ?? '');
+          alignment = safeParseJson(raw, Step6Schema);
+          logDebug('Step6 alignment parsed', {
+            url: r.url,
+            confidence: alignment.confidence,
+            tags: alignment.alignment_tags.length,
+            rawPreview: DEBUG_GRAPH_SHOW_RAW_PREVIEW
+              ? safePreview(raw)
+              : undefined,
+          });
         } catch {
+          logWarn(
+            'Step6 alignment parse failed; continuing without alignment',
+            {
+              url: r.url,
+            }
+          );
           alignment = null;
         }
 
@@ -724,19 +895,37 @@ export async function findConnectionsWithLangGraph(
           state.goal,
           state.educationLevel
         );
-        const step7Resp = await model.invoke([
-          new SystemMessage(SHARED_SYSTEM_PROMPT),
-          new HumanMessage(step7Prompt),
-        ]);
         let accessibility: z.infer<typeof Step7Schema> | null = null;
         try {
-          accessibility = safeParseJson(
-            String(step7Resp.content ?? ''),
-            Step7Schema
-          );
+          const step7Resp = await model.invoke([
+            new SystemMessage(SHARED_SYSTEM_PROMPT),
+            new HumanMessage(step7Prompt),
+          ]);
+          const raw = String(step7Resp.content ?? '');
+          accessibility = safeParseJson(raw, Step7Schema);
+          logDebug('Step7 accessibility parsed', {
+            url: r.url,
+            keep: accessibility.keep,
+            score: accessibility.accessibility_score,
+            reasons: accessibility.reasons.length,
+            rawPreview: DEBUG_GRAPH_SHOW_RAW_PREVIEW
+              ? safePreview(raw)
+              : undefined,
+          });
         } catch {
+          logWarn('Step7 accessibility parse failed; default keep=false', {
+            url: r.url,
+          });
           accessibility = null;
         }
+
+        logDebug('Candidate decision', {
+          url: r.url,
+          keep: accessibility?.keep ?? false,
+          directMatch: true,
+          type: candidate.type,
+          name: candidate.name ?? null,
+        });
 
         newRecords.push({
           candidate,
@@ -756,22 +945,34 @@ export async function findConnectionsWithLangGraph(
           (cr) =>
             cr.directMatches.direct_matches.length > 0 && cr.accessibility?.keep
         );
+        logDebug('Kept direct-match count', { count: keptDirect.length });
         if (keptDirect.length >= 8) break;
       }
     }
 
+    logDebug('Retrieve loop end', {
+      totalCandidates:
+        (state.candidates as CandidateRecord[]).length + newRecords.length,
+      added: newRecords.length,
+    });
     return {
       candidates: [...(state.candidates as CandidateRecord[]), ...newRecords],
     };
   };
 
   const balanceNode = async (state: GraphState) => {
+    logDebug('Balance step start', {
+      candidates: (state.candidates as CandidateRecord[]).length,
+      preferences: state.preferences,
+    });
     const keptDirect = (state.candidates as CandidateRecord[])
       .filter(
         (cr) =>
           cr.directMatches.direct_matches.length > 0 && cr.accessibility?.keep
       )
       .map((cr) => cr.candidate);
+
+    logDebug('Balance keptDirect', { keptDirect: keptDirect.length });
 
     // If user only wants programs, skip near-peer/senior enforcement and just select up to 5 programs.
     if (state.preferences.programs && !state.preferences.connections) {
@@ -789,8 +990,25 @@ export async function findConnectionsWithLangGraph(
     ]);
     let parsed: z.infer<typeof Step8Schema>;
     try {
-      parsed = safeParseJson(String(resp.content ?? ''), Step8Schema);
+      const raw = String(resp.content ?? '');
+      parsed = safeParseJson(raw, Step8Schema);
+      logDebug('Step8 selection parsed', {
+        selected: parsed.selected.length,
+        has_near_peer: parsed.coverage.has_near_peer,
+        has_senior: parsed.coverage.has_senior,
+        missing: parsed.missing,
+        rawPreview: DEBUG_GRAPH_SHOW_RAW_PREVIEW ? safePreview(raw) : undefined,
+      });
     } catch {
+      const raw = String(resp.content ?? '');
+      logWarn(
+        'Step8 selection parse failed; fallback to first 5 direct matches',
+        {
+          rawPreview: DEBUG_GRAPH_SHOW_RAW_PREVIEW
+            ? safePreview(raw)
+            : undefined,
+        }
+      );
       // fallback: just take first 5 direct matches
       return { selectedCandidates: keptDirect.slice(0, 5) };
     }
@@ -804,6 +1022,12 @@ export async function findConnectionsWithLangGraph(
         cr.directMatches.direct_matches.length > 0 && cr.accessibility?.keep
     );
     const enough = keptDirect.length >= 5;
+    logDebug('Loop decision', {
+      iteration: state.iteration,
+      keptDirect: keptDirect.length,
+      enough,
+      maxIterations: state.maxIterations,
+    });
     if (enough) return 'balance';
     if (state.iteration >= state.maxIterations) return 'balance';
     return 'planQueries';
@@ -812,39 +1036,58 @@ export async function findConnectionsWithLangGraph(
   // LangGraph's TS overloads are strict; keep the runtime Zod schema and cast for compilation.
   const app = new StateGraph(GraphStateSchema as any)
     .addNode('anchor', anchorNode)
-    .addNode('goal', goalNode)
+    .addNode('goalStep', goalNode)
     .addNode('planQueries', planQueriesNode)
     .addNode('retrieve', retrieveAndFilterNode)
     .addNode('balance', balanceNode)
     .addEdge(START, 'anchor')
-    .addEdge('anchor', 'goal')
-    .addEdge('goal', 'planQueries')
+    .addEdge('anchor', 'goalStep')
+    .addEdge('goalStep', 'planQueries')
     .addEdge('planQueries', 'retrieve')
     .addConditionalEdges('retrieve', shouldLoop, ['planQueries', 'balance'])
     .addEdge('balance', END)
     .compile();
 
-  const finalState = await app.invoke({
-    goalTitle: params.goalTitle,
-    educationLevel,
-    backgroundInfo: params.rawResumeText,
-    preferences: {
-      connections: params.preferences?.connections ?? true,
-      programs: params.preferences?.programs ?? true,
-    },
-    anchors: null,
-    goal: null,
-    queries: null,
-    iteration: 0,
-    maxIterations: params.maxIterations ?? 2,
-    maxQueriesPerIteration: params.maxQueriesPerIteration ?? 6,
-    maxUrlsPerQuery: params.maxUrlsPerQuery ?? 6,
-    candidates: [],
-    selectedCandidates: [],
-  });
+  let finalState: any;
+  try {
+    finalState = await app.invoke({
+      goalTitle: params.goalTitle,
+      educationLevel,
+      backgroundInfo: params.rawResumeText,
+      preferences: {
+        connections: params.preferences?.connections ?? true,
+        programs: params.preferences?.programs ?? true,
+      },
+      anchors: null,
+      goal: null,
+      queries: null,
+      iteration: 0,
+      maxIterations: params.maxIterations ?? 2,
+      maxQueriesPerIteration: params.maxQueriesPerIteration ?? 6,
+      maxUrlsPerQuery: params.maxUrlsPerQuery ?? 6,
+      candidates: [],
+      selectedCandidates: [],
+    });
+    logDebug('Graph invoke complete', {
+      candidates: (finalState.candidates as any[])?.length ?? 0,
+      selectedCandidates: (finalState.selectedCandidates as any[])?.length ?? 0,
+    });
+  } catch (err) {
+    logError('Graph invoke failed', err, {
+      goalTitle: params.goalTitle,
+      educationLevel,
+      rawResumeTextLen: safeLen(params.rawResumeText),
+    });
+    throw err;
+  }
 
   const candidateRecords = finalState.candidates as CandidateRecord[];
   const selected = finalState.selectedCandidates as Candidate[];
+
+  logDebug('Output assembly start', {
+    selected: selected.length,
+    candidateRecords: candidateRecords.length,
+  });
 
   const selectedSet = new Set(
     selected.map((c) =>
@@ -915,6 +1158,9 @@ export async function findConnectionsWithLangGraph(
 
   // Fallback: if too few direct-match connections, include reachable, aligned non-direct candidates.
   if (connections.length < 5) {
+    logWarn('Applying fallback selection (insufficient direct matches)', {
+      directMatchCount: connections.length,
+    });
     const nonDirect = candidateRecords
       .filter(
         (cr) =>
@@ -982,5 +1228,6 @@ export async function findConnectionsWithLangGraph(
     }
   }
 
+  logDebug('LangGraph end', { returned: connections.slice(0, 5).length });
   return connections.slice(0, 5);
 }

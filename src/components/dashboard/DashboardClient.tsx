@@ -389,7 +389,9 @@ export default function DashboardClient() {
               }
               case 'error':
                 throw new Error(
-                  (msg as { message?: string }).message || 'Stream error'
+                  (msg as { message?: string; error?: string }).message ||
+                    (msg as { message?: string; error?: string }).error ||
+                    'Stream error'
                 );
               default:
                 break;
