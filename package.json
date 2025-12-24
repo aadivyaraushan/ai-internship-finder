@@ -44,7 +44,7 @@
     "mermaid": "^11.9.0",
     "mini-svg-data-uri": "^1.4.4",
     "motion": "^12.19.2",
-    "next": "15.3.3",
+    "next": "15.3.8",
     "node-pin": "^0.3.0",
     "openai": "^5.10.1",
     "pdf-parse": "^1.1.1",
