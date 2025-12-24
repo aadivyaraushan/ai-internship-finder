@@ -82,6 +82,15 @@ export function PersonConnectionCard({
           )}
         </div>
 
+        {/* AI Reason (2nd-person) */}
+        {connection.ai_connection_reason && (
+          <div className='mt-2'>
+            <p className='text-xs text-gray-300 leading-relaxed'>
+              {connection.ai_connection_reason}
+            </p>
+          </div>
+        )}
+
         {/* Shared Professional Background */}
         {sharedProfessionalBackground.length > 0 && (
           <div className='mt-3'>

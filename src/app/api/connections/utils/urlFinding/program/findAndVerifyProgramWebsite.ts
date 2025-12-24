@@ -1,5 +1,6 @@
 import { scrapeProgramWebsite } from './scrapeProgramWebsite';
 import { Connection } from '@/lib/firestoreHelpers';
+import { tavilySearch } from '@/lib/tavilySearch';
 
 function normalizeText(text: string): string {
   if (!text) return '';
@@ -129,28 +130,16 @@ export async function findAndVerifyProgramWebsite(
 
     console.log(`🔍 Searching for program website: "${searchQuery}"`);
 
-    // Use SerpAPI or similar service to get search results
-    const serpApiKey = process.env.SERP_API_KEY;
-    if (!serpApiKey) {
-      console.warn('SERP_API_KEY not found - cannot perform web search');
+    // Web search (Tavily)
+    if (!process.env.TAVILY_API_KEY) {
+      console.warn('TAVILY_API_KEY not found - cannot perform web search');
       return { url: null, verificationData: { isValid: false } };
     }
 
     // Add delay before search
     await delay();
 
-    // Make search request
-    const searchUrl = `https://serpapi.com/search.json?q=${encodeURIComponent(
-      searchQuery
-    )}&num=${maxResults}&api_key=${serpApiKey}`;
-
-    const searchResponse = await fetch(searchUrl);
-    if (!searchResponse.ok) {
-      throw new Error(`Search API returned ${searchResponse.status}`);
-    }
-
-    const searchData = await searchResponse.json();
-    const results = searchData.organic_results || [];
+    const results = await tavilySearch(searchQuery, maxResults);
 
     if (results.length === 0) {
       console.log('No search results found');
@@ -162,7 +151,7 @@ export async function findAndVerifyProgramWebsite(
     // Check each result until we find a valid program website
     for (let i = 0; i < Math.min(results.length, maxResults); i++) {
       const result = results[i];
-      const url = result.link;
+      const url = result.url;
 
       if (!url || !url.startsWith('http')) {
         continue; // Skip invalid URLs

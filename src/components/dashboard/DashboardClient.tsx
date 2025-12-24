@@ -42,6 +42,7 @@ import type {
 
 import {
   buildConnectionsRequestBody,
+  dedupeConnectionsById,
   goalTextFrom,
   isPendingConnection,
   parseConnectionPreferences,
@@ -179,7 +180,7 @@ export default function DashboardClient() {
       setCachedResumeData(resumeData);
 
       setGoals(fetchedGoals);
-      setConnections(fetchedConnections);
+      setConnections(dedupeConnectionsById(fetchedConnections));
       setPersonalizationSettings(fetchedPersonalizationSettings);
     } catch (error) {
       console.error('Error fetching user data:', error);
@@ -195,7 +196,7 @@ export default function DashboardClient() {
       const pending = allConnections.filter(
         (c: Connection) => c.status === 'not_contacted' || !c.status
       );
-      setAllPendingConnections(pending);
+      setAllPendingConnections(dedupeConnectionsById(pending));
       setPendingConnectionsLoaded(true);
     } catch (error) {
       console.error('Error fetching all pending connections:', error);

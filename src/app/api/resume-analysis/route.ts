@@ -1,173 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server';
 import pdfParse from 'pdf-parse/lib/pdf-parse.js';
-import { analyzeResumeWithAI, parseWithSchema } from '../../../lib/anthropicClient';
-import { z } from 'zod';
 import { writeFile, unlink } from 'fs/promises';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { EventEmitter } from 'events';
+import { analyzeResumeWithLangGraph } from './services/langgraphResumeAnalysisService';
 
 // Create a global event emitter (consider using a request-specific emitter in production)
 const globalEmitter = new EventEmitter();
-
-type School = {
-  school_name: string;
-  clubs: string[];
-  awards: string[];
-  gpa: string | null;
-  notable_coursework: string[];
-};
-
-type Project = {
-  project_name: string;
-  description: string;
-  responsibilities: string[];
-  recognition: string | null;
-  skills: string[];
-};
-
-type WorkExperience = {
-  workplace: string;
-  notable_projects: string[];
-  role: string;
-  reference_email: string | null;
-  is_alumni: boolean;
-};
-
-// Define Zod schemas for each section
-const EducationSchema = z.object({
-  school_name: z.string().describe('Name of the educational institution'),
-  clubs: z
-    .array(z.string())
-    .describe('List of clubs and organizations participated in'),
-  awards: z.array(z.string()).describe('List of academic awards and honors'),
-  gpa: z.string().nullable().describe('GPA if mentioned'),
-  notable_coursework: z
-    .array(z.string())
-    .describe('List of relevant courses taken'),
-});
-
-const PersonalProjectSchema = z.object({
-  project_name: z.string().describe('Name of the project'),
-  description: z.string().describe('Brief description of the project'),
-  responsibilities: z
-    .array(z.string())
-    .describe('Key responsibilities and contributions'),
-  recognition: z
-    .string()
-    .nullable()
-    .describe('Any recognition or achievements'),
-  skills: z.array(z.string()).describe('Technical skills used in the project'),
-});
-
-const WorkExperienceSchema = z.object({
-  workplace: z.string().describe('Name of the company or organization'),
-  notable_projects: z.array(z.string()).describe('Key projects worked on'),
-  role: z.string().describe('Job title or position'),
-  reference_email: z
-    .string()
-    .nullable()
-    .describe('Email of reference if provided'),
-  is_alumni: z.boolean().describe('Whether they are still working there'),
-});
-
-// Define the main resume schema
-type ResumeAnalysisResponse = {
-  education: Array<{
-    school_name: string;
-    clubs: string[];
-    awards: string[];
-    gpa: string | null;
-    notable_coursework: string[];
-  }>;
-  skills: string[];
-  personal_projects: Array<{
-    project_name: string;
-    description: string;
-    responsibilities: string[];
-    recognition: string | null;
-    skills: string[];
-  }>;
-  workex: Array<{
-    workplace: string;
-    notable_projects: string[];
-    role: string;
-    reference_email: string | null;
-    is_alumni: boolean;
-  }>;
-  linkedin: string | null;
-  per_web: string | null;
-};
-
-const ResumeSchema = z.object({
-  education: z.array(EducationSchema).describe('Educational background'),
-  skills: z.array(z.string()).describe('Technical and non-technical skills'),
-  personal_projects: z
-    .array(PersonalProjectSchema)
-    .describe('Personal and academic projects'),
-  workex: z.array(WorkExperienceSchema).describe('Work experience entries'),
-  linkedin: z.string().nullable().describe('LinkedIn profile URL'),
-  per_web: z.string().nullable().describe('Personal website URL'),
-});
-
-// Combined schema that includes both structured data and connection aspects
-const CombinedResumeSchema = z.object({
-  education: z.array(EducationSchema).describe('Educational background'),
-  skills: z.array(z.string()).describe('Technical and non-technical skills'),
-  personal_projects: z
-    .array(PersonalProjectSchema)
-    .describe('Personal and academic projects'),
-  workex: z.array(WorkExperienceSchema).describe('Work experience entries'),
-  linkedin: z.string().nullable().describe('LinkedIn profile URL'),
-  per_web: z.string().nullable().describe('Personal website URL'),
-  connection_aspects: z.object({
-    education: z.object({
-      institutions: z.array(z.string()),
-      graduation_years: z.array(z.string()),
-      fields_of_study: z.array(z.string()),
-      current_level: z.enum(['high_school', 'undergraduate', 'graduate']),
-    }),
-    work_experience: z.object({
-      detailed_experiences: z.array(z.object({
-        company: z.string(),
-        role: z.string(),
-        duration: z.string(),
-        responsibilities: z.array(z.string()),
-        scale_and_impact: z.string(),
-        key_achievements: z.array(z.string()),
-      })),
-      companies: z.array(z.string()),
-      startup_experience: z.array(z.string()),
-      industry_transitions: z.object({
-        from_industries: z.array(z.string()),
-        to_industries: z.array(z.string()),
-        transition_context: z.string(),
-      }),
-    }),
-    personal_projects: z.array(z.string()),
-    activities: z.object({
-      clubs: z.array(z.string()),
-      organizations: z.array(z.string()),
-      volunteer_work: z.array(z.string()),
-    }),
-    achievements: z.object({
-      certifications: z.array(z.string()),
-      awards: z.array(z.string()),
-      notable_projects: z.array(z.string()),
-    }),
-    growth_areas: z.object({
-      developing_skills: z.array(z.string()),
-      target_roles: z.array(z.string()),
-      learning_journey: z.string(),
-    }),
-  }).describe('Detailed connection aspects for networking'),
-});
+// NOTE:
+// The previous implementation defined large inline Zod schemas and used a brittle
+// OpenAI Chat Completions wrapper that sometimes returned empty content.
+// Resume analysis is now implemented via LangGraph in
+// `src/app/api/resume-analysis/services/langgraphResumeAnalysisService.ts`.
 
 export async function POST(req: NextRequest) {
   try {
     const formData = await req.formData();
     const file = formData.get('file') as File;
-    const userId = formData.get('userId') as string;
+    // const userId = formData.get('userId') as string; // currently unused
 
     if (!file) {
       return NextResponse.json({ error: 'No file provided' }, { status: 400 });
@@ -181,12 +32,8 @@ export async function POST(req: NextRequest) {
     await writeFile(tempFilePath, buffer);
 
     try {
-      // Create a request-specific event emitter
-      const requestEmitter = new EventEmitter();
-
-      // Function to broadcast events for this request
       const broadcastEvent = (event: any) => {
-        requestEmitter.emit('event', event);
+        globalEmitter.emit('event', event);
       };
 
       // Define processing steps to match frontend
@@ -430,32 +277,19 @@ Return ONLY valid JSON matching this exact structure:
 \`\`\`
 `;
 
-      // First call: Let AI think and reason, then provide JSON
-      const rawResponse = await analyzeResumeWithAI(analysisPrompt);
+      // LangGraph-based analysis (schema validated)
+      const parsedResult = await analyzeResumeWithLangGraph({ resumeText: text });
 
-      // Second call: Parse the JSON from the response using schema validation
-      const parsedResult = await parseWithSchema(
-        'Parse the JSON put at the end of the following response: \n\n' + rawResponse,
-        CombinedResumeSchema
-      ) as {
-        education?: unknown[];
-        skills?: unknown[];
-        personal_projects?: unknown[];
-        workex?: unknown[];
-        linkedin?: unknown;
-        per_web?: unknown;
-        connection_aspects?: unknown;
-      };
       const structuredData = {
-        education: parsedResult.education || [],
-        skills: parsedResult.skills || [],
-        personal_projects: parsedResult.personal_projects || [],
-        workex: parsedResult.workex || [],
-        linkedin: parsedResult.linkedin || null,
-        per_web: parsedResult.per_web || null
+        education: parsedResult.education ?? [],
+        skills: parsedResult.skills ?? [],
+        personal_projects: parsedResult.personal_projects ?? [],
+        workex: parsedResult.workex ?? [],
+        linkedin: parsedResult.linkedin ?? null,
+        per_web: parsedResult.per_web ?? null,
       };
-      
-      const analyzedAspects = parsedResult.connection_aspects || null;
+
+      const analyzedAspects = parsedResult.connection_aspects ?? null;
 
       // Step 4: Uploading data
       currentStep = 4;
@@ -516,13 +350,11 @@ export async function GET(req: NextRequest) {
     writer.write(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
   };
 
-  // Use a temporary event emitter for this connection
-  const emitter = new EventEmitter();
-  emitter.on('event', listener);
+  globalEmitter.on('event', listener);
 
   // Cleanup on client disconnect
   req.signal.onabort = () => {
-    emitter.off('event', listener);
+    globalEmitter.off('event', listener);
     writer.close();
   };
 

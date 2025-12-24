@@ -1,25 +1,31 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { tavilySearch } from '@/lib/tavilySearch';
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const query = searchParams.get('query');
-  // console.log('query from GET: ', query);
   try {
-    // const response = await fetch(
-    //   `https://serpapi.com/search?q=${query}&location=${'Dubai,Dubai,United Arab Emirates'}&engine=google&api_key=${
-    //     process.env.NEXT_PUBLIC_SERPAPI_KEY
-    //   }`
-    const response = await fetch(
-      `https://api.avesapi.com/search?apikey=${process.env.NEXT_PUBLIC_AVES_API_KEY}&type=web&query=${query}&google_domain=google.ae&gl=ae&hl=en&device=desktop&output=json&num=10`
-    );
-    // console.log('response: ', response);
-
-    if (!response.ok) {
-      throw new Error('Network response was not ok');
+    if (!query) {
+      return NextResponse.json({ error: 'Missing query' }, { status: 400 });
     }
-    const jsonData = await response.json();
-    // console.log('jsonData: ', jsonData);
-    return NextResponse.json(jsonData);
+
+    if (!process.env.TAVILY_API_KEY) {
+      return NextResponse.json(
+        { error: 'Missing TAVILY_API_KEY' },
+        { status: 500 }
+      );
+    }
+
+    const results = await tavilySearch(query, 10);
+
+    // Backward-compatible shape for any existing callers expecting SerpAPI/Aves-like fields.
+    return NextResponse.json({
+      organic_results: results.map((r) => ({
+        title: r.title,
+        link: r.url,
+        snippet: r.snippet,
+      })),
+    });
   } catch {
     return NextResponse.error();
   }

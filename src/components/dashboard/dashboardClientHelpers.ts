@@ -61,6 +61,43 @@ export function upsertConnectionById(
   return existingIds.has(next.id) ? prev : [...prev, next];
 }
 
+/**
+ * Remove duplicate connections by `id` while keeping a stable order.
+ * If duplicates exist, we prefer the item with the newest `lastUpdated` (if present),
+ * otherwise we keep the last occurrence.
+ */
+export function dedupeConnectionsById(connections: Connection[]): Connection[] {
+  const byId = new Map<string, Connection>();
+
+  for (const c of connections) {
+    const existing = byId.get(c.id);
+    if (!existing) {
+      byId.set(c.id, c);
+      continue;
+    }
+
+    const existingUpdated = (existing as Record<string, unknown>).lastUpdated;
+    const nextUpdated = (c as Record<string, unknown>).lastUpdated;
+
+    const existingTs =
+      typeof existingUpdated === 'string' ? Date.parse(existingUpdated) : NaN;
+    const nextTs =
+      typeof nextUpdated === 'string' ? Date.parse(nextUpdated) : NaN;
+
+    if (!Number.isNaN(nextTs) && (Number.isNaN(existingTs) || nextTs >= existingTs)) {
+      byId.set(c.id, c);
+      continue;
+    }
+
+    // If timestamps are missing/unparseable, keep the last occurrence.
+    if (Number.isNaN(existingTs) && Number.isNaN(nextTs)) {
+      byId.set(c.id, c);
+    }
+  }
+
+  return Array.from(byId.values());
+}
+
 export type ConnectionsRequestBody = {
   goalTitle: string;
   preferences: ConnectionPreferences;

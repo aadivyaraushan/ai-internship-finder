@@ -22,6 +22,7 @@ export interface ProcessedConnection {
   shared_background_points?: string[] | null;
   shared_professional_interests?: string[] | null;
   shared_personal_interests?: string[] | null;
+  ai_connection_reason?: string | null;
   ai_outreach_message?: string | null;
   description: string;
 }
@@ -103,6 +104,7 @@ export function postProcessConnections(
           : []),
       shared_professional_interests: conn.shared_professional_interests || null,
       shared_personal_interests: conn.shared_personal_interests || null,
+      ai_connection_reason: conn.ai_connection_reason ?? null,
       ai_outreach_message: conn.ai_outreach_message,
       description: description || 'No additional details available',
     };

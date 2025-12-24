@@ -101,6 +101,10 @@ export interface Connection {
   shared_background_points?: string[] | null;
   shared_professional_interests?: string[] | null;
   shared_personal_interests?: string[] | null;
+  /**
+   * Short, user-facing explanation (2nd person) for why this is a good connection.
+   */
+  ai_connection_reason?: string | null;
   ai_outreach_message?: string | null;
   profile_data?: unknown;
   website_verified?: boolean;

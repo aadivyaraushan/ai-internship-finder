@@ -6,6 +6,7 @@ import { extractFirstJSON } from '../utils/extractFirstJson';
 import { Connection } from '@/lib/firestoreHelpers';
 import { ConnectionAspects } from '../utils/utils';
 import { ConnectionPreferences } from '@/components/ui/ConnectionPreferencesSelector';
+import { tavilySearch as tavilySearchLib } from '@/lib/tavilySearch';
 
 // -------------------------
 // Prompt building
@@ -15,6 +16,61 @@ const SHARED_SYSTEM_PROMPT = `You are a strict JSON generator.
 Return ONLY valid JSON that matches the schema in the user message.
 Do not invent facts. If missing/unknown, use null, empty arrays, or "unknown".
 No extra keys. No extra text.`;
+
+const ConnectionWriteupSchema = z.object({
+  connection_reason: z
+    .string()
+    .describe(
+      'A short 2nd-person explanation of why this connection/program is a good fit for the user.'
+    ),
+  outreach_message: z
+    .string()
+    .nullable()
+    .describe(
+      'A natural outreach message the user can send to the person. Null for programs.'
+    ),
+});
+
+function buildWriteupPrompt(input: {
+  goalTitle: string;
+  educationLevel: string;
+  connection: Pick<
+    Connection,
+    | 'type'
+    | 'name'
+    | 'current_role'
+    | 'company'
+    | 'verified_profile_url'
+    | 'website_url'
+    | 'organization'
+    | 'program_type'
+    | 'direct_matches'
+    | 'goal_alignment'
+    | 'additional_factors'
+  >;
+}) {
+  return `You are generating user-facing copy for a networking app.
+
+Return JSON ONLY matching this schema:
+{
+  "connection_reason": "string",
+  "outreach_message": "string|null"
+}
+
+Rules for connection_reason:
+- Write in 2nd person ("you") and keep it to 1-2 sentences.
+- Use only the provided fields; do not invent facts.
+- Mention the strongest shared anchor(s) and how it helps with the user's goal.
+
+Rules for outreach_message:
+- If type is "program": set outreach_message to null.
+- If type is "person": write a natural, concise message the user can send (4-7 sentences).
+- Avoid inventing referrals/hiring authority. Avoid overclaiming closeness.
+- Reference the shared anchor(s) and a specific ask (15 min chat / quick advice).
+
+Inputs:
+${JSON.stringify(input)}`;
+}
 
 // -------------------------
 // Logging (opt-in)
@@ -60,6 +116,32 @@ function safePreview(s: string, n = 180) {
   return s.length > n ? `${s.slice(0, n)}…` : s;
 }
 
+function cleanAnchorList(list: string[]): string[] {
+  const out: string[] = [];
+  for (const raw of list) {
+    const s = (raw ?? '').trim();
+    if (!s) continue;
+    // Filter obvious non-anchors / recognizer artifacts
+    if (/^[-–—]\s*/.test(s)) continue;
+    if (/\b(recognized|recognised|recognition)\b/i.test(s)) continue;
+    if (!out.includes(s)) out.push(s);
+  }
+  return out;
+}
+
+function cleanAnchors(
+  a: z.infer<typeof Step1Schema>
+): z.infer<typeof Step1Schema> {
+  return {
+    companies: cleanAnchorList(a.companies),
+    institutions: cleanAnchorList(a.institutions),
+    organizations: cleanAnchorList(a.organizations),
+    projects: cleanAnchorList(a.projects),
+    locations: cleanAnchorList(a.locations),
+    keywords: cleanAnchorList(a.keywords),
+  };
+}
+
 function buildStep1Prompt(backgroundInfo: string) {
   return `Step 1 — Anchor extractor (from resume/background)
 
@@ -67,6 +149,11 @@ Purpose: pull only explicit match anchors.
 
 Extract ONLY explicitly stated entities from the background text.
 No inference, no guessing, no normalization beyond trimming whitespace.
+
+Institutional-connection rules (be critical):
+- For "institutions": ONLY schools/universities/colleges or formal academic institutions the candidate attended/was affiliated with.
+- For "organizations": ONLY organizations/clubs/groups where the candidate had explicit membership/role/participation.
+- EXCLUDE entities that merely recognized/awarded/certified the candidate (e.g., "recognized by X", award issuers, certification authorities) unless the text explicitly says the candidate was a member/employee/volunteer there.
 Return JSON ONLY matching this schema:
 
 {
@@ -114,7 +201,23 @@ function buildStep3Prompt(anchorsJson: unknown, goalJson: unknown) {
 Purpose: generate queries that are forced to include exact anchors.
 
 Create search queries to find (1) people and (2) programs.
-Queries MUST include at least one anchor from companies/institutions/organizations/projects.
+Queries MUST include at least one anchor from companies/institutions/organizations.
+
+IMPORTANT CONSTRAINT (avoid weak/side-project anchors):
+- Do NOT build queries around small personal side projects or solo projects from the resume.
+- Treat "projects" as low-signal and generally unusable for discovery (they often have no employee/alumni pages and create junk results).
+- Only use a project as an anchor if it is clearly an established organization/product with a real team and public footprint; otherwise ignore it.
+
+LOOP BROADENING BEHAVIOR:
+- If previous attempts found too few candidates, broaden incrementally:
+  - broaden_level=0: strict anchors (company/institution/organization) + goal role keywords
+  - broaden_level=1: still anchored, but allow broader role keywords and include user location if available
+  - broaden_level=2: still anchored, but allow industry-wide queries and "alumni" style queries; increase diversity of query templates
+- Even when broadening, keep at least one strong anchor term in each query.
+
+What to prioritize for strong, non-obvious discovery:
+- Prefer anchors from established companies, educational institutions, and well-known organizations/clubs.
+- Prefer alumni queries and "ex-[anchor]" style queries that surface people who have moved on (not someone obviously already known from a tiny project).
 Return JSON ONLY:
 
 {
@@ -128,7 +231,8 @@ Return JSON ONLY:
 Inputs:
 {
   "anchors": ${JSON.stringify(anchorsJson)},
-  "goal": ${JSON.stringify(goalJson)}
+  "goal": ${JSON.stringify(goalJson)},
+  "broaden_level": {{broaden_level}}
 }`;
 }
 
@@ -376,6 +480,32 @@ function uniqStrings(xs: string[]) {
   return Array.from(new Set(xs.map((s) => s.trim()).filter(Boolean)));
 }
 
+function buildHighSignalBackgroundInfo(
+  aspects: ConnectionAspects | null,
+  rawResumeText: string
+) {
+  if (!aspects) return rawResumeText;
+  const institutions = uniqStrings(aspects.education?.institutions ?? []);
+  const companies = uniqStrings(aspects.work_experience?.companies ?? []);
+  const clubs = uniqStrings(aspects.activities?.clubs ?? []);
+  const orgs = uniqStrings(aspects.activities?.organizations ?? []);
+  const volunteer = uniqStrings(aspects.activities?.volunteer_work ?? []);
+
+  // Intentionally exclude achievements/certification issuers to avoid false “institutional connection” anchors.
+  // Keep it compact and explicit.
+  const parts = [
+    institutions.length ? `Institutions: ${institutions.join(', ')}` : '',
+    companies.length ? `Companies: ${companies.join(', ')}` : '',
+    clubs.length ? `Clubs: ${clubs.join(', ')}` : '',
+    orgs.length ? `Organizations: ${orgs.join(', ')}` : '',
+    volunteer.length ? `Volunteer: ${volunteer.join(', ')}` : '',
+  ].filter(Boolean);
+
+  // Fallback: if aspects are empty, use raw text.
+  if (parts.length === 0) return rawResumeText;
+  return parts.join('\n');
+}
+
 function normalizeForExactMatch(s: string) {
   return s.trim().toLowerCase();
 }
@@ -490,67 +620,15 @@ async function webSearch(
   query: string,
   maxResults = 10
 ): Promise<SearchResult[]> {
-  const key = process.env.NEXT_PUBLIC_AVES_API_KEY;
-  if (!key) {
-    logWarn('Missing NEXT_PUBLIC_AVES_API_KEY; webSearch returns empty', {
+  if (!process.env.TAVILY_API_KEY) {
+    logWarn('Missing TAVILY_API_KEY; webSearch returns empty', {
       query,
     });
     return [];
   }
-
-  const url = `https://api.avesapi.com/search?apikey=${encodeURIComponent(
-    key
-  )}&type=web&query=${encodeURIComponent(
-    query
-  )}&google_domain=google.com&gl=us&hl=en&device=desktop&output=json&num=${maxResults}`;
-
-  let resp: Response;
-  try {
-    resp = await fetch(url);
-  } catch (err) {
-    logError('webSearch fetch failed', err, { query });
-    return [];
-  }
-  if (!resp.ok) {
-    logWarn('webSearch non-OK response', { query, status: resp.status });
-    return [];
-  }
-
-  let data: unknown;
-  try {
-    data = (await resp.json()) as unknown;
-  } catch (err) {
-    logError('webSearch JSON parse failed', err, { query });
-    return [];
-  }
-  const obj =
-    data && typeof data === 'object' ? (data as Record<string, unknown>) : {};
-
-  const itemsCandidate =
-    obj.organic_results ??
-    obj.organic ??
-    obj.results ??
-    obj.items ??
-    (obj.data && typeof obj.data === 'object'
-      ? (obj.data as Record<string, unknown>).results
-      : undefined);
-
-  const items = Array.isArray(itemsCandidate) ? itemsCandidate : [];
-
-  const out: SearchResult[] = [];
-  for (const it of items) {
-    const rec =
-      it && typeof it === 'object' ? (it as Record<string, unknown>) : {};
-    const link = rec.link ?? rec.url ?? rec.href;
-    if (!link || typeof link !== 'string' || !link.startsWith('http')) continue;
-    out.push({
-      title: String(rec.title ?? ''),
-      url: link,
-      snippet: String(rec.snippet ?? rec.description ?? rec.content ?? ''),
-    });
-  }
+  const out = await tavilySearchLib(query, maxResults);
   logDebug('webSearch results', { query, count: out.length });
-  return out.slice(0, maxResults);
+  return out;
 }
 
 async function fetchPageText(url: string, maxChars = 8000): Promise<string> {
@@ -601,6 +679,25 @@ type CandidateRecord = {
   searchQuery: string;
 };
 
+function recordScore(rec: CandidateRecord): number {
+  // Deterministic ranking for selection/fallback.
+  // Prefer direct matches, then blend alignment confidence and accessibility score.
+  const directBoost = rec.directMatches.direct_matches.length > 0 ? 1.0 : 0.0;
+  const alignment = rec.alignment?.confidence ?? 0;
+  const access = rec.accessibility?.accessibility_score ?? 0;
+  return directBoost * 2.0 + alignment * 1.0 + access * 0.5;
+}
+
+function bestOfType(
+  records: CandidateRecord[],
+  type: Candidate['type']
+): CandidateRecord | null {
+  const filtered = records.filter((r) => r.candidate.type === type);
+  if (filtered.length === 0) return null;
+  filtered.sort((a, b) => recordScore(b) - recordScore(a));
+  return filtered[0];
+}
+
 const GraphStateSchema = z.object({
   // inputs
   goalTitle: z.string(),
@@ -618,6 +715,7 @@ const GraphStateSchema = z.object({
 
   // loop control
   iteration: z.number(),
+  broadenLevel: z.number(),
   maxIterations: z.number(),
   maxQueriesPerIteration: z.number(),
   maxUrlsPerQuery: z.number(),
@@ -650,15 +748,21 @@ export async function findConnectionsWithLangGraph(
   const educationLevel = coerceEducationLevel(
     aspects?.education?.current_level
   );
+  const backgroundInfo = buildHighSignalBackgroundInfo(
+    aspects,
+    params.rawResumeText
+  );
 
   logDebug('LangGraph start', {
     goalTitle: params.goalTitle,
     educationLevel,
     preferences: params.preferences ?? { connections: true, programs: true },
     rawResumeTextLen: safeLen(params.rawResumeText),
+    backgroundInfoLen: safeLen(backgroundInfo),
     maxIterations: params.maxIterations ?? 2,
     maxQueriesPerIteration: params.maxQueriesPerIteration ?? 6,
     maxUrlsPerQuery: params.maxUrlsPerQuery ?? 6,
+    hasSearchKey: !!process.env.TAVILY_API_KEY,
   });
 
   const model = new ChatOpenAI({
@@ -677,7 +781,8 @@ export async function findConnectionsWithLangGraph(
         new HumanMessage(prompt),
       ]);
       const raw = String(resp.content ?? '');
-      const parsed = safeParseJson(raw, Step1Schema);
+      const parsedRaw = safeParseJson(raw, Step1Schema);
+      const parsed = cleanAnchors(parsedRaw);
       logDebug('Step1 anchors parsed', {
         companies: parsed.companies.length,
         institutions: parsed.institutions.length,
@@ -727,8 +832,19 @@ export async function findConnectionsWithLangGraph(
         haveAnchors: !!state.anchors,
         haveGoal: !!state.goal,
         iteration: state.iteration,
+        broadenLevel: state.broadenLevel,
       });
-      const prompt = buildStep3Prompt(state.anchors, state.goal);
+      // Enforce: do not use "projects" as anchors for query planning (side projects are low-signal / often nonexistent online).
+      // We still keep projects in the main `anchors` for direct-match validation later.
+      const anchorsForQueryPlanning = state.anchors
+        ? { ...state.anchors, projects: [] as string[] }
+        : state.anchors;
+
+      // Inject broaden level into the prompt template without polluting the state schema.
+      const prompt = buildStep3Prompt(
+        anchorsForQueryPlanning,
+        state.goal
+      ).replace('{{broaden_level}}', JSON.stringify(state.broadenLevel));
       const resp = await model.invoke([
         new SystemMessage(SHARED_SYSTEM_PROMPT),
         new HumanMessage(prompt),
@@ -749,6 +865,11 @@ export async function findConnectionsWithLangGraph(
         required_anchor_terms: parsed.required_anchor_terms.length,
         exclude_terms: parsed.exclude_terms.length,
         rawPreview: DEBUG_GRAPH_SHOW_RAW_PREVIEW ? safePreview(raw) : undefined,
+      });
+
+      logDebug('Step3 queries preview', {
+        person_queries_preview: person_queries.slice(0, 3),
+        program_queries_preview: program_queries.slice(0, 3),
       });
       return {
         queries: { ...parsed, person_queries, program_queries },
@@ -783,6 +904,13 @@ export async function findConnectionsWithLangGraph(
       existingCandidates: (state.candidates as CandidateRecord[]).length,
       maxUrlsPerQuery: state.maxUrlsPerQuery,
     });
+
+    if (queries.length === 0) {
+      logWarn(
+        'Retrieve skipped: no queries generated (check Step3 + preferences)'
+      );
+      return { candidates: state.candidates };
+    }
 
     for (const q of queries) {
       logDebug('Retrieve query', { q });
@@ -848,17 +976,21 @@ export async function findConnectionsWithLangGraph(
         });
 
         // Strict gate: only proceed to alignment/accessibility if direct match passes.
+        // BUT: after broadening starts (broadenLevel >= 1), we also evaluate non-direct candidates
+        // so the system can still return useful results even if direct matches are scarce.
         if (!validDirectMatch) {
-          newRecords.push({
-            candidate,
-            directMatches,
-            alignment: null,
-            accessibility: null,
-            sourceUrl: r.url,
-            searchQuery: q,
-          });
-          existingByUrl.add(r.url);
-          continue;
+          if (state.broadenLevel < 1) {
+            newRecords.push({
+              candidate,
+              directMatches,
+              alignment: null,
+              accessibility: null,
+              sourceUrl: r.url,
+              searchQuery: q,
+            });
+            existingByUrl.add(r.url);
+            continue;
+          }
         }
 
         // Step 6 alignment
@@ -922,7 +1054,7 @@ export async function findConnectionsWithLangGraph(
         logDebug('Candidate decision', {
           url: r.url,
           keep: accessibility?.keep ?? false,
-          directMatch: true,
+          directMatch: validDirectMatch,
           type: candidate.type,
           name: candidate.name ?? null,
         });
@@ -937,7 +1069,8 @@ export async function findConnectionsWithLangGraph(
         });
         existingByUrl.add(r.url);
 
-        // Stop early if we already have enough kept direct matches.
+        // Stop early if we already have enough kept candidates.
+        // Prefer direct matches, but allow non-direct (broadening mode) to fill.
         const keptDirect = [
           ...(state.candidates as CandidateRecord[]),
           ...newRecords,
@@ -946,7 +1079,11 @@ export async function findConnectionsWithLangGraph(
             cr.directMatches.direct_matches.length > 0 && cr.accessibility?.keep
         );
         logDebug('Kept direct-match count', { count: keptDirect.length });
-        if (keptDirect.length >= 8) break;
+        const keptAny = [
+          ...(state.candidates as CandidateRecord[]),
+          ...newRecords,
+        ].filter((cr) => cr.accessibility?.keep);
+        if (keptDirect.length >= 8 || keptAny.length >= 12) break;
       }
     }
 
@@ -965,55 +1102,72 @@ export async function findConnectionsWithLangGraph(
       candidates: (state.candidates as CandidateRecord[]).length,
       preferences: state.preferences,
     });
-    const keptDirect = (state.candidates as CandidateRecord[])
-      .filter(
-        (cr) =>
-          cr.directMatches.direct_matches.length > 0 && cr.accessibility?.keep
-      )
-      .map((cr) => cr.candidate);
+    const keptRecords = (state.candidates as CandidateRecord[]).filter(
+      (cr) => cr.accessibility?.keep
+    );
 
-    logDebug('Balance keptDirect', { keptDirect: keptDirect.length });
+    const requirePerson = state.preferences.connections;
+    const requireProgram = state.preferences.programs;
 
-    // If user only wants programs, skip near-peer/senior enforcement and just select up to 5 programs.
-    if (state.preferences.programs && !state.preferences.connections) {
-      return {
-        selectedCandidates: keptDirect
-          .filter((c) => c.type === 'program')
-          .slice(0, 5),
-      };
-    }
+    const allowed = keptRecords.filter((r) => {
+      if (r.candidate.type === 'person') return requirePerson;
+      if (r.candidate.type === 'program') return requireProgram;
+      return false;
+    });
 
-    const step8Prompt = buildStep8Prompt(keptDirect, state.goal);
-    const resp = await model.invoke([
-      new SystemMessage(SHARED_SYSTEM_PROMPT),
-      new HumanMessage(step8Prompt),
-    ]);
-    let parsed: z.infer<typeof Step8Schema>;
-    try {
-      const raw = String(resp.content ?? '');
-      parsed = safeParseJson(raw, Step8Schema);
-      logDebug('Step8 selection parsed', {
-        selected: parsed.selected.length,
-        has_near_peer: parsed.coverage.has_near_peer,
-        has_senior: parsed.coverage.has_senior,
-        missing: parsed.missing,
-        rawPreview: DEBUG_GRAPH_SHOW_RAW_PREVIEW ? safePreview(raw) : undefined,
-      });
-    } catch {
-      const raw = String(resp.content ?? '');
-      logWarn(
-        'Step8 selection parse failed; fallback to first 5 direct matches',
-        {
-          rawPreview: DEBUG_GRAPH_SHOW_RAW_PREVIEW
-            ? safePreview(raw)
-            : undefined,
-        }
+    logDebug('Balance keptAny', {
+      keptAny: keptRecords.length,
+      allowed: allowed.length,
+      peopleAllowed: requirePerson,
+      programsAllowed: requireProgram,
+      havePeople: allowed.some((r) => r.candidate.type === 'person'),
+      havePrograms: allowed.some((r) => r.candidate.type === 'program'),
+    });
+
+    // Enforce: if a type is selected, we MUST output at least one item of that type.
+    const bestPerson = requirePerson ? bestOfType(allowed, 'person') : null;
+    const bestProgram = requireProgram ? bestOfType(allowed, 'program') : null;
+
+    if (requirePerson && !bestPerson) {
+      throw new Error(
+        'No reachable person candidates found (people is selected). Try again, broaden search, or adjust anchors.'
       );
-      // fallback: just take first 5 direct matches
-      return { selectedCandidates: keptDirect.slice(0, 5) };
+    }
+    if (requireProgram && !bestProgram) {
+      throw new Error(
+        'No reachable program candidates found (programs is selected). Try again, broaden search, or adjust anchors.'
+      );
     }
 
-    return { selectedCandidates: parsed.selected.slice(0, 5) };
+    const selected: CandidateRecord[] = [];
+    const used = new Set<string>();
+    const keyFor = (r: CandidateRecord) =>
+      r.candidate.type === 'person'
+        ? r.candidate.verified_profile_url
+        : r.candidate.website_url;
+
+    const push = (r: CandidateRecord | null) => {
+      if (!r) return;
+      const k = keyFor(r);
+      if (used.has(k)) return;
+      used.add(k);
+      selected.push(r);
+    };
+
+    // Seed required types first.
+    push(bestPerson);
+    push(bestProgram);
+
+    // Fill remaining slots by score.
+    const remaining = allowed
+      .filter((r) => !used.has(keyFor(r)))
+      .sort((a, b) => recordScore(b) - recordScore(a));
+    for (const r of remaining) {
+      if (selected.length >= 5) break;
+      push(r);
+    }
+
+    return { selectedCandidates: selected.map((r) => r.candidate) };
   };
 
   const shouldLoop = (state: GraphState) => {
@@ -1021,16 +1175,53 @@ export async function findConnectionsWithLangGraph(
       (cr) =>
         cr.directMatches.direct_matches.length > 0 && cr.accessibility?.keep
     );
+    const keptAny = (state.candidates as CandidateRecord[]).filter(
+      (cr) => cr.accessibility?.keep
+    );
     const enough = keptDirect.length >= 5;
+    const havePerson = keptAny.some((r) => r.candidate.type === 'person');
+    const haveProgram = keptAny.some((r) => r.candidate.type === 'program');
+    const requirePerson = state.preferences.connections;
+    const requireProgram = state.preferences.programs;
+    const typeOk =
+      (!requirePerson || havePerson) && (!requireProgram || haveProgram);
     logDebug('Loop decision', {
       iteration: state.iteration,
       keptDirect: keptDirect.length,
+      keptAny: keptAny.length,
       enough,
+      typeOk,
+      havePerson,
+      haveProgram,
+      requirePerson,
+      requireProgram,
       maxIterations: state.maxIterations,
+      broadenLevel: state.broadenLevel,
     });
-    if (enough) return 'balance';
+    if (enough && typeOk) return 'balance';
     if (state.iteration >= state.maxIterations) return 'balance';
-    return 'planQueries';
+    logDebug('Loop action', { next: 'broaden' });
+    return 'broaden';
+  };
+
+  // When we come up empty, broaden search incrementally (and allow non-direct candidates to be evaluated).
+  const broadenNode = async (state: GraphState) => {
+    const nextLevel = Math.min((state.broadenLevel ?? 0) + 1, 2);
+    const nextMaxQueries = Math.min(state.maxQueriesPerIteration + 2, 12);
+    const nextMaxUrls = Math.min(state.maxUrlsPerQuery + 2, 10);
+    logWarn('Broadening search', {
+      broadenLevel: state.broadenLevel,
+      nextLevel,
+      maxQueriesPerIteration: state.maxQueriesPerIteration,
+      nextMaxQueries,
+      maxUrlsPerQuery: state.maxUrlsPerQuery,
+      nextMaxUrls,
+    });
+    return {
+      broadenLevel: nextLevel,
+      maxQueriesPerIteration: nextMaxQueries,
+      maxUrlsPerQuery: nextMaxUrls,
+    };
   };
 
   // LangGraph's TS overloads are strict; keep the runtime Zod schema and cast for compilation.
@@ -1039,12 +1230,14 @@ export async function findConnectionsWithLangGraph(
     .addNode('goalStep', goalNode)
     .addNode('planQueries', planQueriesNode)
     .addNode('retrieve', retrieveAndFilterNode)
+    .addNode('broaden', broadenNode)
     .addNode('balance', balanceNode)
     .addEdge(START, 'anchor')
     .addEdge('anchor', 'goalStep')
     .addEdge('goalStep', 'planQueries')
     .addEdge('planQueries', 'retrieve')
-    .addConditionalEdges('retrieve', shouldLoop, ['planQueries', 'balance'])
+    .addConditionalEdges('retrieve', shouldLoop, ['broaden', 'balance'])
+    .addEdge('broaden', 'planQueries')
     .addEdge('balance', END)
     .compile();
 
@@ -1053,7 +1246,7 @@ export async function findConnectionsWithLangGraph(
     finalState = await app.invoke({
       goalTitle: params.goalTitle,
       educationLevel,
-      backgroundInfo: params.rawResumeText,
+      backgroundInfo,
       preferences: {
         connections: params.preferences?.connections ?? true,
         programs: params.preferences?.programs ?? true,
@@ -1062,6 +1255,7 @@ export async function findConnectionsWithLangGraph(
       goal: null,
       queries: null,
       iteration: 0,
+      broadenLevel: 0,
       maxIterations: params.maxIterations ?? 2,
       maxQueriesPerIteration: params.maxQueriesPerIteration ?? 6,
       maxUrlsPerQuery: params.maxUrlsPerQuery ?? 6,
@@ -1225,6 +1419,48 @@ export async function findConnectionsWithLangGraph(
           source: rec.sourceUrl,
         });
       }
+    }
+  }
+
+  // Post-step: generate user-facing reason + outreach message
+  for (const conn of connections) {
+    try {
+      const resp = await model.invoke([
+        new SystemMessage(SHARED_SYSTEM_PROMPT),
+        new HumanMessage(
+          buildWriteupPrompt({
+            goalTitle: params.goalTitle,
+            educationLevel,
+            connection: {
+              type: conn.type ?? null,
+              name: conn.name,
+              current_role: conn.current_role ?? null,
+              company: conn.company ?? null,
+              verified_profile_url: conn.verified_profile_url ?? null,
+              website_url: conn.website_url ?? null,
+              organization: conn.organization ?? null,
+              program_type: conn.program_type ?? null,
+              direct_matches: (conn.direct_matches ?? []) as any,
+              goal_alignment: conn.goal_alignment ?? null,
+              additional_factors: conn.additional_factors ?? null,
+            } as any,
+          })
+        ),
+      ]);
+
+      const raw = String(resp.content ?? '');
+      const parsed = safeParseJson(raw, ConnectionWriteupSchema);
+      conn.ai_connection_reason = parsed.connection_reason;
+      // Person only; schema + prompt ensures programs return null.
+      conn.ai_outreach_message = parsed.outreach_message;
+    } catch (err) {
+      logWarn('Writeup generation failed; continuing without copy', {
+        connectionType: conn.type ?? null,
+        name: conn.name,
+      });
+      logError('Writeup generation error detail', err, { name: conn.name });
+      conn.ai_connection_reason = conn.ai_connection_reason ?? null;
+      conn.ai_outreach_message = conn.ai_outreach_message ?? null;
     }
   }
 
