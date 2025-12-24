@@ -61,6 +61,11 @@ export interface Connection {
   };
 
   /**
+   * Additional free-form factors used by some connection-finding agents.
+   */
+  additional_factors?: string[] | null;
+
+  /**
    * Exact matches such as education and shared activities.
    */
   exact_matches?: {
@@ -102,7 +107,10 @@ export interface Connection {
 }
 
 // USERS
-export async function createOrUpdateUser(userId: string, data: Record<string, unknown>) {
+export async function createOrUpdateUser(
+  userId: string,
+  data: Record<string, unknown>
+) {
   const userRef = doc(db, 'users', userId);
   await setDoc(userRef, data, { merge: true });
 }
@@ -121,7 +129,6 @@ export async function updateUserConnections(
 ) {
   await setDoc(doc(db, 'users', userId), { connections }, { merge: true });
 }
-
 
 export async function addUserConnection(
   userId: string,
@@ -192,14 +199,17 @@ export async function updateConnectionStatus(
 }
 
 // RESUME
-export async function createOrUpdateResume(userId: string, data: Record<string, unknown>) {
+export async function createOrUpdateResume(
+  userId: string,
+  data: Record<string, unknown>
+) {
   const resumeRef = doc(db, 'resume', `${userId}_resume`);
   await setDoc(resumeRef, data, { merge: true });
 }
 
 export async function addWaitlistEmail(email: string) {
-  const emailRef = doc(db, 'waitlist', email)
-  await setDoc(emailRef, {email: email})
+  const emailRef = doc(db, 'waitlist', email);
+  await setDoc(emailRef, { email: email });
 }
 
 // GETTERS
@@ -243,9 +253,11 @@ export async function createPendingConnectionSession(
   goalTitle: string,
   totalExpected: number = 5
 ): Promise<string> {
-  const sessionId = `${userId}_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
+  const sessionId = `${userId}_${Date.now()}_${Math.random()
+    .toString(36)
+    .substring(2, 11)}`;
   const sessionRef = doc(db, 'pending_connections', sessionId);
-  
+
   const session: PendingConnectionSession = {
     id: sessionId,
     userId,
@@ -253,9 +265,9 @@ export async function createPendingConnectionSession(
     startedAt: new Date().toISOString(),
     status: 'in_progress',
     connections: [],
-    totalExpected
+    totalExpected,
   };
-  
+
   await setDoc(sessionRef, session);
   return sessionId;
 }
@@ -266,17 +278,17 @@ export async function addPendingConnection(
 ) {
   const sessionRef = doc(db, 'pending_connections', sessionId);
   const sessionDoc = await getDoc(sessionRef);
-  
+
   if (!sessionDoc.exists()) {
     throw new Error('Pending connection session not found');
   }
-  
+
   const session = sessionDoc.data() as PendingConnectionSession;
   const updatedConnections = [...session.connections, connection];
-  
-  await updateDoc(sessionRef, { 
+
+  await updateDoc(sessionRef, {
     connections: updatedConnections,
-    lastUpdated: new Date().toISOString()
+    lastUpdated: new Date().toISOString(),
   });
 }
 
@@ -286,37 +298,47 @@ export async function completePendingConnectionSession(
 ) {
   const sessionRef = doc(db, 'pending_connections', sessionId);
   const sessionDoc = await getDoc(sessionRef);
-  
+
   if (!sessionDoc.exists()) {
     return;
   }
-  
+
   const session = sessionDoc.data() as PendingConnectionSession;
-  
+
   // Move connections to user's main connections
   for (const connection of session.connections) {
     await addUserConnection(userId, connection);
   }
-  
+
   // Update session status to completed
-  await updateDoc(sessionRef, { 
+  await updateDoc(sessionRef, {
     status: 'completed',
-    completedAt: new Date().toISOString()
+    completedAt: new Date().toISOString(),
   });
 }
 
-export async function getPendingConnectionSession(sessionId: string): Promise<PendingConnectionSession | null> {
+export async function getPendingConnectionSession(
+  sessionId: string
+): Promise<PendingConnectionSession | null> {
   const sessionRef = doc(db, 'pending_connections', sessionId);
   const sessionDoc = await getDoc(sessionRef);
-  
-  return sessionDoc.exists() ? sessionDoc.data() as PendingConnectionSession : null;
+
+  return sessionDoc.exists()
+    ? (sessionDoc.data() as PendingConnectionSession)
+    : null;
 }
 
-export async function getUserPendingConnectionSessions(userId: string): Promise<PendingConnectionSession[]> {
+export async function getUserPendingConnectionSessions(
+  userId: string
+): Promise<PendingConnectionSession[]> {
   const { getDocs, query, where } = await import('firebase/firestore');
   const pendingRef = collection(db, 'pending_connections');
-  const q = query(pendingRef, where('userId', '==', userId), where('status', '==', 'in_progress'));
-  
+  const q = query(
+    pendingRef,
+    where('userId', '==', userId),
+    where('status', '==', 'in_progress')
+  );
+
   const snapshot = await getDocs(q);
-  return snapshot.docs.map(doc => doc.data() as PendingConnectionSession);
+  return snapshot.docs.map((doc) => doc.data() as PendingConnectionSession);
 }

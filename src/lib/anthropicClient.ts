@@ -4,6 +4,78 @@ import { z } from 'zod';
 // Create singleton OpenAI client
 const client = new OpenAI();
 
+// Local JSON extractor (kept here to avoid importing from app/ routes)
+function extractFirstJSON(raw: string): string | null {
+  const firstObj = raw.indexOf('{');
+  const firstArr = raw.indexOf('[');
+
+  if (firstObj === -1 && firstArr === -1) return null;
+
+  let start: number;
+  let openChar: '{' | '[';
+  let closeChar: '}' | ']';
+
+  if (firstObj === -1) {
+    start = firstArr;
+    openChar = '[';
+    closeChar = ']';
+  } else if (firstArr === -1) {
+    start = firstObj;
+    openChar = '{';
+    closeChar = '}';
+  } else {
+    if (firstObj < firstArr) {
+      start = firstObj;
+      openChar = '{';
+      closeChar = '}';
+    } else {
+      start = firstArr;
+      openChar = '[';
+      closeChar = ']';
+    }
+  }
+
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let i = start; i < raw.length; i++) {
+    const char = raw[i];
+
+    if (inString) {
+      if (!escaped && char === '"') inString = false;
+      escaped = char === '\\' && !escaped;
+      continue;
+    }
+
+    if (char === '"') {
+      inString = true;
+      continue;
+    }
+
+    if (char === openChar) depth++;
+    else if (char === closeChar) {
+      depth--;
+      if (depth === 0) return raw.slice(start, i + 1);
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Deterministically parse the first JSON object/array from `rawText` and validate with a Zod schema.
+ * This is used to avoid a second LLM call when the model already returned JSON + extra text.
+ */
+export async function parseWithSchema<T>(
+  rawText: string,
+  schema: z.ZodSchema<T>
+): Promise<T> {
+  const extracted = extractFirstJSON(rawText) ?? rawText;
+  const parsed = JSON.parse(extracted);
+  return schema.parse(parsed);
+}
+
 // Exponential backoff retry utility
 async function withExponentialBackoff<T>(
   operation: () => Promise<T>,

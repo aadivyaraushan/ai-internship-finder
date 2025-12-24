@@ -8,7 +8,6 @@ import { InfiniteMovingCards } from '@/components/ui/InfiniteMovingCards';
 import { BackgroundGradient } from '@/components/ui/BackgroundGradient';
 import { Vortex } from '@/components/ui/Vortex';
 import { StatefulButton } from '@/components/ui/StatefulButton';
-import { useRouter } from 'next/navigation';
 import { CardSpotlight } from '@/components/ui/CardSpotlight';
 
 export default function ShootingStarsAndStarsBackgroundDemo() {

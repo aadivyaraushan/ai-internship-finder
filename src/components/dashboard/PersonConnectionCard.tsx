@@ -1,13 +1,6 @@
 // components/PersonConnectionCard.tsx
 import { useState } from 'react';
-import {
-  ChevronDown,
-  ChevronUp,
-  CheckCircle,
-  MessageSquare,
-  Briefcase,
-  Heart,
-} from 'lucide-react';
+import { CheckCircle, MessageSquare, Briefcase, Heart } from 'lucide-react';
 import { getBackgroundColor, getInitials } from '@/lib/utils';
 import { Connection } from '@/lib/firestoreHelpers';
 import { analytics } from '@/lib/analytics';
@@ -23,7 +16,6 @@ export function PersonConnectionCard({
   onStatusChange,
   className = '',
 }: PersonConnectionCardProps) {
-  const [showBackground, setShowBackground] = useState(false);
   const [showOutreach, setShowOutreach] = useState(false);
 
   // Use actual data from connection object - with null safety
@@ -79,7 +71,9 @@ export function PersonConnectionCard({
               rel='noopener noreferrer'
               className='text-blue-500 text-xs'
               onClick={() => {
-                const contactType = connection.verified_profile_url ? 'linkedin' : 'email';
+                const contactType = connection.verified_profile_url
+                  ? 'linkedin'
+                  : 'email';
                 analytics.trackContactClicked(contactType, 'person');
               }}
             >
@@ -181,7 +175,10 @@ export function PersonConnectionCard({
           <select
             value={connection.status || 'not_contacted'}
             onChange={(e) =>
-              onStatusChange(connection.id, e.target.value as any)
+              onStatusChange(
+                connection.id,
+                e.target.value as Connection['status']
+              )
             }
             className='w-full bg-[#3a3a3a] text-gray-200 text-xs px-2 py-1 rounded border border-gray-600'
           >

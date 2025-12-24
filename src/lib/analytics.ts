@@ -1,8 +1,9 @@
 // Firebase Analytics - static imports
+import type { Analytics } from 'firebase/analytics';
 import { getAnalytics, logEvent, setUserId, setUserProperties } from 'firebase/analytics';
 import { app } from './firebase';
 
-let firebaseAnalyticsInstance: any = null;
+let firebaseAnalyticsInstance: Analytics | null = null;
 
 export const initializeAnalytics = () => {
   if (typeof window !== 'undefined' && !firebaseAnalyticsInstance) {
@@ -36,9 +37,9 @@ export const setAnalyticsUserProperties = (properties: {
 };
 
 // Helper function to log events
-const trackEvent = (eventName: string, parameters?: { [key: string]: any }) => {
+const trackEvent = (eventName: string, parameters?: Record<string, unknown>) => {
   if (firebaseAnalyticsInstance) {
-    logEvent(firebaseAnalyticsInstance, eventName, parameters);
+    logEvent(firebaseAnalyticsInstance, eventName, parameters as Record<string, unknown>);
   }
 };
 

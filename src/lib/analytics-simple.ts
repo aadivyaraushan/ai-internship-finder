@@ -4,7 +4,7 @@
 const isDev = process.env.NODE_ENV === 'development';
 
 // Simple event logging function
-const logEvent = (eventName: string, parameters?: { [key: string]: any }) => {
+const logEvent = (eventName: string, parameters?: Record<string, unknown>) => {
   if (isDev) {
     console.log(`📊 Analytics Event: ${eventName}`, parameters);
   }
@@ -181,7 +181,7 @@ export const setSimpleAnalyticsUserId = (userId: string) => {
   }
 };
 
-export const setSimpleAnalyticsUserProperties = (properties: any) => {
+export const setSimpleAnalyticsUserProperties = (properties: Record<string, unknown>) => {
   if (typeof window !== 'undefined') {
     localStorage.setItem('analytics_user_properties', JSON.stringify(properties));
     logEvent('user_properties_set', properties);

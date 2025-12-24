@@ -6,14 +6,14 @@ import { scrapeLinkedInProfile } from './scrapeLinkedInProfile';
  *
  * @param {string} url - The LinkedIn URL to verify
  * @param {Connection} conn - The connection object to compare against
- * @returns {Promise<{valid: boolean, profile_data: any}>} - Object indicating validity and profile data
+ * @returns {Promise<{valid: boolean, profile_data?: unknown}>} - Object indicating validity and profile data
  */
 export async function verifyLinkedInUrl(
   url: string,
   conn: Connection
 ): Promise<{
   valid: boolean;
-  profile_data?: any;
+  profile_data?: unknown;
 }> {
   try {
     const profileData = await scrapeLinkedInProfile(url);
@@ -22,26 +22,33 @@ export async function verifyLinkedInUrl(
       return { valid: false };
     }
 
+    const profileObj =
+      profileData && typeof profileData === 'object'
+        ? (profileData as Record<string, unknown>)
+        : {};
+
+    const profileName = typeof profileObj.name === 'string' ? profileObj.name : '';
+    const profileRole =
+      typeof profileObj.currentRole === 'string' ? profileObj.currentRole : '';
+    const profileCompany =
+      typeof profileObj.company === 'string' ? profileObj.company : '';
+
     // Check if scraped data matches our connection
     const nameMatch =
-      profileData.name?.toLowerCase().includes(conn.name.toLowerCase()) ||
-      conn.name.toLowerCase().includes(profileData.name?.toLowerCase() || '');
+      profileName.toLowerCase().includes(conn.name.toLowerCase()) ||
+      conn.name.toLowerCase().includes(profileName.toLowerCase());
 
     const roleMatch =
-      profileData.currentRole
-        ?.toLowerCase()
-        .includes(conn.current_role?.toLowerCase() || '') ||
+      profileRole.toLowerCase().includes(conn.current_role?.toLowerCase() || '') ||
       conn.current_role
         ?.toLowerCase()
-        .includes(profileData.currentRole?.toLowerCase() || '');
+        .includes(profileRole.toLowerCase());
 
     const companyMatch =
-      profileData.company
-        ?.toLowerCase()
-        .includes(conn.company?.toLowerCase() || '') ||
+      profileCompany.toLowerCase().includes(conn.company?.toLowerCase() || '') ||
       conn.company
         ?.toLowerCase()
-        .includes(profileData.company?.toLowerCase() || '');
+        .includes(profileCompany.toLowerCase());
 
     // Consider it valid if at least two of the three match
     const matchCount = [nameMatch, roleMatch, companyMatch].filter(

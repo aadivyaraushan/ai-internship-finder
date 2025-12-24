@@ -120,13 +120,16 @@ export const delay = (minMs = 750, maxMs = 2500) => {
 };
 
 // Type guards
-export const isConnection = (item: any): item is Connection => {
+export const isConnection = (item: unknown): item is Connection => {
+  if (!item || typeof item !== 'object') return false;
+  const obj = item as Record<string, unknown>;
+
+  const websiteUrl = obj.website_url;
+  const verifiedProfileUrl = obj.verified_profile_url;
+
   return (
-    item &&
-    typeof item === 'object' &&
-    (item.website_url === undefined || typeof item.website_url === 'string') &&
-    (item.verified_profile_url === undefined ||
-      typeof item.verified_profile_url === 'string')
+    (websiteUrl === undefined || typeof websiteUrl === 'string') &&
+    (verifiedProfileUrl === undefined || typeof verifiedProfileUrl === 'string')
   );
 };
 

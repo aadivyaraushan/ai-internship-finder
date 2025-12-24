@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { auth } from '@/lib/firebase';
 import {
@@ -23,18 +23,17 @@ export default function UploadResume() {
   const [file, setFile] = useState<File | null>(null);
   const [goals, setGoals] = useState('');
   const [loading, setLoading] = useState(false);
-  const [includePeople, setIncludePeople] = useState<boolean>(() => {
+  const [includePeople] = useState<boolean>(() => {
     if (typeof window === 'undefined') return true;
     const stored = localStorage.getItem('connectionPreferences');
     return stored ? JSON.parse(stored).connections ?? true : true;
   });
-  const [includePrograms, setIncludePrograms] = useState<boolean>(() => {
+  const [includePrograms] = useState<boolean>(() => {
     if (typeof window === 'undefined') return true;
     const stored = localStorage.getItem('connectionPreferences');
     return stored ? JSON.parse(stored).programs ?? true : true;
   });
   const [error, setError] = useState('');
-  const [currentStatus, setCurrentStatus] = useState<string>('');
   const [authLoading, setAuthLoading] = useState(true);
   const [steps, setSteps] = useState<ProcessingStep[]>([
     { id: 'prepare', label: 'Preparing upload', status: 'pending' },
@@ -50,7 +49,7 @@ export default function UploadResume() {
     // Set page title
     document.title = 'Upload Resume | Refr';
     
-    const unsubscribe = onAuthStateChanged(auth, (user: any) => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
       setAuthLoading(false);
       if (!user) {
         router.push('/signup');
@@ -75,7 +74,6 @@ export default function UploadResume() {
 
     setLoading(true);
     setError('');
-    setCurrentStatus('Starting resume analysis...');
 
     // Create SSE connection
     const eventSource = new EventSource('/api/resume-analysis');
@@ -161,7 +159,6 @@ export default function UploadResume() {
         // Data storage step
         if (apiSteps.dataStored) {
           await new Promise((resolve) => setTimeout(resolve, 1000));
-          setCurrentStatus('Analysis complete! Redirecting...');
         }
       }
 
@@ -180,9 +177,9 @@ export default function UploadResume() {
       router.push(
         `/dashboard?autoStart=true&goal=${encodeURIComponent(goals.trim())}`
       );
-    } catch (err: any) {
-      setError(err.message || 'Failed to process resume');
-      setCurrentStatus('');
+    } catch (err: unknown) {
+      const errObj = err as { message?: string };
+      setError(errObj.message || 'Failed to process resume');
       // Mark current step as error
       const currentStep = steps.find((step) => step.status === 'in_progress');
       if (currentStep) {

@@ -20,7 +20,7 @@ export async function GET(request: NextRequest) {
     const jsonData = await response.json();
     // console.log('jsonData: ', jsonData);
     return NextResponse.json(jsonData);
-  } catch (error) {
+  } catch {
     return NextResponse.error();
   }
 }

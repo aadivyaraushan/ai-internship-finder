@@ -2,7 +2,7 @@
 
 import { TextHoverEffect } from "@/components/ui/TextHover";
 import { addWaitlistEmail } from "@/lib/firestoreHelpers";
-import { CornerDownLeft, Search } from "lucide-react";
+import { CornerDownLeft } from "lucide-react";
 import React, { useEffect, useState } from "react";
 import sha256 from "sha256";
 
@@ -105,7 +105,7 @@ export default function WaitlistPage() {
                         type='number'
                         value={OTP}
                         onChange={(e) => setOTP(e.target.value)}
-                        onKeyDown={handleKeyDown}
+                        onKeyDown={handleKeyDownOTP}
                         placeholder='XXXX'
                         className='w-full px-6 py-4 bg-[#1a1a1a] border border-gray-700 rounded-2xl text-white placeholder-gray-400 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 text-lg'
                     />

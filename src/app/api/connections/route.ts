@@ -80,27 +80,31 @@ export async function POST(req: Request) {
           message: 'Processing resume aspects...',
         });
         const aspects = resumeAspects;
-        
+
         // console.log('🎯 API - Raw resumeAspects received:', {
         //   exists: !!aspects,
         //   isEmpty: !aspects || Object.keys(aspects).length === 0,
         //   keys: aspects ? Object.keys(aspects) : 'null',
         // });
-        
+
         if (!aspects) {
           sendSSE({ type: 'error', message: 'No resume aspects provided' });
           controller.close();
           return;
         }
-        
+
         // Check if aspects is empty object
         if (Object.keys(aspects).length === 0) {
           // console.warn('⚠️ API - resumeAspects is an empty object, background info will be missing');
-          sendSSE({ type: 'error', message: 'Resume aspects are empty. Please make sure your resume has been properly analyzed.' });
+          sendSSE({
+            type: 'error',
+            message:
+              'Resume aspects are empty. Please make sure your resume has been properly analyzed.',
+          });
           controller.close();
           return;
         }
-        
+
         // logAspects(aspects);
 
         // Step 1: Start finding connections
@@ -110,24 +114,25 @@ export async function POST(req: Request) {
           message: 'Finding 1st connection...',
         });
         // console.log('preferences: ', preferences);
-        
+
         const found: Connection[] = [];
         let connectionCount = 0;
-        
+
         // Use the iterative generator to find connections one by one
         for await (const connection of findConnectionsIteratively({
           goalTitle,
           connectionAspects: aspects,
+          rawResumeText,
           preferences,
           personalizationSettings,
         })) {
           connectionCount++;
           found.push(connection);
-          
+
           // console.log(`🎯 Sending connection ${connectionCount} to frontend - ${connection.name}:`);
           // console.log('  shared_professional_interests:', JSON.stringify(connection.shared_professional_interests, null, 2));
           // console.log('  shared_personal_interests:', JSON.stringify(connection.shared_personal_interests, null, 2));
-          
+
           // Send connection found event
           const sseMessage = {
             type: 'connection-found',
@@ -135,18 +140,21 @@ export async function POST(req: Request) {
             count: connectionCount,
             total: 5, // We generate 5 connections
           };
-          
+
           // console.log('🎯 Full SSE message being sent:', JSON.stringify(sseMessage, null, 2));
           sendSSE(sseMessage);
-          
+
           // Send step update for next connection (if not the last one)
           if (connectionCount < 5) {
             sendSSE({
               type: 'step-update',
               step: connectionCount + 1,
               message: `Finding ${connectionCount + 1}${
-                connectionCount + 1 === 2 ? 'nd' : 
-                connectionCount + 1 === 3 ? 'rd' : 'th'
+                connectionCount + 1 === 2
+                  ? 'nd'
+                  : connectionCount + 1 === 3
+                  ? 'rd'
+                  : 'th'
               } connection...`,
             });
           }
@@ -274,4 +282,3 @@ export async function GET(req: NextRequest) {
 }
 
 // ---------------------------------------------------------------------------
-

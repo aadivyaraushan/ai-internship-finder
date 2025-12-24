@@ -20,7 +20,7 @@ interface VortexProps {
 export const Vortex = (props: VortexProps) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef(null);
-  const animationFrameId = useRef<number>();
+  const animationFrameId = useRef<number | null>(null);
   const particleCount = props.particleCount || 700;
   const particlePropCount = 9;
   const particlePropsLength = particleCount * particlePropCount;
@@ -39,7 +39,7 @@ export const Vortex = (props: VortexProps) => {
   const zOff = 0.0005;
   const backgroundColor = props.backgroundColor || '#000000';
   let tick = 0;
-  const noise3D = createNoise3D();
+  const noise3D = createNoise3D(Math.random);
   let particleProps = new Float32Array(particlePropsLength);
   let center: [number, number] = [0, 0];
 

@@ -50,10 +50,11 @@ export async function analyzeResume(
         );
       }
 
-      const aspects = {
-        ...parsed.connection_aspects,
-        connection_aspects: parsed.connection_aspects
-      } as ResumeAspects;
+      const connectionAspects = parsed.connection_aspects as Record<string, unknown>;
+      const aspects = ({
+        ...(connectionAspects as Record<string, unknown>),
+        connection_aspects: connectionAspects,
+      } as unknown) as ResumeAspects;
 
       // Ensure backward compatibility: populate companies array from detailed_experiences
       if (aspects.work_experience?.detailed_experiences?.length > 0 && 

@@ -10,13 +10,13 @@ type ConnectionRequest = {
 }
 
 export async function POST(request: NextRequest) {
-    let body: ConnectionRequest = await request.json();
+    const body: ConnectionRequest = await request.json();
 
     const {email} = body;
 
-    let pin = await RandomPinGenerator.generate(4);
+    const pin = await RandomPinGenerator.generate(4);
     console.log(pin);
-    let html_format = html("" + pin);
+    const html_format = html("" + pin);
 
     const mailerSend = new MailerSend({
         apiKey: process.env.MAILERSEND_API_KEY ? process.env.MAILERSEND_API_KEY : "APIKEY", // this'll just throw an error if you dont have your env set

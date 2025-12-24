@@ -27,7 +27,7 @@ export default function Signup() {
   useEffect(() => {
     document.title = 'Sign Up | Refr';
 
-    const unsubscribe = onAuthStateChanged(auth, (user: any) => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
       setAuthLoading(false);
       if (user) {
         console.log('User is already logged in');
@@ -115,9 +115,10 @@ export default function Signup() {
       });
 
       router.push('/background-info');
-    } catch (err: any) {
-      analytics.trackError('signup', err.message || 'Signup failed');
-      setError(getErrorMessage(err.code));
+    } catch (err: unknown) {
+      const errObj = err as { code?: string; message?: string };
+      analytics.trackError('signup', errObj.message || 'Signup failed');
+      setError(getErrorMessage(errObj.code || ''));
     } finally {
       setLoading(false);
     }

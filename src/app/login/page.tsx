@@ -72,9 +72,10 @@ export default function Login() {
     try {
       await signInWithEmailAndPassword(auth, email, password);
       analytics.trackLogin('email');
-    } catch (err: any) {
-      analytics.trackError('login', err.message || 'Login failed');
-      setError(getErrorMessage(err.code));
+    } catch (err: unknown) {
+      const errObj = err as { code?: string; message?: string };
+      analytics.trackError('login', errObj.message || 'Login failed');
+      setError(getErrorMessage(errObj.code || ''));
     } finally {
       setLoading(false);
     }
@@ -137,7 +138,7 @@ export default function Login() {
           </div>
 
           <p className='text-gray-400 text-sm mt-6 text-center'>
-            Don't have an account?{' '}
+            Don&apos;t have an account?{' '}
             <Link href='/signup' className='text-blue-400 hover:text-blue-300'>
               Sign up
             </Link>

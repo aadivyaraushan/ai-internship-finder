@@ -196,7 +196,7 @@ export interface LinkedInApiResponse {
       verified: boolean;
     };
 
-    projects: Array<any>; // Empty array in response, type unknown
+    projects: Array<unknown>; // Empty array in response, type unknown
 
     public_id: string;
 

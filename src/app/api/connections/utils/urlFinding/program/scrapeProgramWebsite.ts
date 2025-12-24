@@ -77,27 +77,29 @@ export async function scrapeProgramWebsite(url: string, retries = 2): Promise<{
     }
 
     return processResponse(response.data, url);
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const status = axios.isAxiosError(error) ? error.response?.status : undefined;
+    const message = error instanceof Error ? error.message : String(error);
     console.error('❌ Program website scraping failed:', {
       url,
-      status: error.response?.status,
-      message: error.message,
+      status,
+      message,
     });
 
     // If we have retries left and it's a retryable error
-    if (retries > 0 && error.response?.status !== 404) {
+    if (retries > 0 && status !== 404) {
       console.log(`🔄 Retrying... (${retries} attempts left)`);
       await delay(); // Random delay before retry
       return scrapeProgramWebsite(url, retries - 1);
     }
 
     return {
-      error: error.response?.status === 403 
+      error: status === 403 
         ? 'Access denied (403). The website is blocking our requests.' 
-        : error.response?.status === 404
+        : status === 404
           ? 'Page not found (404)'
           : 'Failed to fetch program website',
-      statusCode: error.response?.status || 500,
+      statusCode: status || 500,
     };
   }
 }
