@@ -15,6 +15,10 @@ export const TextHoverEffect = ({
   const [hovered, setHovered] = useState(false);
   const [maskPosition, setMaskPosition] = useState({ cx: '50%', cy: '50%' });
   const [animationDone, setAnimationDone] = useState(false);
+  
+  // Adjust viewBox width based on text length to prevent clipping
+  // Base width 300 works for ~4-5 chars. "WAITLIST" is 8 chars.
+  const viewBoxWidth = Math.max(300, text.length * 60);
 
   useEffect(() => {
     if (svgRef.current && cursor.x !== null && cursor.y !== null) {
@@ -33,7 +37,7 @@ export const TextHoverEffect = ({
       ref={svgRef}
       width='100%'
       height='100%'
-      viewBox='0 0 300 100'
+      viewBox={`0 0 ${viewBoxWidth} 100`}
       xmlns='http://www.w3.org/2000/svg'
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}

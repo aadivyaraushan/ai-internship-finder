@@ -70,12 +70,14 @@ interface WaitlistScreenProps {
 
 const WaitlistScreen = ({ title, visible, children }: WaitlistScreenProps) => (
   <div className='min-h-[100dvh] h-[100dvh] w-full relative flex flex-col items-center justify-center bg-neutral-900 px-4 sm:px-8 overflow-hidden'>
-    <div className='h-[20rem] sm:h-[40rem] w-full flex items-center justify-center select-none'>
-      <TextHoverEffect text={title} />
+    <div className='absolute top-0 w-full h-[50%] flex items-end justify-center select-none pb-8 px-6 sm:pb-0 sm:px-0 sm:h-[40rem] sm:items-center sm:relative'>
+      <div className='h-full w-full max-h-[15rem] sm:max-h-none flex items-center justify-center'>
+        <TextHoverEffect text={title} />
+      </div>
     </div>
-    <div className='absolute inset-0 flex items-center justify-center px-4 sm:px-8 pointer-events-none'>
+    <div className='relative z-10 w-full max-w-md sm:max-w-2xl sm:absolute sm:inset-0 sm:flex sm:items-center sm:justify-center sm:pointer-events-none'>
       <div
-        className={`w-full max-w-md sm:max-w-2xl transition-opacity duration-300 transform ${
+        className={`w-full transition-opacity duration-300 transform ${
           visible ? 'opacity-100' : 'opacity-0'
         } pointer-events-auto`}
       >
